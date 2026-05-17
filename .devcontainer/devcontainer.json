@@ -8,21 +8,37 @@
 	"features": {
 		"ghcr.io/devcontainers/features/node:2": {},
 		"ghcr.io/stu-bell/devcontainer-features/open-code:0": {},
-		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-		//"ghcr.io/devcontainers/features/docker-in-docker:2": {
-		// 	"moby": true,
+//		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+		// 	"moby": false
 		// 	"azureDnsAutoDetection": true,
 		// 	"installDockerBuildx": true,
 		// 	"installDockerComposeSwitch": true,
 		// 	"version": "latest",
 		// 	"dockerDashComposeVersion": "v2"
-		//},
+		},
 //		"ghcr.io/devcontainers-extra/features/vscode-cli:1": {"version": "latest"}
 
 	},
 
-	// Features to add to the dev container. More info: https://containers.dev/features.
-	// "features": {},
+	// Mounts for opencode as Docker volumes
+	"mounts": [
+		"source=opencode-config,target=/home/vscode/.config/opencode,type=volume",
+		"source=opencode-data,target=/home/vscode/.local/share/opencode,type=volume",
+		"source=opencode-cache,target=/home/vscode/.cache/opencode,type=volume"
+	],
+
+	// Mounts for opencode as directories
+	// "mounts": [
+	// 	"source=${localWorkspaceFolder}/.opencode/config,target=/home/vscode/.config/opencode,type=bind",
+	// 	"source=${localWorkspaceFolder}/.opencode/data,target=/home/vscode/.local/share/opencode,type=bind",
+	// 	"source=${localWorkspaceFolder}/.opencode/cache,target=/home/vscode/.cache/opencode,type=bind"
+	// ],
+
+	"containerEnv": {
+		"OPENCODE_CONFIG_DIR": "/home/vscode/.config/opencode"
+	},
+
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
@@ -38,7 +54,8 @@
 				"ritwickdey.LiveServer",
 				"ms-azuretools.vscode-containers",
 				"nickcrv.markdown-pdf-vscode",
-				"shd101wyy.markdown-preview-enhanced"
+				"shd101wyy.markdown-preview-enhanced",
+				"rpdswtk.vsmqtt"
 			]
 		}
 	}

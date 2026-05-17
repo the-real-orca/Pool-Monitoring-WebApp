@@ -11,17 +11,10 @@ services:
       - mosquitto
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    build: ./mosquitto
     restart: unless-stopped
     ports:
       - "1883:1883"
-    command: >
-      sh -c "
-        mkdir -p /mosquitto/config &&
-        echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
-        echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
-        mosquitto -c /mosquitto/config/mosquitto.conf
-      "
 
   caddy:
     image: caddy:2-alpine

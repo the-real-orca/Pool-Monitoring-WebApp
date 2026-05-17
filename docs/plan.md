@@ -31,9 +31,11 @@ Goal: all container and proxy configurations complete and syntactically correct.
 | [x] 2.3 | `src/backend/Dockerfile` | `FROM python:3.12-slim`; `pip install -r requirements.txt`; `CMD uvicorn main:app --host 0.0.0.0 --port 8000` |
 | [x] 2.4 | `src/frontend/Dockerfile` | Multi-stage: `node:22-alpine` build → `nginx:alpine` serve |
 | [x] 2.5 | `src/frontend/nginx.conf` | SPA routing `try_files $uri /index.html`; static assets `expires 1y; Cache-Control immutable` |
+| [x] 2.6 | `src/mosquitto/Dockerfile` | `FROM eclipse-mosquitto:2`; `COPY config/mosquitto.conf /mosquitto/config/mosquitto.conf` |
+| [x] 2.7 | `src/mosquitto/config/mosquitto.conf` | `listener 1883` · `allow_anonymous true` |
 
-**Verify:** `docker compose -f src/docker-compose.yml config` runs without errors. ✅
-**Commit:** `06dd62e`
+**Verify:** `docker compose -f src/docker-compose.yml config` runs without errors. ✅ Mosquitto container starts and listens on 1883. ✅
+**Commit:** pending
 
 ---
 
