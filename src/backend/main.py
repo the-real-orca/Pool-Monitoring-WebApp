@@ -46,7 +46,6 @@ def build_mqtt_payload(m: Measurement) -> dict:
     return {
         "time": m.time,
         "name": m.name,
-        "status": "manual data",
         "sensorType": m.sensorType,
         "temp": m.temp,
         "pH": m.pH,
