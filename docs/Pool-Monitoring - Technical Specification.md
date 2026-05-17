@@ -1,0 +1,748 @@
+# Technical Specification: Pool-Monitoring PWA
+
+**Version:** 1.0 | **Based on:** FSD 1.0 | **Date:** 2026-05-17
+
+---
+
+## 1. Purpose & Scope
+
+This document describes the concrete technical implementation of FSD v1.0.
+Guiding principle: **As flat and simple as possible – as modular as necessary.**
+Every file, abstraction, and dependency must justify its place.
+
+**v1 scope:** Measurement form → MQTT publish. No database access, no dashboard.
+
+---
+
+## 2. Technology Stack & Design Decisions
+
+| Area     | Technology | Rationale |
+| -------- | ---------- | --------- |
+| Frontend | Vue 3 (Composition API), JavaScript | FSD requirement; JS instead of TS avoids tsconfig overhead for a small project |
+| Styling  | Tailwind CSS v4 + `@tailwindcss/vite` | Utility-first; v4 needs no `tailwind.config.js` |
+| Build    | Vite + `@vitejs/plugin-vue` | Fast, minimally configured |
+| PWA      | `vite-plugin-pwa` (Workbox) | Auto-generates service worker + manifest |
+| Backend  | Python 3.12, FastAPI | FSD requirement; Pydantic validation included |
+| MQTT     | `paho-mqtt ≥ 2.0` | FSD requirement; built-in exponential backoff via `reconnect_delay_set` |
+| Linting  | Ruff + ESLint | Fast, minimal configuration |
+
+**Deliberately excluded:**
+
+| Excluded | Rationale |
+| -------- | --------- |
+| Vue Router | Only 2 views → `ref('form' \| 'settings')` in `App.vue` suffices |
+| Pinia / Vuex | Composable-level `reactive()` is enough for this scope |
+| DB / ORM | v1 is stateless; extension prepared in Future Enhancements |
+| Separate `config.py` | `os.getenv()` directly in `main.py` – 6 lines instead of a module |
+| Axios | Native `fetch()` is sufficient; one less dependency |
+| Chart.js | Future Enhancement |
+| Separate `middleware/` | FastAPI `Depends()` inline on the route – 5 lines instead of a module |
+
+---
+
+## 3. Directory Structure
+
+```
+src/
+├── backend/
+│   ├── main.py              # FastAPI app, all routes, Pydantic model, auth
+│   ├── mqtt.py              # MQTT client (connect, publish, reconnect)
+│   ├── requirements.txt
+│   ├── pyproject.toml       # Ruff/Black configuration
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── main.js          # App mount, PWA registration
+│   │   ├── App.vue          # Root: view toggle (form|settings), toast display
+│   │   ├── validation.js    # Field constants (min, max, step, default, unit)
+│   │   ├── components/
+│   │   │   ├── StepperInput.vue    # Reusable +/- input stepper
+│   │   │   ├── MeasurementForm.vue # Measurement form with submit flow
+│   │   │   └── SettingsPanel.vue   # Settings (URL, token, name)
+│   │   └── composables/
+│   │       ├── useApi.js      # fetch wrapper with Bearer auth
+│   │       ├── useSettings.js # localStorage read/write (reactive)
+│   │       └── useToast.js    # Toast state (module-level singleton)
+│   ├── public/
+│   │   └── icons/
+│   │       ├── icon-192.png
+│   │       └── icon-512.png
+│   ├── index.html
+│   ├── vite.config.js       # Vite + Vue + Tailwind + PWA
+│   ├── nginx.conf           # SPA routing for Nginx
+│   └── Dockerfile
+├── docker-compose.yml
+├── Caddyfile
+├── .env.example
+└── .gitignore
+```
+
+**Test files** live alongside source files:
+
+```
+backend/tests/
+├── test_models.py
+├── test_api.py
+└── test_auth.py
+
+frontend/tests/
+├── validation.spec.js
+├── useSettings.spec.js
+└── StepperInput.spec.js
+```
+
+---
+
+## 4. Frontend
+
+### 4.1 View Switching (No Router)
+
+`App.vue` holds `const view = ref('form')` and renders conditionally.
+`useToast` is a module-level singleton, callable from any component.
+
+```vue
+<!-- App.vue -->
+<script setup>
+import { ref } from 'vue'
+import MeasurementForm from './components/MeasurementForm.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
+import { useToast } from './composables/useToast.js'
+
+const view = ref('form')
+const { toast } = useToast()
+</script>
+
+<template>
+  <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" />
+  <SettingsPanel v-else @close="view = 'form'" />
+
+  <!-- Global Toast overlay -->
+  <Transition name="toast">
+    <div v-if="toast.visible" class="...toast-classes..." :data-type="toast.type">
+      {{ toast.message }}
+    </div>
+  </Transition>
+</template>
+```
+
+### 4.2 Components
+
+| File | Responsibility | Props | Emits |
+| ---- | -------------- | ----- | ----- |
+| `StepperInput.vue` | +/- stepper around a numeric field, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
+| `MeasurementForm.vue` | Form, submit flow, validation display | – | `open-settings` |
+| `SettingsPanel.vue` | Read/write backend URL, token, pool name | – | `close` |
+
+**`StepperInput.vue`** – contains only stepper logic, no business logic:
+
+```vue
+<script setup>
+const props = defineProps(['modelValue', 'min', 'max', 'step', 'decimals', 'unit'])
+const emit = defineEmits(['update:modelValue'])
+
+function step(dir) {
+  const next = parseFloat((props.modelValue + dir * props.step).toFixed(props.decimals))
+  if (next >= props.min && next <= props.max) emit('update:modelValue', next)
+}
+</script>
+
+<template>
+  <div class="flex items-center gap-2">
+    <button @click="step(-1)" :disabled="modelValue <= min">−</button>
+    <span>{{ modelValue }} {{ unit }}</span>
+    <button @click="step(+1)" :disabled="modelValue >= max">+</button>
+  </div>
+</template>
+```
+
+**`MeasurementForm.vue`** – contains the full submit flow:
+
+```js
+// Internal flow in MeasurementForm.vue (setup)
+const { settings } = useSettings()
+const { postMeasurement, loading, error } = useApi()
+const { show: showToast } = useToast()
+
+// Local form state (reactive, no store)
+const form = reactive({
+  time: Date.now(),
+  name: settings.poolName,
+  temp: FIELD_CONFIG.temp.default,
+  pH:   FIELD_CONFIG.pH.default,
+  cl:   FIELD_CONFIG.cl.default,
+})
+
+async function submit() {
+  const ok = await postMeasurement(form)
+  if (ok) {
+    showToast('Measurement saved', 'success')
+    resetForm()
+  }
+  // error.value is displayed directly in the template
+}
+```
+
+**`SettingsPanel.vue`** – no own state, all fields bound directly to `settings`:
+
+```vue
+<script setup>
+import { useSettings } from '../composables/useSettings.js'
+const { settings } = useSettings()
+const emit = defineEmits(['close'])
+</script>
+
+<template>
+  <div>
+    <button @click="emit('close')">✕</button>
+    <input v-model="settings.backendUrl" type="text" />
+    <input v-model="settings.token" type="password" />
+    <input v-model="settings.poolName" type="text" />
+  </div>
+</template>
+```
+
+### 4.3 Composables
+
+#### `useSettings.js`
+
+Module-level `reactive` object – initialized once, shared by all components.
+`watch` writes to localStorage on every change.
+Token is stored Base64-encoded (obfuscation, not a security feature).
+
+```js
+import { reactive, watch } from 'vue'
+
+const KEY = 'pool_monitor_settings'
+const DEFAULTS = { backendUrl: '/api', token: '', poolName: 'Pool' }
+
+function load() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}')
+    return { ...DEFAULTS, ...raw, token: raw.token ? atob(raw.token) : '' }
+  } catch { return { ...DEFAULTS } }
+}
+
+function save(s) {
+  localStorage.setItem(KEY, JSON.stringify({ ...s, token: btoa(s.token) }))
+}
+
+// Module-level singleton – created only once
+const settings = reactive(load())
+watch(settings, save, { deep: true })
+
+export function useSettings() {
+  return { settings }
+}
+```
+
+#### `useApi.js`
+
+Reads `settings.backendUrl` and `settings.token`.
+Returns a local `{ loading, error }` per call (no global loading state).
+No automatic retry – the user has a retry button (FSD 7.1).
+
+```js
+import { ref } from 'vue'
+import { useSettings } from './useSettings.js'
+
+export function useApi() {
+  const { settings } = useSettings()
+  const loading = ref(false)
+  const error = ref(null)
+
+  async function postMeasurement(form) {
+    loading.value = true
+    error.value = null
+    const payload = {
+      time:       Math.floor(Date.now() / 1000),
+      name:       form.name,
+      sensorType: 'manual',
+      pH:         form.pH,
+      cl:         form.cl,
+      temp:       form.temp,
+    }
+    try {
+      const res = await fetch(`${settings.backendUrl}/measurements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.token}`,
+        },
+        body: JSON.stringify(payload),
+      })
+      if (res.status === 401) { error.value = '401'; return false }
+      if (!res.ok) { error.value = String(res.status); return false }
+      return true
+    } catch {
+      error.value = 'network'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { loading, error, postMeasurement }
+}
+```
+
+#### `useToast.js`
+
+Module-level singleton. `show()` is callable from any component without props/events.
+`toast` is only rendered in `App.vue`.
+
+```js
+import { reactive } from 'vue'
+
+const toast = reactive({ message: '', type: 'success', visible: false })
+let _timer = null
+
+export function useToast() {
+  function show(message, type = 'success', duration = 3000) {
+    clearTimeout(_timer)
+    Object.assign(toast, { message, type, visible: true })
+    _timer = setTimeout(() => { toast.visible = false }, duration)
+  }
+  return { toast, show }
+}
+```
+
+### 4.4 Validation Constants (`validation.js`)
+
+Central source for all field boundaries. Used by `MeasurementForm.vue` and `StepperInput.vue`.
+Backend validation (Pydantic `Field()`) uses the same values.
+
+```js
+export const FIELD_CONFIG = {
+  temp: { min: 5.0,  max: 45.0,  step: 0.2, default: 20.0, decimals: 1, unit: '°C'   },
+  pH:   { min: 0.0,  max: 14.0,  step: 0.1, default: 7.0,  decimals: 1, unit: ''     },
+  cl:   { min: 0.0,  max: 10.0,  step: 0.1, default: 1.0,  decimals: 1, unit: 'mg/l' },
+}
+
+export const NAME_CONFIG = { minLength: 1, maxLength: 50, pattern: /^[a-zA-Z0-9 ]+$/ }
+```
+
+### 4.5 Build Configuration (`vite.config.js`)
+
+`vite-plugin-pwa` generates the service worker (Workbox, `CacheFirst` for static assets)
+and `manifest.json` automatically from the configuration.
+
+```js
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
+
+export default defineConfig({
+  plugins: [
+    vue(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: {
+        name: 'Pool Monitor',
+        short_name: 'Pool',
+        theme_color: '#0EA5E9',
+        background_color: '#F8FAFC',
+        display: 'standalone',
+        icons: [
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,png,svg}'],
+        runtimeCaching: [], // v1: app shell only, no API caching
+      },
+    }),
+  ],
+})
+```
+
+Tailwind CSS v4: no `tailwind.config.js` needed. Only configuration in `src/main.css`:
+
+```css
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0EA5E9;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-error:   #EF4444;
+}
+```
+
+### 4.6 Frontend Dependencies (`package.json`)
+
+```json
+{
+  "dependencies": {
+    "vue": "^3.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5",
+    "@tailwindcss/vite": "^4",
+    "tailwindcss": "^4",
+    "vite": "^6",
+    "vite-plugin-pwa": "^0.21",
+    "vitest": "^2",
+    "@vue/test-utils": "^2"
+  }
+}
+```
+
+---
+
+## 5. Backend
+
+### 5.1 File Structure and Split
+
+`main.py` contains everything: configuration, Pydantic model, auth dependency, app lifespan, and all routes.
+`mqtt.py` is separated because the client manages its own threading state (`loop_start()`).
+
+```
+main.py
+ ├── Imports
+ ├── Configuration (os.getenv, 6 lines)
+ ├── Pydantic model: Measurement
+ ├── Auth dependency: verify_token()
+ ├── App + Lifespan (MQTT connect/disconnect)
+ ├── POST /api/measurements
+ └── GET  /api/status
+```
+
+### 5.2 Configuration
+
+Directly via `os.getenv()` – no separate config module:
+
+```python
+import os, time, secrets as _secrets
+from contextlib import asynccontextmanager
+
+API_TOKEN   = os.getenv("API_TOKEN", "")
+MQTT_HOST   = os.getenv("MQTT_HOST", "localhost")
+MQTT_PORT   = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER   = os.getenv("MQTT_USER", "")
+MQTT_PASS   = os.getenv("MQTT_PASS", "")
+MQTT_TOPIC  = os.getenv("MQTT_TOPIC", "pool/manual")
+APP_VERSION = "1.0.0"
+_start_time = time.time()
+```
+
+### 5.3 Pydantic Model & Validation
+
+Validation ranges exactly match the `FIELD_CONFIG` values from `validation.js`.
+The `status` key from `msg-sample.json` is set server-side – it is not an API input.
+
+```python
+from pydantic import BaseModel, Field, field_validator
+import re
+
+class Measurement(BaseModel):
+    time:       int
+    name:       str  = Field(default="Pool", min_length=1, max_length=50)
+    sensorType: str  = "manual"
+    pH:         float = Field(ge=0.0, le=14.0)
+    cl:         float = Field(ge=0.0, le=10.0)
+    temp:       float = Field(ge=5.0, le=45.0)
+
+    @field_validator("name")
+    @classmethod
+    def name_alphanumeric(cls, v: str) -> str:
+        if not re.fullmatch(r"[a-zA-Z0-9 ]+", v):
+            raise ValueError("name must be alphanumeric")
+        return v
+
+    @field_validator("pH", "cl", "temp")
+    @classmethod
+    def one_decimal(cls, v: float) -> float:
+        return round(v, 1)
+```
+
+**MQTT payload:** On publish, a new sanitized message is built – no passthrough of raw data.
+The `status` field from `msg-sample.json` is fixed as `"manual data"`:
+
+```python
+def build_mqtt_payload(m: Measurement) -> dict:
+    return {
+        "time":       m.time,
+        "name":       m.name,
+        "status":     "manual data",   # fixed, not from user input
+        "sensorType": m.sensorType,
+        "temp":       m.temp,
+        "pH":         m.pH,
+        "cl":         m.cl,
+    }
+```
+
+### 5.4 Auth Dependency
+
+`secrets.compare_digest` instead of `==` prevents timing attacks:
+
+```python
+from fastapi import Header, HTTPException, Depends
+import secrets as _secrets
+
+async def verify_token(authorization: str = Header(alias="Authorization")):
+    expected = f"Bearer {API_TOKEN}"
+    if not API_TOKEN or not _secrets.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+```
+
+Bound directly on the route via `dependencies=[Depends(verify_token)]`.
+
+### 5.5 Routes & Lifespan
+
+```python
+from fastapi import FastAPI, HTTPException, Depends
+import mqtt  # mqtt.py
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS)
+    yield
+    mqtt.disconnect()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/api/measurements", status_code=201,
+          dependencies=[Depends(verify_token)])
+async def post_measurement(m: Measurement):
+    payload = build_mqtt_payload(m)
+    if not mqtt.publish(MQTT_TOPIC, payload):
+        raise HTTPException(status_code=503, detail="MQTT unavailable")
+    return {"status": "success", "message": "Measurement published to MQTT"}
+
+@app.get("/api/status")
+async def get_status():
+    return {
+        "status":       "healthy",
+        "mqttConnected": mqtt.is_connected(),
+        "uptime":        int(time.time() - _start_time),
+        "version":       APP_VERSION,
+    }
+```
+
+### 5.6 `mqtt.py` – MQTT Client
+
+Own file due to own threading state (`loop_start()`).
+`reconnect_delay_set(min_delay=1, max_delay=300)` activates paho-internal exponential backoff.
+
+```python
+import json
+import logging
+import paho.mqtt.client as mqtt_lib
+
+_client: mqtt_lib.Client | None = None
+
+def connect(host: str, port: int, user: str, password: str) -> None:
+    global _client
+    _client = mqtt_lib.Client(mqtt_lib.CallbackAPIVersion.VERSION2)
+    if user:
+        _client.username_pw_set(user, password)
+    _client.reconnect_delay_set(min_delay=1, max_delay=300)
+    _client.on_disconnect = lambda c, u, d, rc, p: (
+        logging.warning("MQTT disconnected (rc=%s), reconnecting...", rc)
+    )
+    _client.connect(host, port)
+    _client.loop_start()
+    logging.info("MQTT connecting to %s:%s", host, port)
+
+def publish(topic: str, payload: dict) -> bool:
+    if not is_connected():
+        return False
+    result = _client.publish(topic, json.dumps(payload), qos=1)
+    return result.rc == mqtt_lib.MQTT_ERR_SUCCESS
+
+def disconnect() -> None:
+    if _client:
+        _client.loop_stop()
+        _client.disconnect()
+
+def is_connected() -> bool:
+    return _client is not None and _client.is_connected()
+```
+
+### 5.7 Backend Dependencies (`requirements.txt`)
+
+```
+fastapi>=0.115
+uvicorn[standard]>=0.30
+paho-mqtt>=2.0
+python-dotenv>=1.0
+```
+
+---
+
+## 6. Infrastructure
+
+### 6.1 Docker Compose
+
+Three services: `frontend`, `backend`, `caddy`.
+Mosquitto runs externally – not a service in this repository.
+
+```yaml
+services:
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [frontend, backend]
+
+volumes:
+  caddy_data:
+```
+
+### 6.2 Dockerfiles
+
+**Backend** – slim image, no build stage needed:
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Frontend** – Multi-stage: Build (Node) + Serve (Nginx):
+
+```dockerfile
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json .
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+```
+
+`nginx.conf` – SPA routing + static asset caching:
+
+```nginx
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Static assets: long-lived cache
+    location ~* \.(js|css|png|svg|woff2|webmanifest)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+```
+
+### 6.3 Caddyfile
+
+```
+pool.example.com {
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+```
+
+### 6.4 `.env.example`
+
+```env
+API_TOKEN=change-me-to-a-secure-random-token
+MQTT_HOST=mosquitto
+MQTT_PORT=1883
+MQTT_USER=
+MQTT_PASS=
+MQTT_TOPIC=pool/manual
+```
+
+---
+
+## 7. Security
+
+| Measure | Implementation |
+| ------- | -------------- |
+| HTTPS / HSTS | Caddy + Let's Encrypt, automatic |
+| Token comparison | `secrets.compare_digest()` (prevents timing attacks) |
+| Input sanitization | Pydantic validation; backend builds new payload (no passthrough) |
+| Token frontend | Base64 in localStorage (obfuscation, not cryptographic protection) |
+| CORS | FastAPI `CORSMiddleware`, own domain only, `allow_origins=[FRONTEND_URL]` |
+| MQTT auth | Username/password, backend-internal, never exposed to frontend |
+| MQTT QoS | QoS 1 (at least once) for publish |
+
+---
+
+## 8. Testing
+
+### 8.1 Backend (`pytest` + `httpx`)
+
+```
+backend/tests/
+├── test_models.py   # Pydantic: valid values, boundaries, invalid values, rounding
+├── test_api.py      # HTTP endpoints via TestClient (MQTT mocked)
+└── test_auth.py     # verify_token: valid, missing, wrong
+```
+
+Base fixture in `conftest.py`:
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import patch
+
+@pytest.fixture
+def client():
+    with patch("mqtt.publish", return_value=True), \
+         patch("mqtt.is_connected", return_value=True):
+        from main import app
+        yield TestClient(app)
+```
+
+### 8.2 Frontend (`vitest` + `@vue/test-utils`)
+
+```
+frontend/tests/
+├── validation.spec.js      # FIELD_CONFIG boundaries and NAME_CONFIG pattern
+├── useSettings.spec.js     # localStorage read/write, defaults, token encoding
+└── StepperInput.spec.js    # Stepper logic: steps, min/max boundaries, emit
+```
+
+---
+
+## 9. Implementation Order
+
+| # | Step | Artifacts |
+|---|------|-----------|
+| 1 | Project structure + config files | `.env.example`, `.gitignore` |
+| 2 | Infrastructure | `docker-compose.yml`, `Caddyfile`, both `Dockerfile`, `nginx.conf` |
+| 3 | Backend: MQTT client | `mqtt.py` |
+| 4 | Backend: App + Routes | `main.py` |
+| 5 | Backend tests | `tests/test_*.py` |
+| 6 | Frontend: Constants + Composables | `validation.js`, `useSettings.js`, `useApi.js`, `useToast.js` |
+| 7 | Frontend: Components | `StepperInput.vue`, `MeasurementForm.vue`, `SettingsPanel.vue` |
+| 8 | Frontend: App shell + PWA | `App.vue`, `main.js`, `vite.config.js`, icons |
+| 9 | Frontend tests | `tests/*.spec.js` |
+| 10 | Integration | `docker compose up` end-to-end verification |
