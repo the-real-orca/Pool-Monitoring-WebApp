@@ -14,7 +14,7 @@ services:
     image: eclipse-mosquitto:2
     restart: unless-stopped
     ports:
-      - "2883:1883"
+      - "2883:2883"
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
 
@@ -28,7 +28,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on:
-      - frontend
+#      - frontend
       - backend
 
 volumes:

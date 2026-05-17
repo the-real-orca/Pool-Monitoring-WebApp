@@ -12,10 +12,13 @@ def connect(host: str, port: int, user: str, password: str) -> None:
     if user:
         _client.username_pw_set(user, password)
     _client.reconnect_delay_set(min_delay=1, max_delay=300)
+    _client.on_connect = lambda c, u, d, rc, p: (
+        logging.info("MQTT connected (rc=%s)", rc) if rc == 0 else logging.error("MQTT connection failed (rc=%s)", rc)
+    )
     _client.on_disconnect = lambda c, u, d, rc, p: (
         logging.warning("MQTT disconnected (rc=%s), reconnecting...", rc)
     )
-    _client.connect(host, port)
+    _client.connect_async(host, port)
     _client.loop_start()
     logging.info("MQTT connecting to %s:%s", host, port)
 
