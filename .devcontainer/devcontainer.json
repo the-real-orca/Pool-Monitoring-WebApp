@@ -45,7 +45,8 @@
 				"ms-azuretools.vscode-containers",
 				"nickcrv.markdown-pdf-vscode",
 				"shd101wyy.markdown-preview-enhanced",
-				"rpdswtk.vsmqtt"
+				"rpdswtk.vsmqtt",
+				"Vue.volar"
 			]
 		}
 	}
