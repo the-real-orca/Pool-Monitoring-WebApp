@@ -1,6 +1,0 @@
-
-erkläre @pyproject.toml
-
-opencode in VSCode dev container verliert config und sessions nach VSCode neustart
-
-

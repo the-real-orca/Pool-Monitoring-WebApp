@@ -2,8 +2,6 @@
   "$schema": "https://opencode.ai/config.json",
   "autoupdate": false,
 
-  "model": "opencode/gpt-4",
-
   "permission": {
     "edit": "allow",
     "bash": "allow",

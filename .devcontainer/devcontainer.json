@@ -3,22 +3,12 @@
 {
 	"name": "Python 3",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	//"image": "mcr.microsoft.com/devcontainers/python:3-3.14-trixie",
 	"image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
 	"features": {
 		"ghcr.io/devcontainers/features/node:2": {},
 		"ghcr.io/stu-bell/devcontainer-features/open-code:0": {},
-//		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {
-		// 	"moby": false
-		// 	"azureDnsAutoDetection": true,
-		// 	"installDockerBuildx": true,
-		// 	"installDockerComposeSwitch": true,
-		// 	"version": "latest",
-		// 	"dockerDashComposeVersion": "v2"
-		},
-//		"ghcr.io/devcontainers-extra/features/vscode-cli:1": {"version": "latest"}
-
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+//		"ghcr.io/devcontainers-extra/features/vscode-cli:1": {}
 	},
 
 	// Mounts for opencode as Docker volumes
