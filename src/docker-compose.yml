@@ -1,0 +1,35 @@
+services:
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "2883:2883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "2080:80"
+      - "2443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+#      - frontend
+      - backend
+
+volumes:
+  caddy_data:

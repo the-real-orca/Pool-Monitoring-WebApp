@@ -459,14 +459,12 @@ class Measurement(BaseModel):
 ```
 
 **MQTT payload:** On publish, a new sanitized message is built – no passthrough of raw data.
-The `status` field from `msg-sample.json` is fixed as `"manual data"`:
 
 ```python
 def build_mqtt_payload(m: Measurement) -> dict:
     return {
         "time":       m.time,
         "name":       m.name,
-        "status":     "manual data",   # fixed, not from user input
         "sensorType": m.sensorType,
         "temp":       m.temp,
         "pH":         m.pH,

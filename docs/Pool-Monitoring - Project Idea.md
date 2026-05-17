@@ -45,7 +45,6 @@ The app is delivered as a PWA. Installation happens without an app store via the
 {
     "time": 1755724982,
     "name": "Pool H32",
-    "status": "manual data",
     "sensorType": "manual",
     "temp": 28.4,
     "pH": 7.2,
