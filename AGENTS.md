@@ -29,9 +29,9 @@ See `docs/plan.md` for full implementation plan with checkboxes.
 - **Code comments:** English
 - **Git commits:**
     - Concise, imperative (e.g., `feat: add MQTT client`)
-    - Append AI model in brackets: `[qwen3.6-plus-free]`
+    - Append AI agend and model in brackets: `[OpenCode / qwen3.6-plus-free]`
     - Always update `docs/plan.md` BEFORE committing – plan.md reflects what is done, not what will be done
-    - Example: `feat: add infrastructure configs (Phase 2) [qwen3.6-plus-free]`
+    - Example: `feat: add infrastructure configs (Phase 2) [OpenCode / qwen3.6-plus-free]`
 
 ## Architecture Principles
 
