@@ -245,7 +245,7 @@ Same validation ranges as the frontend (see frontend form field table).
 
 Via Docker Compose.
 
-> Mosquitto runs in a separate, existing container. Mosquitto config only for dev.
+> The compose file includes a Mosquitto service for local development and testing (port 2883 to avoid host collisions). In production, an existing external Mosquitto broker is used – configure `MQTT_HOST` and `MQTT_PORT` in `.env` accordingly.
 
 ---
 

@@ -575,8 +575,10 @@ python-dotenv>=1.0
 
 ### 6.1 Docker Compose
 
-Three services: `frontend`, `backend`, `caddy`.
-Mosquitto runs externally – not a service in this repository.
+Four services: `frontend`, `backend`, `caddy`, `mosquitto`.
+Mosquitto is included as a **dev-only** service for local testing. In production, an existing external Mosquitto instance is used – set `MQTT_HOST` in `.env` accordingly and remove the `mosquitto` service.
+
+The Mosquitto container uses port **2883** (host) → **2883** (container) to avoid collisions with any Mosquitto instance that may already run on the host system.
 
 ```yaml
 services:
@@ -588,6 +590,16 @@ services:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "2883:2883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
 
   caddy:
     image: caddy:2-alpine
@@ -671,11 +683,13 @@ pool.example.com {
 ```env
 API_TOKEN=change-me-to-a-secure-random-token
 MQTT_HOST=mosquitto
-MQTT_PORT=1883
+MQTT_PORT=2883
 MQTT_USER=
 MQTT_PASS=
 MQTT_TOPIC=pool/manual
 ```
+
+**Note:** `MQTT_PORT=2883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
 
 ---
 
