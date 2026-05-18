@@ -154,13 +154,13 @@ Goal: all services run together in Docker, end-to-end fully verified.
 
 | # | Step | Expected result |
 |---|------|-----------------|
-| [ ] 10.1 | Create `.env` from `.env.example` | Token set, MQTT connection data configured |
-| [ ] 10.2 | `docker compose build` | All 3 images built, 0 errors |
-| [ ] 10.3 | `docker compose up -d` | All 3 containers running |
-| [ ] 10.4 | `curl http://localhost/api/status` | `200 {"status":"healthy","mqttConnected":...}` |
-| [ ] 10.5 | `curl -X POST http://localhost/api/measurements` with token + JSON | `201 {"status":"success",...}` |
-| [ ] 10.6 | MQTT broker: check topic `pool/manual` | Message in `msg-sample.json` format received |
-| [ ] 10.7 | Open `http://localhost` in browser | PWA form loads, send works, toast appears |
+| [x] 10.1 | Create `.env` from `.env.example` | Token set, MQTT connection data configured |
+| [x] 10.2 | `docker compose build` | All 3 images built, 0 errors |
+| [x] 10.3 | `docker compose up -d` | All 3 containers running |
+| [x] 10.4 | `curl http://localhost:2080/api/status` | `200 {"status":"healthy","mqttConnected":...}` |
+| [x] 10.5 | `curl -X POST http://localhost:2080/api/measurements` with token + JSON | `201 {"status":"success",...}` |
+| [x] 10.6 | MQTT broker: check topic `/pool/manual` | Message in msg-sample.json format received |
+| [x] 10.7 | Open `http://localhost:2080` in browser | PWA form loads, send works, toast appears |
 
 ---
 

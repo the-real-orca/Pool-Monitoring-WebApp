@@ -10,14 +10,6 @@ services:
     depends_on:
       - mosquitto
 
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    ports:
-      - "2883:2883"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config:ro
-
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -30,6 +22,17 @@ services:
     depends_on:
       - frontend
       - backend
+
+# for testing purposes only!
+# expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "2883:2883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+
 
 volumes:
   caddy_data:
