@@ -145,15 +145,14 @@ Settings are stored locally on the smartphone or in the browser.
 
 | Setting     | Type     | Default                  | Description                |
 | ----------- | -------- | ------------------------ | -------------------------- |
-| Backend URL | text     | https://pool.example.com | API-Bridge base URL        |
 | API Token   | password | -                        | Bearer token for backend   |
 | Pool Name   | text     | "Pool"                   | Default name for measurements |
 
-**Note on Backend URL:** Since the PWA is served from the same server, the backend URL can be relative (`/api`). A configurable URL is retained for flexibility (e.g., development environments).
+> **Note on Backend URL:** The backend URL is hardcoded as `/api`. A configurable URL was removed in favor of simplicity since the PWA is always served from the same origin as the API.
 
 #### 3.4.1 Storage Behavior
 
-- localStorage for settings, token Base64-obfuscated
+- localStorage for settings, token Base64-encoded (obfuscation, not cryptographic protection)
 - Export/Import as JSON, "Delete all data" with confirmation
 
 ### 3.5 Authentication & Security
@@ -162,6 +161,18 @@ Settings are stored locally on the smartphone or in the browser.
 - Server-side as environment variable
 - HTTPS required (Caddy/Let's Encrypt, HSTS)
 - MQTT auth via username/password (backend-internal)
+
+#### 3.5.1 localStorage vs httpOnly Cookie
+
+| Aspect            | localStorage (used)          | httpOnly Cookie                    |
+| ---------------- | ---------------------------- | --------------------------------- |
+| JavaScript access | Yes (read/write)             | No (HTTP-only)                    |
+| XSS risk          | Token extractable via XSS    | Token protected against XSS       |
+| Automatic send    | Manual: `Authorization` header | Automatic: browser sends cookie    |
+| Server control    | Client-only                  | Server sets/clears via HTTP headers |
+| Use case fit      | Settings, non-sensitive data | User sessions, critical auth      |
+
+> **Why localStorage?** This is a private pool monitoring tool with a shared secret token—no personal accounts or sessions. The token is not sensitive cryptographic material. localStorage is simpler and sufficient for this self-hosted, low-risk use case. httpOnly cookies would add unnecessary complexity (login flow, session management) for no security benefit in this context.
 
 ### 3.6 Progressive Web App
 
