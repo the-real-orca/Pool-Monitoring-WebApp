@@ -23,12 +23,9 @@ const form = reactive({
 const errors = reactive({})
 
 function resetForm() {
-  form.time = ''
-  form.name = settings.poolName
-  form.temp = FIELD_CONFIG.temp.default
-  form.pH = FIELD_CONFIG.pH.default
-  form.cl = FIELD_CONFIG.cl.default
+  //form.name = settings.poolName // reset to default name
   Object.keys(errors).forEach(k => delete errors[k])
+  initDateTime()
 }
 
 function validate() {

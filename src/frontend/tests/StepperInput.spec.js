@@ -59,4 +59,25 @@ describe('StepperInput', () => {
     expect(input.element.value).toBe('7.5')
     expect(wrapper.text()).toContain('mg/l')
   })
+
+  it('accepts comma as decimal separator', async () => {
+    const wrapper = createWrapper({ modelValue: 20.0, min: 0, max: 45, decimals: 1, unit: '°C' })
+    const input = wrapper.find('input')
+    await input.setValue('21,4')
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([21.4])
+  })
+
+  it('accepts dot as decimal separator', async () => {
+    const wrapper = createWrapper({ modelValue: 20.0, min: 0, max: 45, decimals: 1, unit: '°C' })
+    const input = wrapper.find('input')
+    await input.setValue('21.4')
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([21.4])
+  })
+
+  it('clamps value to min/max', async () => {
+    const wrapper = createWrapper({ modelValue: 20.0, min: 0, max: 45, decimals: 1, unit: '°C' })
+    const input = wrapper.find('input')
+    await input.setValue('99,9')
+    expect(wrapper.emitted('update:modelValue')[0]).toEqual([45.0])
+  })
 })

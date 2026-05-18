@@ -7,7 +7,8 @@ const emit = defineEmits(['update:modelValue'])
 const inputValue = computed({
   get: () => props.modelValue.toFixed(props.decimals),
   set: (val) => {
-    const num = parseFloat(val)
+    const cleaned = String(val).replace(',', '.')
+    const num = parseFloat(cleaned)
     if (!isNaN(num)) {
       const clamped = Math.max(props.min, Math.min(props.max, num))
       emit('update:modelValue', parseFloat(clamped.toFixed(props.decimals)))
@@ -30,12 +31,10 @@ function step(dir) {
       class="flex size-11 shrink-0 mr-6 items-center justify-center rounded-lg bg-primary text-white text-xl font-bold disabled:opacity-30 disabled:cursor-not-allowed active:bg-primary/80"
     >−</button>
     <input
-      v-model.number="inputValue"
-      type="number"
-      :step="step"
-      :min="min"
-      :max="max"
-      class="w-20 rounded-lg border border-slate-300 px-2 py-1 text-center text-lg font-semibold tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      v-model="inputValue"
+      type="text"
+      inputmode="decimal"
+      class="w-20 rounded-lg border border-slate-300 px-2 py-1 text-center text-lg font-semibold tabular-nums focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
     />
     <span class="text-sm text-slate-500 w-8">{{ unit }}</span>
     <button
