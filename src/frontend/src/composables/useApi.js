@@ -18,7 +18,7 @@ export function useApi() {
       temp:       form.temp,
     }
     try {
-      const res = await fetch(`${settings.backendUrl}/measurements`, {
+      const res = await fetch(`/api/measurements`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -19,16 +19,6 @@ const APP_VERSION = '1.0.0'
 
     <div class="space-y-4">
       <div class="space-y-1">
-        <label class="block text-sm font-medium text-slate-600">Backend URL</label>
-        <input
-          v-model="settings.backendUrl"
-          type="text"
-          placeholder="/api"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-      </div>
-
-      <div class="space-y-1">
         <label class="block text-sm font-medium text-slate-600">API Token</label>
         <input
           v-model="settings.token"
