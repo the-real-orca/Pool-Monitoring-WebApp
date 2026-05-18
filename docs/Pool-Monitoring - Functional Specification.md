@@ -89,8 +89,9 @@ sequenceDiagram
 #### 3.1.2 UI Behavior
 
 - Modern, bright design for outdoor use
-- Stepper buttons (+/-) for all numeric fields
+- Numeric fields: combined number input with +/- stepper buttons
 - Touch-optimized (buttons ≥ 44x44px)
+- Direct value entry via number input or incremental adjustment via stepper
 - Real-time validation with visual error display
 - After successful submission: toast notification, form reset
 - On error: show error message, preserve values, allow retry
@@ -128,16 +129,18 @@ sequenceDiagram
 │  🏊 Name (editable)         │
 │  [Pool                  ]   │
 │  🌡️ Temperature (°C)       │
-│  [  -  ] 20.0 [  +  ]       │
+│  [  -  ] [20.0] [  +  ] °C  │
 │  💧 pH Value                │
-│  [  -  ]  7.0  [  +  ]      │
+│  [  -  ] [7.0 ] [  +  ]     │
 │  🧪 Chlorine (mg/l)         │
-│  [  -  ]  1.0  [  +  ]      │
+│  [  -  ] [1.0 ] [  +  ] mg/l│
 │  ┌─────────────────────┐    │
 │  │     SEND            │    │
 │  └─────────────────────┘    │
 └─────────────────────────────┘
 ```
+
+Numeric fields combine a direct number input (center) with +/- stepper buttons for touch-friendly incremental adjustment.
 
 ### 3.4 Settings
 
@@ -153,7 +156,7 @@ Settings are stored locally on the smartphone or in the browser.
 #### 3.4.1 Storage Behavior
 
 - localStorage for settings, token Base64-encoded (obfuscation, not cryptographic protection)
-- Export/Import as JSON, "Delete all data" with confirmation
+- Settings are written to localStorage reactively on every change
 
 ### 3.5 Authentication & Security
 
@@ -257,7 +260,7 @@ Via Docker Compose.
 | ------------------ | ------------------------------------------- |
 | Network error      | Error message, manual retry                 |
 | Invalid input      | Inline validation, form blocked             |
-| API 401            | Token hint, redirect to settings            |
+| API 401            | Error toast with token hint, user navigates to settings manually |
 | API 5xx            | Error message, retry option                 |
 
 ### 7.2 Backend
@@ -276,8 +279,7 @@ Via Docker Compose.
 | Level                | Framework                | Coverage                        |
 | -------------------- | ------------------------ | ------------------------------- |
 | Frontend Unit        | Vitest                   | Composables, utils, validation  |
-| Frontend Components  | Vitest + @vue/test-utils | All Vue components              |
-| Frontend E2E         | Playwright               | Critical user journeys          |
+| Frontend Components  | Vitest + @vue/test-utils | StepperInput component          |
 | Backend Unit         | pytest                   | Models, validation, MQTT        |
 | Backend API          | httpx + pytest           | All endpoints                   |
 

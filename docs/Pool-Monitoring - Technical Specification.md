@@ -113,32 +113,62 @@ const { toast } = useToast()
 </script>
 
 <template>
-  <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" />
-  <SettingsPanel v-else @close="view = 'form'" />
-
-  <!-- Global Toast overlay -->
-  <Transition name="toast">
-    <div v-if="toast.visible" class="...toast-classes..." :data-type="toast.type">
-      {{ toast.message }}
+  <div class="flex min-h-svh items-center justify-center bg-slate-50 p-4">
+    <div class="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-lg">
+      <div class="bg-primary px-6 py-4 text-center">
+        <h1 class="text-2xl font-bold text-white">Pool Monitor</h1>
+      </div>
+      <div class="p-6">
+        <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" />
+        <SettingsPanel v-else @close="view = 'form'" />
+      </div>
     </div>
-  </Transition>
+
+    <!-- Global Toast overlay -->
+    <Transition name="toast">
+      <div v-if="toast.visible" class="fixed bottom-6 left-1/2 ..."
+           :class="{ 'bg-success': toast.type === 'success', 'bg-error': toast.type === 'error', 'bg-warning': toast.type === 'warning' }">
+        {{ toast.message }}
+      </div>
+    </Transition>
+  </div>
 </template>
+
+<style>
+.toast-enter-active, .toast-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(1rem); }
+</style>
 ```
+
+The app shell provides a centered card layout with a colored header bar. The form title is rendered inside `MeasurementForm.vue` (see FSD wireframe), while the app-level title "Pool Monitor" sits in the header bar.
 
 ### 4.2 Components
 
 | File | Responsibility | Props | Emits |
 | ---- | -------------- | ----- | ----- |
-| `StepperInput.vue` | +/- stepper around a numeric field, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
-| `MeasurementForm.vue` | Form, submit flow, validation display | – | `open-settings` |
-| `SettingsPanel.vue` | Read/write backend URL, token, pool name | – | `close` |
+| `StepperInput.vue` | Number input + +/- stepper, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
+| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon | – | `open-settings` |
+| `SettingsPanel.vue` | Read/write API token, pool name, version display | – | `close` |
 
-**`StepperInput.vue`** – contains only stepper logic, no business logic:
+**`StepperInput.vue`** – combined number input with +/- stepper buttons:
 
 ```vue
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps(['modelValue', 'min', 'max', 'step', 'decimals', 'unit'])
 const emit = defineEmits(['update:modelValue'])
+
+const inputValue = computed({
+  get: () => props.modelValue.toFixed(props.decimals),
+  set: (val) => {
+    const num = parseFloat(val)
+    if (!isNaN(num)) {
+      const clamped = Math.max(props.min, Math.min(props.max, num))
+      emit('update:modelValue', parseFloat(clamped.toFixed(props.decimals)))
+    }
+  },
+})
 
 function step(dir) {
   const next = parseFloat((props.modelValue + dir * props.step).toFixed(props.decimals))
@@ -149,11 +179,14 @@ function step(dir) {
 <template>
   <div class="flex items-center gap-2">
     <button @click="step(-1)" :disabled="modelValue <= min">−</button>
-    <span>{{ modelValue }} {{ unit }}</span>
+    <input v-model.number="inputValue" type="number" :step="step" :min="min" :max="max" />
+    <span>{{ unit }}</span>
     <button @click="step(+1)" :disabled="modelValue >= max">+</button>
   </div>
 </template>
 ```
+
+The component provides both direct value entry via a number input and touch-friendly incremental adjustment via stepper buttons. The input is clamped to min/max bounds and formatted to the specified decimal places.
 
 **`MeasurementForm.vue`** – contains the full submit flow:
 
@@ -165,22 +198,36 @@ const { show: showToast } = useToast()
 
 // Local form state (reactive, no store)
 const form = reactive({
-  time: Date.now(),
+  time: '',         // datetime-local string, initialized to local now
   name: settings.poolName,
   temp: FIELD_CONFIG.temp.default,
   pH:   FIELD_CONFIG.pH.default,
   cl:   FIELD_CONFIG.cl.default,
 })
 
+const errors = reactive({})   // inline validation errors
+
+function validate() {
+  // clears errors, checks name (1-50 chars, alphanumeric + spaces) and time
+  // returns true if valid
+}
+
 async function submit() {
-  const ok = await postMeasurement(form)
+  if (!validate()) return
+  const timestamp = Math.floor(new Date(form.time).getTime() / 1000)
+  const ok = await postMeasurement({ ...form, time: timestamp })
   if (ok) {
     showToast('Measurement saved', 'success')
     resetForm()
+  } else if (error.value === '401') {
+    showToast('Unauthorized – check your token in settings', 'error')
+  } else {
+    showToast('Failed to send measurement', 'error')
   }
-  // error.value is displayed directly in the template
 }
 ```
+
+The form title ("Measurements") is rendered inside `MeasurementForm.vue` (matching the FSD wireframe), not in `App.vue`.
 
 **`SettingsPanel.vue`** – no own state, all fields bound directly to `settings`:
 
@@ -189,14 +236,16 @@ async function submit() {
 import { useSettings } from '../composables/useSettings.js'
 const { settings } = useSettings()
 const emit = defineEmits(['close'])
+const APP_VERSION = '1.0.0'
 </script>
 
 <template>
-  <div>
-    <button @click="emit('close')">✕</button>
-    <input v-model="settings.backendUrl" type="text" />
-    <input v-model="settings.token" type="password" />
-    <input v-model="settings.poolName" type="text" />
+  <div class="relative space-y-5">
+    <button @click="emit('close')" class="...">✕</button>
+    <h1 class="text-center text-2xl font-bold">Settings</h1>
+    <input v-model="settings.token" type="password" placeholder="Bearer token" />
+    <input v-model="settings.poolName" type="text" placeholder="Pool" />
+    <p class="text-center text-xs text-slate-400">Version {{ APP_VERSION }}</p>
   </div>
 </template>
 ```
@@ -385,10 +434,13 @@ Tailwind CSS v4: no `tailwind.config.js` needed. Only configuration in `src/main
     "vite": "^6",
     "vite-plugin-pwa": "^0.21",
     "vitest": "^2",
-    "@vue/test-utils": "^2"
+    "@vue/test-utils": "^2",
+    "jsdom": "^25"
   }
 }
 ```
+
+`jsdom` is required for `vitest` to run component tests in a simulated DOM environment (`environment: 'jsdom'` in `vite.config.js`).
 
 ---
 
@@ -420,7 +472,7 @@ from contextlib import asynccontextmanager
 
 API_TOKEN   = os.getenv("API_TOKEN", "")
 MQTT_HOST   = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT   = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_PORT   = int(os.getenv("MQTT_PORT", "2883"))
 MQTT_USER   = os.getenv("MQTT_USER", "")
 MQTT_PASS   = os.getenv("MQTT_PASS", "")
 MQTT_TOPIC  = os.getenv("MQTT_TOPIC", "pool/manual")
@@ -538,10 +590,13 @@ def connect(host: str, port: int, user: str, password: str) -> None:
     if user:
         _client.username_pw_set(user, password)
     _client.reconnect_delay_set(min_delay=1, max_delay=300)
+    _client.on_connect = lambda c, u, d, rc, p: (
+        logging.info("MQTT connected (rc=%s)", rc) if rc == 0 else logging.error("MQTT connection failed (rc=%s)", rc)
+    )
     _client.on_disconnect = lambda c, u, d, rc, p: (
         logging.warning("MQTT disconnected (rc=%s), reconnecting...", rc)
     )
-    _client.connect(host, port)
+    _client.connect_async(host, port)
     _client.loop_start()
     logging.info("MQTT connecting to %s:%s", host, port)
 
@@ -560,6 +615,8 @@ def is_connected() -> bool:
     return _client is not None and _client.is_connected()
 ```
 
+`connect_async()` is used instead of `connect()` to avoid blocking during startup. The `on_connect` callback logs connection success or failure, complementing the existing `on_disconnect` handler.
+
 ### 5.7 Backend Dependencies (`requirements.txt`)
 
 ```
@@ -567,7 +624,11 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 paho-mqtt>=2.0
 python-dotenv>=1.0
+pytest>=8.0
+httpx>=0.27
 ```
+
+`pytest` and `httpx` are included for the test suite (`TestClient` is built on `httpx`). They are listed alongside runtime dependencies for simplicity – in production they are not imported.
 
 ---
 
@@ -721,17 +782,27 @@ backend/tests/
 Base fixture in `conftest.py`:
 
 ```python
+import os
+import sys
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+
+os.environ["API_TOKEN"] = "test-token"
+
 
 @pytest.fixture
 def client():
+    if "main" in sys.modules:
+        del sys.modules["main"]
     with patch("mqtt.publish", return_value=True), \
          patch("mqtt.is_connected", return_value=True):
         from main import app
         yield TestClient(app)
 ```
+
+`API_TOKEN` is set via environment variable so the auth dependency works in tests. `sys.modules["main"]` is cleared between test runs to avoid stale module state.
 
 ### 8.2 Frontend (`vitest` + `@vue/test-utils`)
 
