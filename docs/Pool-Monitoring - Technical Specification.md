@@ -728,8 +728,10 @@ server {
 
 ### 6.3 Caddyfile
 
+Production (`pool.io10.org`):
+
 ```
-pool.example.com {
+pool.io10.org {
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -738,6 +740,21 @@ pool.example.com {
     }
 }
 ```
+
+Dev (local testing, `:80`):
+
+```
+:80 {
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+```
+
+Caddy automatically obtains and renews a Let's Encrypt certificate for `pool.io10.org`. The dev config uses `:80` without TLS for local testing.
 
 ### 6.4 `.env.example`
 
@@ -748,9 +765,11 @@ MQTT_PORT=2883
 MQTT_USER=
 MQTT_PASS=
 MQTT_TOPIC=pool/manual
+FRONTEND_URL=https://pool.io10.org
 ```
 
 **Note:** `MQTT_PORT=2883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
+`FRONTEND_URL` is used by the backend CORS middleware – set to the production domain.
 
 ---
 

@@ -113,7 +113,7 @@ Goal: all three UI components are complete, visually correct, touch-optimized.
 |---|------|---------|
 | [x] 7.1 | `src/components/StepperInput.vue` | Props: `modelValue`, `min`, `max`, `step`, `decimals`, `unit` · `step(dir)`: `parseFloat(...toFixed(decimals))` + range check · emit `update:modelValue` · buttons ≥ 44×44px · `:disabled` at boundaries |
 | [x] 7.2 | `src/components/MeasurementForm.vue` | `reactive` form state (defaults from `FIELD_CONFIG`, name from `settings.poolName`) · `datetime-local` → Unix timestamp on submit · `StepperInput` for temp/pH/cl · inline error messages · `submit()`: `postMeasurement` → toast + `resetForm()` or error display with retry · loading state on submit button · emit `open-settings` |
-| [x] 7.3 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: backend URL (text), token (password), pool name (text) · emit `close` · visible version string (from constant) |
+| [x] 7.3 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: token (password), pool name (text) · emit `close` · visible version string (from constant) |
 
 **Verify:** `npm run dev` → form fully operable, settings open/close, stepper ± buttons respond correctly. ✅
 **Commit:** `16a0b39`
@@ -144,7 +144,7 @@ Goal: critical frontend logic covered by automated tests, `vitest` green.
 | [x] 9.3 | `tests/StepperInput.spec.js` | Click `+` emits `modelValue + step` · click `-` emits `modelValue - step` · no emit when `modelValue === max` (button disabled) · no emit when `modelValue === min` (button disabled) · `toFixed(decimals)` rounding correct |
 
 **Verify:** `npm run test` → all tests green. ✅ 19/19 passed.
-**Commit:** pending
+**Commit:** `e173299`
 
 ---
 
@@ -161,6 +161,36 @@ Goal: all services run together in Docker, end-to-end fully verified.
 | [x] 10.5 | `curl -X POST http://localhost:2080/api/measurements` with token + JSON | `201 {"status":"success",...}` |
 | [x] 10.6 | MQTT broker: check topic `/pool/manual` | Message in msg-sample.json format received |
 | [x] 10.7 | Open `http://localhost:2080` in browser | PWA form loads, send works, toast appears |
+
+---
+
+## Phase 11 – Polish: Settings UX
+
+Goal: settings page uses explicit "Cancel" / "Save" buttons instead of a single "✕" close button.
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 11.1 | `SettingsPanel.vue` | Replace "✕" button with "Cancel" + "Save" buttons at bottom · Cancel: revert settings to last saved state, emit `close` · Save: toast confirmation, emit `close` |
+
+**Verify:** Settings: cancel reverts unsaved changes, save persists + toast.
+**Commit:** pending
+
+---
+
+## Phase 12 – Security & Production Deployment
+
+Goal: CORS locked down, HTTPS production-ready, deployed to `pool.io10.org`.
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 12.1 | `.env.example` | Add `FRONTEND_URL=https://pool.io10.org` |
+| [ ] 12.2 | `backend/main.py` | CORS: `allow_origins` reads `FRONTEND_URL` env var, no `*` fallback · log warning if `FRONTEND_URL` is empty |
+| [ ] 12.3 | `Caddyfile` | Production: `pool.io10.org { … }` with automatic HTTPS (Let's Encrypt) · Dev: keep `:80` for local testing |
+| [ ] 12.4 | `docker-compose.yml` | Add `FRONTEND_URL` env var to backend service |
+| [ ] 12.5 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
+
+**Verify:** CORS: wrong origin → blocked · HTTPS: Caddy serves with valid Let's Encrypt cert for `pool.io10.org`.
+**Commit:** pending
 
 ---
 
