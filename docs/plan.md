@@ -16,7 +16,7 @@ Goal: empty but complete scaffold, all directories and root files present.
 | [x] 1.3 | `src/.env.example` | `API_TOKEN`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USER`, `MQTT_PASS`, `MQTT_TOPIC` |
 
 **Verify:** `find src/ -type d` shows all expected directories. ✅
-**Commit:** `31b32b6`
+
 
 ---
 
@@ -35,7 +35,7 @@ Goal: all container and proxy configurations complete and syntactically correct.
 | [x] 2.7 | `src/docker-compose.yml` | Mosquitto: folder bind mount `./mosquitto/config:/mosquitto/config:ro`, Port `2883:2883` |
 
 **Verify:** `docker compose config` runs without errors. ✅ Mosquitto container starts, binds port 2883, loads config from folder bind mount. ✅
-**Commit:** `9dc1cf3`
+
 
 ---
 
@@ -51,7 +51,7 @@ Goal: fully functional backend, startable locally with `uvicorn`.
 | [x] 3.4 | `backend/main.py` | Config block `os.getenv` (6 lines) · `Measurement` Pydantic model (field boundaries, `name_alphanumeric`, `one_decimal`) · `build_mqtt_payload()` · `verify_token()` with `secrets.compare_digest` · `CORSMiddleware` · FastAPI lifespan (MQTT connect/disconnect) · `POST /api/measurements` (201/400/401/503) · `GET /api/status` |
 
 **Verify:** `uvicorn main:app` starts. `GET /api/status` → `200 {"status":"healthy",...}`.
-**Commit:** `096aa38`
+
 
 ---
 
@@ -67,7 +67,7 @@ Goal: all critical paths covered by automated tests, `pytest` green.
 | [x] 4.4 | `backend/tests/test_auth.py` | Correct token → 201 · Wrong token → 401 · Missing header → 422 |
 
 **Verify:** `pytest -v` → all tests green, 0 warnings.
-**Commit:** `096aa38`
+
 
 ---
 
@@ -85,7 +85,7 @@ Goal: empty Vue project builds through, Tailwind classes apply, PWA manifest is 
 | [x] 5.6 | `frontend/public/icons/` | `icon-192.png`, `icon-512.png` (placeholder: sky blue with pool symbol) |
 
 **Verify:** `npm run build` → `dist/` contains `manifest.webmanifest` and `sw.js`. ✅
-**Commit:** `6a3e311`
+
 
 ---
 
@@ -101,7 +101,7 @@ Goal: all reusable logic blocks are isolated and independently testable.
 | [x] 6.4 | `src/composables/useToast.js` | Module-level `reactive` toast state (`message`, `type`, `visible`) · `show(message, type='success', duration=3000)` with `clearTimeout` + auto-hide |
 
 **Verify:** `npm run dev` starts (no import errors). ✅
-**Commit:** `adfc1ff`
+
 
 ---
 
@@ -116,7 +116,7 @@ Goal: all three UI components are complete, visually correct, touch-optimized.
 | [x] 7.3 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: token (password), pool name (text) · emit `close` · visible version string (from constant) |
 
 **Verify:** `npm run dev` → form fully operable, settings open/close, stepper ± buttons respond correctly. ✅
-**Commit:** `16a0b39`
+
 
 ---
 
@@ -129,7 +129,7 @@ Goal: complete app runs in the browser, all parts work together.
 | [x] 8.1 | `src/App.vue` | `const view = ref('form')` · `v-if/v-else` for `MeasurementForm` / `SettingsPanel` · toast overlay (`useToast`) with `<Transition name="toast">` · Tailwind base layout: centered block, `max-w-sm`, `min-h-svh`, background color `#F8FAFC` |
 
 **Verify:** `npm run dev` → full flow: form → send → toast · gear → settings → X → back · on mobile: touch targets sufficiently large. ✅
-**Commit:** `e4ee71b`
+
 
 ---
 
@@ -144,7 +144,7 @@ Goal: critical frontend logic covered by automated tests, `vitest` green.
 | [x] 9.3 | `tests/StepperInput.spec.js` | Click `+` emits `modelValue + step` · click `-` emits `modelValue - step` · no emit when `modelValue === max` (button disabled) · no emit when `modelValue === min` (button disabled) · `toFixed(decimals)` rounding correct |
 
 **Verify:** `npm run test` → all tests green. ✅ 19/19 passed.
-**Commit:** `e173299`
+
 
 ---
 
@@ -173,7 +173,7 @@ Goal: settings page uses explicit "Cancel" / "Save" buttons instead of a single 
 | [x] 11.1 | `SettingsPanel.vue` | Replace "✕" button with "Cancel" + "Save" buttons at bottom · Cancel: revert settings to last saved state, emit `close` · Save: toast confirmation, emit `close` |
 
 **Verify:** Settings: cancel reverts unsaved changes, save persists + toast.
-**Commit:** pending
+
 
 ---
 
@@ -192,7 +192,7 @@ Goal: CORS locked down, HTTPS production-ready, deployed to `pool.io10.org`.
 | [ ] 12.7 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
 
 **Verify:** CORS: wrong origin → blocked · HTTPS: Caddy serves with valid Let's Encrypt cert for `pool.io10.org`.
-**Commit:** pending
+
 
 ---
 
@@ -208,9 +208,31 @@ Goal: deployment package ready for vServer.
 | [x] 13.4 | `src/.gitignore` | Added Python caches, node_modules, dist |
 
 **Verify:** `deployment/` contains all needed files, no `node_modules` or `src` folders.
-**Commit:** pending
+
 
 ---
+
+## Phase 14 – Security Fixes
+
+Goal: Alle identifizierten Security Issues behoben.
+
+| # | Issue | File | Fix |
+|---|-------|------|-----|
+| [x] 14.1 | Docker Root User → non-root | `src/backend/Dockerfile` | `USER appuser` |
+| [x] 14.2 | Docker Root User → non-root | `src/frontend/Dockerfile` | `USER appuser` |
+| [x] 14.3 | Rate Limiting | `src/backend/requirements.txt` | `fastapi-limiter>=2.0` |
+| [x] 14.4 | Rate Limiting | `src/backend/main.py` | `RateLimiter(times=10, seconds=60)` |
+| [x] 14.5 | CORS einschränken | `src/backend/main.py` | `allow_methods=["POST","GET"]`, `allow_headers=["Authorization","Content-Type"]` |
+| [x] 14.6 | Security Header | `src/Caddyfile` | CSP, X-Frame-Options, etc. |
+| [x] 14.7 | Base Image taggen | `src/backend/Dockerfile` | `FROM python:3.12.13-slim` |
+
+**Verify:** `pytest -v` → all tests green. ✅
+
+
+
+
+---
+
 
 ## File Overview
 

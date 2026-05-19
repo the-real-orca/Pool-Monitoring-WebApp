@@ -3,13 +3,18 @@ import os
 import re
 import secrets as _secrets
 import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 import mqtt
+
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +38,35 @@ _start_time = time.time()
 
 if not FRONTEND_URL:
     log.warning("FRONTEND_URL not set – CORS will block cross-origin requests in production")
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, times: int = 10, seconds: int = 60):
+        super().__init__(app)
+        self.times = times
+        self.seconds = seconds
+        self.requests = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            client_ip = request.client.host if request.client else "unknown"
+            now = datetime.now()
+            cutoff = now - timedelta(seconds=self.seconds)
+
+            self.requests[client_ip] = [
+                t for t in self.requests[client_ip] if t > cutoff
+            ]
+
+            if len(self.requests[client_ip]) >= self.times:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests"}
+                )
+
+            self.requests[client_ip].append(now)
+
+        response = await call_next(request)
+        return response
 
 
 class Measurement(BaseModel):
@@ -85,9 +119,11 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL] if FRONTEND_URL else [],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST", "GET"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+app.add_middleware(RateLimitMiddleware, times=20, seconds=60)
 
 
 @app.post("/api/measurements", status_code=201, dependencies=[Depends(verify_token)])
