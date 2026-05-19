@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import secrets as _secrets
@@ -10,15 +11,21 @@ from pydantic import BaseModel, Field, field_validator
 
 import mqtt
 
-# Configuration
+log = logging.getLogger(__name__)
+
 API_TOKEN = os.getenv("API_TOKEN", "")
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PASS = os.getenv("MQTT_PASS", "")
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "pool/manual")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
 APP_VERSION = "1.0.0"
 _start_time = time.time()
+
+if not FRONTEND_URL:
+    log.warning("FRONTEND_URL not set – CORS will block cross-origin requests in production")
 
 
 class Measurement(BaseModel):
@@ -70,7 +77,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "*")],
+    allow_origins=[FRONTEND_URL] if FRONTEND_URL else [],
     allow_methods=["*"],
     allow_headers=["*"],
 )

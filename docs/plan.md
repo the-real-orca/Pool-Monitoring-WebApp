@@ -170,7 +170,7 @@ Goal: settings page uses explicit "Cancel" / "Save" buttons instead of a single 
 
 | # | File | Content |
 |---|------|---------|
-| [ ] 11.1 | `SettingsPanel.vue` | Replace "✕" button with "Cancel" + "Save" buttons at bottom · Cancel: revert settings to last saved state, emit `close` · Save: toast confirmation, emit `close` |
+| [x] 11.1 | `SettingsPanel.vue` | Replace "✕" button with "Cancel" + "Save" buttons at bottom · Cancel: revert settings to last saved state, emit `close` · Save: toast confirmation, emit `close` |
 
 **Verify:** Settings: cancel reverts unsaved changes, save persists + toast.
 **Commit:** pending
@@ -183,10 +183,10 @@ Goal: CORS locked down, HTTPS production-ready, deployed to `pool.io10.org`.
 
 | # | File | Content |
 |---|------|---------|
-| [ ] 12.1 | `.env.example` | Add `FRONTEND_URL=https://pool.io10.org` |
-| [ ] 12.2 | `backend/main.py` | CORS: `allow_origins` reads `FRONTEND_URL` env var, no `*` fallback · log warning if `FRONTEND_URL` is empty |
-| [ ] 12.3 | `Caddyfile` | Production: `pool.io10.org { … }` with automatic HTTPS (Let's Encrypt) · Dev: keep `:80` for local testing |
-| [ ] 12.4 | `docker-compose.yml` | Add `FRONTEND_URL` env var to backend service |
+| [x] 12.1 | `.env.example` | Add `FRONTEND_URL=https://pool.io10.org` |
+| [x] 12.2 | `backend/main.py` | CORS: `allow_origins` reads `FRONTEND_URL` env var, no `*` fallback · log warning if `FRONTEND_URL` is empty |
+| [x] 12.3 | `Caddyfile` | Production: `pool.io10.org { … }` with automatic HTTPS (Let's Encrypt) · Dev: keep `:80` for local testing |
+| [x] 12.4 | `docker-compose.yml` | Add `FRONTEND_URL` env var to backend service |
 | [ ] 12.5 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
 
 **Verify:** CORS: wrong origin → blocked · HTTPS: Caddy serves with valid Let's Encrypt cert for `pool.io10.org`.
