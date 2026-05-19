@@ -8,13 +8,19 @@ mkdir -p "$DEPLOY_DIR"
 # Root files
 cp docker-compose.yml "$DEPLOY_DIR/"
 cp Caddyfile "$DEPLOY_DIR/"
+cp .gitignore "$DEPLOY_DIR/.gitignore"
 cp .env_production "$DEPLOY_DIR/.env"
 
 # Backend
 mkdir -p "$DEPLOY_DIR/backend"
 cp backend/main.py backend/mqtt.py backend/Dockerfile backend/requirements.txt backend/pyproject.toml "$DEPLOY_DIR/backend/"
 
-# Frontend (nur dist + statische configs)
+# Frontend build
+echo "Building frontend..."
+cd frontend
+npm install --silent
+npm run build
+cd ..
 mkdir -p "$DEPLOY_DIR/frontend"
 cp -r frontend/dist frontend/public "$DEPLOY_DIR/frontend/"
 cp frontend/Dockerfile_production frontend/nginx.conf "$DEPLOY_DIR/frontend/"
