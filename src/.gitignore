@@ -1,5 +1,6 @@
 # Sercure files
 .env
+.env_production
 
 # Python
 __pycache__/

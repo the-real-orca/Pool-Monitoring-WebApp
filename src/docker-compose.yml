@@ -7,17 +7,15 @@ services:
     build: ./backend
     restart: unless-stopped
     env_file: .env
-    environment:
-      - FRONTEND_URL=${FRONTEND_URL:-}
-    depends_on:
-      - mosquitto
+#    depends_on:
+#      - mosquitto
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "2080:80"
-      - "2443:443"
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -25,15 +23,15 @@ services:
       - frontend
       - backend
 
-# for testing purposes only!
-# expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    ports:
-      - "2883:2883"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config:ro
+# # for testing purposes only!
+# # expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
+#   mosquitto:
+#     image: eclipse-mosquitto:2
+#     restart: unless-stopped
+#     ports:
+#       - "2883:2883"
+#     volumes:
+#       - ./mosquitto/config:/mosquitto/config:ro
 
 
 volumes:

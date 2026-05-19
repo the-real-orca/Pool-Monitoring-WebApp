@@ -21,6 +21,13 @@ MQTT_PASS = os.getenv("MQTT_PASS", "")
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "pool/manual")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
+_mqtt_tls_env = os.getenv("MQTT_TLS", "")
+if _mqtt_tls_env:
+    MQTT_TLS = _mqtt_tls_env.lower() == "true"
+else:
+    MQTT_TLS = MQTT_PORT == 8883
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
 APP_VERSION = "1.0.0"
 _start_time = time.time()
 
@@ -68,7 +75,7 @@ async def verify_token(authorization: str = Header(alias="Authorization")):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS)
+    mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS)
     yield
     mqtt.disconnect()
 
