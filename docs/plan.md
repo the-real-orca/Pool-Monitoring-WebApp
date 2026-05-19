@@ -219,12 +219,14 @@ Goal: Alle identifizierten Security Issues behoben.
 | # | Issue | File | Fix |
 |---|-------|------|-----|
 | [x] 14.1 | Docker Root User → non-root | `src/backend/Dockerfile` | `USER appuser` |
-| [x] 14.2 | Docker Root User → non-root | `src/frontend/Dockerfile` | `USER appuser` |
-| [x] 14.3 | Rate Limiting | `src/backend/requirements.txt` | `fastapi-limiter>=2.0` |
-| [x] 14.4 | Rate Limiting | `src/backend/main.py` | `RateLimiter(times=10, seconds=60)` |
+| [x] 14.2 | Docker Root User → non-root | `src/frontend/Dockerfile` | `USER appuser`, nginx cache dirs |
+| [x] 14.3 | Rate Limiting | `src/backend/main.py` | Eigenes Middleware: 20 req/60s auf `/api/*` |
+| [x] 14.4 | Rate Limiter IP detection | `src/backend/main.py` | `X-Forwarded-For` header support |
 | [x] 14.5 | CORS einschränken | `src/backend/main.py` | `allow_methods=["POST","GET"]`, `allow_headers=["Authorization","Content-Type"]` |
-| [x] 14.6 | Security Header | `src/Caddyfile` | CSP, X-Frame-Options, etc. |
+| [x] 14.6 | Security Header | `src/Caddyfile` | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
 | [x] 14.7 | Base Image taggen | `src/backend/Dockerfile` | `FROM python:3.12.13-slim` |
+| [x] 14.8 | Exposed credentials | `src/.gitignore` | `.env_production` ignoriert, Credentials rotiert |
+| [x] 14.9 | Deploy script | `src/deploy-prepare.sh` | Frontend build, .gitignore kopieren |
 
 **Verify:** `pytest -v` → all tests green. ✅
 
