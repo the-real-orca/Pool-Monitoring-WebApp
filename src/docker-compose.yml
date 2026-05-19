@@ -2,11 +2,21 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
 
   backend:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
 #    depends_on:
 #      - mosquitto
 
@@ -22,6 +32,11 @@ services:
     depends_on:
       - frontend
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
 
 # # for testing purposes only!
 # # expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
