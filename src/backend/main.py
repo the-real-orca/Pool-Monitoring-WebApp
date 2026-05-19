@@ -40,8 +40,15 @@ if not FRONTEND_URL:
     log.warning("FRONTEND_URL not set – CORS will block cross-origin requests in production")
 
 
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, times: int = 10, seconds: int = 60):
+    def __init__(self, app, times: int = 20, seconds: int = 60):
         super().__init__(app)
         self.times = times
         self.seconds = seconds
@@ -49,7 +56,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith("/api/"):
-            client_ip = request.client.host if request.client else "unknown"
+            client_ip = get_client_ip(request)
             now = datetime.now()
             cutoff = now - timedelta(seconds=self.seconds)
 
