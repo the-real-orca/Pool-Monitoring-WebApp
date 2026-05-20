@@ -239,14 +239,14 @@ Goal: Implement pool selection from backend list and optional notes field.
 
 | # | File | Content |
 |---|------|---------|
-| [ ] 15.1 | `backend/main.py` | Add `POOL_LIST` parsing from env, `GET /api/pools`, update `POST /api/measurements` |
-| [ ] 15.2 | `backend/models` | Update `Measurement` schema: `name` validator, add optional `notes` field |
-| [ ] 15.3 | `frontend/useApi.js` | Add `fetchPools()` function |
-| [ ] 15.4 | `frontend/MeasurementForm.vue`| Update UI to include pool select dropdown and notes textarea |
-| [ ] 15.5 | `frontend/SettingsPanel.vue` | Remove `poolName` setting |
-| [ ] 15.6 | Tests | Update and run all tests for frontend and backend |
+| [x] 15.1 | `backend/main.py` | Add `POOL_LIST` parsing from env, `GET /api/pools`, update `POST /api/measurements` |
+| [x] 15.2 | `backend/models` | Update `Measurement` schema: `name` validator, add optional `notes` field |
+| [x] 15.3 | `frontend/useApi.js` | Add `fetchPools()` function |
+| [x] 15.4 | `frontend/MeasurementForm.vue`| Update UI to include pool select dropdown and notes textarea |
+| [x] 15.5 | `frontend/SettingsPanel.vue` | Remove `poolName` setting |
+| [x] 15.6 | Tests | Update and run all tests for frontend and backend |
 
-**Verify:** `npm run test` and `pytest -v`
+**Verify:** `npm run test` and `pytest -v` → all tests green. ✅
 
 
 

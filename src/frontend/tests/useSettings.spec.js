@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const KEY = 'pool_monitor_settings'
-const DEFAULTS = { backendUrl: '/api', token: '', poolName: 'Pool' }
+const DEFAULTS = { backendUrl: '/api', token: '' }
 
 function load() {
   try {
@@ -25,12 +25,11 @@ describe('useSettings', () => {
   })
 
   it('saves and loads roundtrip', () => {
-    const data = { backendUrl: 'http://test/api', token: 'secret', poolName: 'MyPool' }
+    const data = { backendUrl: 'http://test/api', token: 'secret' }
     save(data)
     const loaded = load()
     expect(loaded.backendUrl).toBe('http://test/api')
     expect(loaded.token).toBe('secret')
-    expect(loaded.poolName).toBe('MyPool')
   })
 
   it('encodes token with Base64 on save', () => {
@@ -48,10 +47,10 @@ describe('useSettings', () => {
   })
 
   it('handles missing token gracefully', () => {
-    localStorage.setItem(KEY, JSON.stringify({ poolName: 'Test' }))
+    localStorage.setItem(KEY, JSON.stringify({ backendUrl: '/api' }))
     const loaded = load()
     expect(loaded.token).toBe('')
-    expect(loaded.poolName).toBe('Test')
+    expect(loaded.backendUrl).toBe('/api')
   })
 
   it('handles corrupted localStorage data', () => {

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref, onMounted, watch } from 'vue'
 import { FIELD_CONFIG } from '../validation.js'
 import { useSettings } from '../composables/useSettings.js'
 import { useApi } from '../composables/useApi.js'
@@ -9,21 +9,36 @@ import StepperInput from './StepperInput.vue'
 const emit = defineEmits(['open-settings'])
 
 const { settings } = useSettings()
-const { postMeasurement, loading, error } = useApi()
+const { postMeasurement, fetchPools, loading, error } = useApi()
 const { show: showToast } = useToast()
+
+const pools = ref([])
+const showNotes = ref(false)
 
 const form = reactive({
   time: '',
-  name: settings.poolName,
+  name: localStorage.getItem('lastPoolName') || '',
   temp: FIELD_CONFIG.temp.default,
   pH: FIELD_CONFIG.pH.default,
   cl: FIELD_CONFIG.cl.default,
+  notes: '',
+})
+
+watch(() => form.name, (newName) => {
+  if (newName) localStorage.setItem('lastPoolName', newName)
+})
+
+onMounted(async () => {
+  pools.value = await fetchPools()
+  if (pools.value.length && !form.name) {
+    form.name = pools.value[0].name
+  }
 })
 
 const errors = reactive({})
 
 function resetForm() {
-  //form.name = settings.poolName // reset to default name
+  form.notes = ''
   Object.keys(errors).forEach(k => delete errors[k])
   initDateTime()
 }
@@ -33,10 +48,12 @@ function validate() {
   let valid = true
 
   if (!form.name || form.name.length < 1 || form.name.length > 50) {
-    errors.name = 'Name must be 1-50 characters'
+    errors.name = 'Please select a pool'
     valid = false
-  } else if (!/^[a-zA-Z0-9 ]+$/.test(form.name)) {
-    errors.name = 'Name must be alphanumeric'
+  }
+
+  if (form.notes && form.notes.length > 500) {
+    errors.notes = 'Notes must be max 500 characters'
     valid = false
   }
 
@@ -89,13 +106,16 @@ initDateTime()
     </div>
 
     <div class="space-y-1">
-      <label class="block text-sm font-medium text-slate-600">Name</label>
-      <input
+      <label class="block text-sm font-medium text-slate-600">Pool</label>
+      <select
         v-model="form.name"
-        type="text"
-        maxlength="50"
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-      />
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+      >
+        <option value="" disabled>Please select</option>
+        <option v-for="pool in pools" :key="pool.name" :value="pool.name">
+          {{ pool.name }}
+        </option>
+      </select>
       <p v-if="errors.name" class="text-sm text-error">{{ errors.name }}</p>
     </div>
 
@@ -123,7 +143,7 @@ initDateTime()
       <div>
         <label class="block text-sm font-medium text-slate-600">Chlorine</label>
         <div class="flex justify-center mt-1">
-          <StepperInput
+<StepperInput
             v-model="form.cl"
             v-bind="FIELD_CONFIG.cl"
           />
@@ -131,7 +151,36 @@ initDateTime()
       </div>
     </div>
 
-    <div class="p-8">
+    <div class="space-y-1">
+      <button
+        type="button"
+        @click="showNotes = !showNotes"
+        class="flex w-full items-center justify-between text-sm font-medium text-slate-600 hover:text-slate-800"
+      >
+        <span>Notes</span>
+        <svg
+          class="h-4 w-4 transition-transform"
+          :class="{ 'rotate-180': showNotes }"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      <div v-if="showNotes" class="mt-1">
+        <textarea
+          v-model="form.notes"
+          rows="2"
+          maxlength="500"
+          placeholder="Enter notes..."
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+        ></textarea>
+        <p v-if="errors.notes" class="text-sm text-error">{{ errors.notes }}</p>
+      </div>
+    </div>
+
+    <div class="space-y-1">
       <button
         type="submit"
         :disabled="loading"

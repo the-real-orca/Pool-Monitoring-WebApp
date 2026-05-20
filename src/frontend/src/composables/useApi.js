@@ -6,6 +6,18 @@ export function useApi() {
   const loading = ref(false)
   const error = ref(null)
 
+  async function fetchPools() {
+    try {
+      const res = await fetch(`/api/pools`, {
+        headers: { 'Authorization': `Bearer ${settings.token}` }
+      })
+      if (!res.ok) return []
+      return await res.json()
+    } catch {
+      return []
+    }
+  }
+
   async function postMeasurement(form) {
     loading.value = true
     error.value = null
@@ -16,6 +28,9 @@ export function useApi() {
       pH:         form.pH,
       cl:         form.cl,
       temp:       form.temp,
+    }
+    if (form.notes) {
+      payload.notes = form.notes
     }
     try {
       const res = await fetch(`/api/measurements`, {
@@ -37,5 +52,5 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement }
+  return { loading, error, postMeasurement, fetchPools }
 }

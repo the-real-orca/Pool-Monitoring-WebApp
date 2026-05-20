@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
 
 const KEY = 'pool_monitor_settings'
-const DEFAULTS = { token: '', poolName: 'Pool' }
+const DEFAULTS = { token: '' }
 
 function load() {
   try {

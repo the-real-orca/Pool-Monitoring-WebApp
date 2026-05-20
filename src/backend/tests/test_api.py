@@ -4,7 +4,14 @@ from unittest.mock import patch
 def test_post_measurement_201(client):
     response = client.post(
         "/api/measurements",
-        json={"time": 1755724982, "name": "Pool", "pH": 7.2, "cl": 1.0, "temp": 24.6},
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "pH": 7.2,
+            "cl": 1.0,
+            "temp": 24.6,
+            "notes": "Cloudy",
+        },
         headers={"Authorization": "Bearer test-token"},
     )
     assert response.status_code == 201
@@ -39,6 +46,17 @@ def test_post_measurement_503_mqtt_down(client):
         assert response.status_code == 503
         assert "MQTT unavailable" in response.json()["detail"]
 
+
+def test_get_pools_200(client):
+    response = client.get("/api/pools", headers={"Authorization": "Bearer test-token"})
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert {"name": "Pool"} in data
+
+def test_get_pools_401(client):
+    response = client.get("/api/pools", headers={"Authorization": "Bearer wrong-token"})
+    assert response.status_code == 401
 
 def test_get_status_200(client):
     response = client.get("/api/status")

@@ -53,16 +53,6 @@ const save = () => {
           </button>
         </div>
       </div>
-
-      <div class="space-y-1">
-        <label class="block text-sm font-medium text-slate-600">Pool Name</label>
-        <input
-          v-model="settings.poolName"
-          type="text"
-          placeholder="Pool"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-      </div>
     </div>
 
     <div class="flex gap-3 pt-2">

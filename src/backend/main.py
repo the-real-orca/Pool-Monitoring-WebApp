@@ -1,6 +1,6 @@
+import json
 import logging
 import os
-import re
 import secrets as _secrets
 import time
 from collections import defaultdict
@@ -10,11 +10,10 @@ from datetime import datetime, timedelta
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field, field_validator
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import mqtt
-
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PASS = os.getenv("MQTT_PASS", "")
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", "pool/manual")
+POOL_LIST = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
 _mqtt_tls_env = os.getenv("MQTT_TLS", "")
@@ -78,17 +77,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 class Measurement(BaseModel):
     time: int
-    name: str = Field(default="Pool", min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=50)
     sensorType: str = "manual"
     pH: float = Field(ge=0.0, le=14.0)
     cl: float = Field(ge=0.0, le=10.0)
     temp: float = Field(ge=5.0, le=45.0)
+    notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("name")
     @classmethod
-    def name_alphanumeric(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-zA-Z0-9 ]+", v):
-            raise ValueError("name must be alphanumeric")
+    def valid_pool_name(cls, v: str) -> str:
+        valid_names = [pool["name"] for pool in POOL_LIST]
+        if v not in valid_names:
+            raise ValueError(f"Unknown pool name: {v}")
         return v
 
     @field_validator("pH", "cl", "temp")
@@ -97,8 +98,9 @@ class Measurement(BaseModel):
         return round(v, 1)
 
 
-def build_mqtt_payload(m: Measurement) -> dict:
-    return {
+def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
+    topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == m.name), "pool/manual")
+    payload = {
         "time": m.time,
         "name": m.name,
         "sensorType": m.sensorType,
@@ -106,6 +108,9 @@ def build_mqtt_payload(m: Measurement) -> dict:
         "pH": m.pH,
         "cl": m.cl,
     }
+    if m.notes:
+        payload["notes"] = m.notes
+    return topic, payload
 
 
 async def verify_token(authorization: str = Header(alias="Authorization")):
@@ -133,10 +138,15 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware, times=20, seconds=60)
 
 
+@app.get("/api/pools", dependencies=[Depends(verify_token)])
+async def get_pools():
+    return [{"name": pool["name"]} for pool in POOL_LIST]
+
+
 @app.post("/api/measurements", status_code=201, dependencies=[Depends(verify_token)])
 async def post_measurement(m: Measurement):
-    payload = build_mqtt_payload(m)
-    if not mqtt.publish(MQTT_TOPIC, payload):
+    topic, payload = build_mqtt_payload(m)
+    if not mqtt.publish(topic, payload):
         raise HTTPException(status_code=503, detail="MQTT unavailable")
     return {"status": "success", "message": "Measurement published to MQTT"}
 
