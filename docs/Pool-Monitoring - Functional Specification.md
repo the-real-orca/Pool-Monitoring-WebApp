@@ -81,7 +81,8 @@ sequenceDiagram
 | Field          | Type                                           | Default         | Step  | Range           | Validation                 |
 | -------------- | ---------------------------------------------- | --------------- | ----- | --------------- | -------------------------- |
 | **Date/Time**  | datetime-local (UI) / Unix timestamp (Message) | <Current Time>  | -     | -               | Valid date format          |
-| **Name**       | text                                           | "Pool"          | -     | 1-50 characters | Alphanumeric + spaces      |
+| **Pool**       | select                                         | 1st Item        | -     | -               | Must exist in backend list |
+| **Notes**      | text (textarea)                                | -               | -     | Max 500 chars   | Optional free text         |
 | **Temperature**| number                                         | 20.0            | 0.2   | 5.0 – 45.0 °C   | 1 decimal place            |
 | **pH Value**   | number                                         | 7.0             | 0.1   | 0.0 – 14.0      | 1 decimal place            |
 | **Chlorine**   | number                                         | 1.0             | 0.1   | 0.0 – 10.0 mg/l | 1 decimal place            |
@@ -126,14 +127,16 @@ sequenceDiagram
 ├─────────────────────────────┤
 │  📅 Date/Time (editable)    │
 │  [2026-05-16 14:30    ]     │
-│  🏊 Name (editable)         │
-│  [Pool                  ]   │
+│  🏊 Pool                    │
+│  [Pool 1              ▼]    │
 │  🌡️ Temperature (°C)       │
 │  [  -  ] [20.0] [  +  ] °C  │
 │  💧 pH Value                │
 │  [  -  ] [7.0 ] [  +  ]     │
 │  🧪 Chlorine (mg/l)         │
 │  [  -  ] [1.0 ] [  +  ] mg/l│
+│  📝 Notes (optional)        │
+│  [                     ]    │
 │  ┌─────────────────────┐    │
 │  │     SEND            │    │
 │  └─────────────────────┘    │
@@ -149,7 +152,6 @@ Settings are stored locally on the smartphone or in the browser.
 | Setting     | Type     | Default                  | Description                |
 | ----------- | -------- | ------------------------ | -------------------------- |
 | API Token   | password | -                        | Bearer token for backend   |
-| Pool Name   | text     | "Pool"                   | Default name for measurements |
 
 > **Note on Backend URL:** The backend URL is hardcoded as `/api`. A configurable URL was removed in favor of simplicity since the PWA is always served from the same origin as the API.
 
@@ -189,6 +191,10 @@ Settings are stored locally on the smartphone or in the browser.
 
 ### 4.1 REST API
 
+#### GET /api/pools
+
+**Response 200:** `[{"name": "Pool 1"}, {"name": "Pool 2"}]`
+
 #### POST /api/measurements
 
 **Request:** `Authorization: Bearer <token>`, JSON body
@@ -196,11 +202,12 @@ Settings are stored locally on the smartphone or in the browser.
 ```json
 {
   "time": 1755724982,
-  "name": "Pool",
+  "name": "Pool 1",
   "sensorType": "manual",
   "pH": 7.2,
   "cl": 1.0,
-  "temp": 24.6
+  "temp": 24.6,
+  "notes": "Water slightly cloudy"
 }
 ```
 
@@ -221,7 +228,7 @@ Settings are set via environment variables.
 | MQTT Server   | text     | mqtt://localhost | MQTT server URL          |
 | MQTT User     | text     | -                | MQTT username            |
 | MQTT Password | password | -                | MQTT password            |
-| MQTT Topic    | text     | "pool/manual"    | Topic for MQTT publish   |
+| POOL_LIST     | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics |
 
 ### 4.3 MQTT Integration
 
@@ -229,6 +236,7 @@ Measurements are sent to the preconfigured MQTT topic.
 Data is validated in the backend and a new JSON message is generated to prevent malformed data and code injection.
 
 Same validation ranges as the frontend (see frontend form field table).
+The MQTT topic is dynamically selected based on the submitted pool `name` mapping in `POOL_LIST`.
 
 ---
 

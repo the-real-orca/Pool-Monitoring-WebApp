@@ -148,7 +148,7 @@ The app shell provides a centered card layout with a colored header bar. The for
 | ---- | -------------- | ----- | ----- |
 | `StepperInput.vue` | Number input + +/- stepper, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
 | `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon | – | `open-settings` |
-| `SettingsPanel.vue` | Read/write API token, pool name, version display | – | `close` |
+| `SettingsPanel.vue` | Read/write API token, version display | – | `close` |
 
 **`StepperInput.vue`** – combined number input with +/- stepper buttons:
 
@@ -199,10 +199,11 @@ const { show: showToast } = useToast()
 // Local form state (reactive, no store)
 const form = reactive({
   time: '',         // datetime-local string, initialized to local now
-  name: settings.poolName,
+  name: '',         // populated from fetchPools
   temp: FIELD_CONFIG.temp.default,
   pH:   FIELD_CONFIG.pH.default,
   cl:   FIELD_CONFIG.cl.default,
+  notes: '',        // optional text
 })
 
 const errors = reactive({})   // inline validation errors
@@ -244,7 +245,6 @@ const APP_VERSION = '1.0.0'
     <button @click="emit('close')" class="...">✕</button>
     <h1 class="text-center text-2xl font-bold">Settings</h1>
     <input v-model="settings.token" type="password" placeholder="Bearer token" />
-    <input v-model="settings.poolName" type="text" placeholder="Pool" />
     <p class="text-center text-xs text-slate-400">Version {{ APP_VERSION }}</p>
   </div>
 </template>
@@ -262,7 +262,7 @@ Token is stored Base64-encoded (obfuscation, not a security feature).
 import { reactive, watch } from 'vue'
 
 const KEY = 'pool_monitor_settings'
-const DEFAULTS = { backendUrl: '/api', token: '', poolName: 'Pool' }
+const DEFAULTS = { backendUrl: '/api', token: '' }
 
 function load() {
   try {
@@ -299,6 +299,10 @@ export function useApi() {
   const loading = ref(false)
   const error = ref(null)
 
+  async function fetchPools() {
+    // GET /api/pools and return the array, handle errors
+  }
+
   async function postMeasurement(form) {
     loading.value = true
     error.value = null
@@ -309,6 +313,7 @@ export function useApi() {
       pH:         form.pH,
       cl:         form.cl,
       temp:       form.temp,
+      notes:      form.notes || null,
     }
     try {
       const res = await fetch(`${settings.backendUrl}/measurements`, {
@@ -470,12 +475,14 @@ Directly via `os.getenv()` – no separate config module:
 import os, time, secrets as _secrets
 from contextlib import asynccontextmanager
 
+import json
+
 API_TOKEN   = os.getenv("API_TOKEN", "")
 MQTT_HOST   = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT   = int(os.getenv("MQTT_PORT", "2883"))
 MQTT_USER   = os.getenv("MQTT_USER", "")
 MQTT_PASS   = os.getenv("MQTT_PASS", "")
-MQTT_TOPIC  = os.getenv("MQTT_TOPIC", "pool/manual")
+POOL_LIST   = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
 APP_VERSION = "1.0.0"
 _start_time = time.time()
 ```
@@ -491,17 +498,19 @@ import re
 
 class Measurement(BaseModel):
     time:       int
-    name:       str  = Field(default="Pool", min_length=1, max_length=50)
+    name:       str  = Field(min_length=1, max_length=50)
     sensorType: str  = "manual"
     pH:         float = Field(ge=0.0, le=14.0)
     cl:         float = Field(ge=0.0, le=10.0)
     temp:       float = Field(ge=5.0, le=45.0)
+    notes:      str | None = Field(default=None, max_length=500)
 
     @field_validator("name")
     @classmethod
-    def name_alphanumeric(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-zA-Z0-9 ]+", v):
-            raise ValueError("name must be alphanumeric")
+    def valid_pool_name(cls, v: str) -> str:
+        valid_names = [pool["name"] for pool in POOL_LIST]
+        if v not in valid_names:
+            raise ValueError(f"Unknown pool name: {v}")
         return v
 
     @field_validator("pH", "cl", "temp")
@@ -513,8 +522,9 @@ class Measurement(BaseModel):
 **MQTT payload:** On publish, a new sanitized message is built – no passthrough of raw data.
 
 ```python
-def build_mqtt_payload(m: Measurement) -> dict:
-    return {
+def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
+    topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == m.name), "pool/manual")
+    payload = {
         "time":       m.time,
         "name":       m.name,
         "sensorType": m.sensorType,
@@ -522,6 +532,9 @@ def build_mqtt_payload(m: Measurement) -> dict:
         "pH":         m.pH,
         "cl":         m.cl,
     }
+    if m.notes:
+        payload["notes"] = m.notes
+    return topic, payload
 ```
 
 ### 5.4 Auth Dependency
@@ -554,11 +567,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/api/pools", dependencies=[Depends(verify_token)])
+async def get_pools():
+    return [{"name": pool["name"]} for pool in POOL_LIST]
+
 @app.post("/api/measurements", status_code=201,
           dependencies=[Depends(verify_token)])
 async def post_measurement(m: Measurement):
-    payload = build_mqtt_payload(m)
-    if not mqtt.publish(MQTT_TOPIC, payload):
+    topic, payload = build_mqtt_payload(m)
+    if not mqtt.publish(topic, payload):
         raise HTTPException(status_code=503, detail="MQTT unavailable")
     return {"status": "success", "message": "Measurement published to MQTT"}
 
