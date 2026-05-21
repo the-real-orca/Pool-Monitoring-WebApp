@@ -135,7 +135,7 @@ sequenceDiagram
 │  [  -  ] [7.0 ] [  +  ]     │
 │  🧪 Chlorine (mg/l)         │
 │  [  -  ] [1.0 ] [  +  ] mg/l│
-│  📝 Notes (optional)        │
+│  📝 Notes / Status         │
 │  [                     ]    │
 │  ┌─────────────────────┐    │
 │  │     SEND            │    │
@@ -207,7 +207,7 @@ Settings are stored locally on the smartphone or in the browser.
   "pH": 7.2,
   "cl": 1.0,
   "temp": 24.6,
-  "notes": "Water slightly cloudy"
+  "status": "Water slightly cloudy"
 }
 ```
 

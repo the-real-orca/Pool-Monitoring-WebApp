@@ -82,7 +82,7 @@ class Measurement(BaseModel):
     pH: float = Field(ge=0.0, le=14.0)
     cl: float = Field(ge=0.0, le=10.0)
     temp: float = Field(ge=5.0, le=45.0)
-    notes: str | None = Field(default=None, max_length=500)
+    status: str | None = Field(default=None, max_length=100)
 
     @field_validator("name")
     @classmethod
@@ -108,8 +108,8 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
         "pH": m.pH,
         "cl": m.cl,
     }
-    if m.notes:
-        payload["notes"] = m.notes
+    if m.status:
+        payload["status"] = m.status
     return topic, payload
 
 

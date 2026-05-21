@@ -13,7 +13,7 @@ const { postMeasurement, fetchPools, loading, error } = useApi()
 const { show: showToast } = useToast()
 
 const pools = ref([])
-const showNotes = ref(false)
+const showStatus = ref(false)
 
 const form = reactive({
   time: '',
@@ -38,7 +38,7 @@ onMounted(async () => {
 const errors = reactive({})
 
 function resetForm() {
-  form.notes = ''
+  form.status = ''
   Object.keys(errors).forEach(k => delete errors[k])
   initDateTime()
 }
@@ -52,8 +52,8 @@ function validate() {
     valid = false
   }
 
-  if (form.notes && form.notes.length > 500) {
-    errors.notes = 'Notes must be max 500 characters'
+  if (form.status && form.status.length > 500) {
+    errors.status = 'Status must be max 500 characters'
     valid = false
   }
 
@@ -154,10 +154,10 @@ initDateTime()
     <div class="space-y-1">
       <button
         type="button"
-        @click="showNotes = !showNotes"
+        @click="showStatus = !showStatus"
         class="flex w-full items-center justify-between text-sm font-medium text-slate-600 hover:text-slate-800"
       >
-        <span>Notes</span>
+        <span>Notes / Status</span>
         <svg
           class="h-4 w-4 transition-transform"
           :class="{ 'rotate-180': showNotes }"
@@ -168,15 +168,15 @@ initDateTime()
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      <div v-if="showNotes" class="mt-1">
+      <div v-if="showStatus" class="mt-1">
         <textarea
-          v-model="form.notes"
+          v-model="form.status"
           rows="2"
           maxlength="500"
-          placeholder="Enter notes..."
+          placeholder="Enter status..."
           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
         ></textarea>
-        <p v-if="errors.notes" class="text-sm text-error">{{ errors.notes }}</p>
+        <p v-if="errors.status" class="text-sm text-error">{{ errors.status }}</p>
       </div>
     </div>
 

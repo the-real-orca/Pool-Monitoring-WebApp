@@ -29,8 +29,8 @@ export function useApi() {
       cl:         form.cl,
       temp:       form.temp,
     }
-    if (form.notes) {
-      payload.notes = form.notes
+    if (form.status) {
+      payload.status = form.status
     }
     try {
       const res = await fetch(`/api/measurements`, {

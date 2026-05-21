@@ -98,21 +98,21 @@ def test_unknown_name():
     assert "Unknown pool name: Unknown Pool" in str(exc.value)
 
 
-# --- Notes tests ---
+# --- Status tests ---
 
-def test_notes_valid():
-    m = Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0, notes="Some text")
-    assert m.notes == "Some text"
+def test_status_valid():
+    m = Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0, status="Some text")
+    assert m.status == "Some text"
 
 
-def test_notes_too_long():
+def test_status_too_long():
     with pytest.raises(ValidationError):
-        Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0, notes="A" * 501)
+        Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0, status="A" * 501)
 
 
-def test_notes_default():
+def test_status_default():
     m = Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0)
-    assert m.notes is None
+    assert m.status is None
 
 
 # --- Rounding tests ---

@@ -10,7 +10,7 @@ def test_post_measurement_201(client):
             "pH": 7.2,
             "cl": 1.0,
             "temp": 24.6,
-            "notes": "Cloudy",
+            "status": "Cloudy",
         },
         headers={"Authorization": "Bearer test-token"},
     )
