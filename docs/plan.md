@@ -189,7 +189,7 @@ Goal: CORS locked down, HTTPS production-ready, deployed to `pool.io10.org`.
 | [x] 12.4 | `docker-compose.yml` | Add `FRONTEND_URL` env var to backend service |
 | [x] 12.5 | `backend/mqtt.py` | TLS support for external MQTT with self-signed certificates (ssl.create_default_context) |
 | [x] 12.6 | `backend/main.py` | `MQTT_TLS` env var: default based on port (8883), can be overridden |
-| [ ] 12.7 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
+| [x] 12.7 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
 
 **Verify:** CORS: wrong origin → blocked · HTTPS: Caddy serves with valid Let's Encrypt cert for `pool.io10.org`.
 
