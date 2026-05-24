@@ -1,6 +1,6 @@
 # Implementation Plan: Pool-Monitoring PWA
 
-**Version:** 1.0 | **Based on:** TSD 1.0, FSD 1.0 | **Date:** 2026-05-17
+**Version:** 2.0 | **Based on:** TSD 2.0, FSD 2.0 | **Date:** 2026-05-24
 **Legend:** `[ ]` open · `[x]` done
 
 ---
@@ -249,6 +249,89 @@ Goal: Implement pool selection from backend list and optional notes field.
 **Verify:** `npm run test` and `pytest -v` → all tests green. ✅
 
 
+---
+
+## Phase 16 – Feature: Automatic Image Analysis
+
+Goal: User captures a photo of test strips + reference scale, the backend forwards
+it to a multimodal AI service, extracts pH/chlorine/time and prefills the form.
+Hardened with per-day rate limit, image persistence for debugging, and explicit
+error mapping for refusals/timeouts/auth failures.
+
+### 16.1 Backend – AI client & configuration
+
+| # | File | Content |
+|---|------|---------|
+| [x] 16.1.1 | `src/.env.example` | Add `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_MAX_REQUESTS_PER_DAY=10`, `AI_TIMEOUT_SECONDS=30`, `AI_IMAGE_STORAGE_PATH=/data/ai`, `AI_IMAGE_RETENTION_DAYS=30`, `AI_MAX_IMAGE_BYTES=10485760` |
+| [x] 16.1.2 | `src/backend/requirements.txt` | Add `python-multipart>=0.0.9`, `openrouter>=0.9,<1.0`, `pytest-asyncio>=0.23` |
+| [x] 16.1.3 | `src/backend/main.py` | Read AI env vars; `_ai_counter` UTC-day bucket; `ai_rate_check_and_increment()` |
+| [x] 16.1.4 | `src/backend/ai.py` | `ImageAnalysisResult` Pydantic model · `analyze_pool_image(image_bytes, mime, hint)` using official `openrouter` Python SDK · `response_format=ImageAnalysisResult` Pydantic → JSON schema · system prompt constant · `msg.refusal` check → `AIRefusalError` · error classes (`AIRefusalError`, `AISchemaError`, `AIAuthError`, `AITimeoutError`, `AIServiceError`) · image+result persistence to `AI_IMAGE_STORAGE_PATH/<date>/<ts>_<sha>.{jpg,json}` · `startup()` / `shutdown()` for SDK client lifecycle and retention pruning |
+| [x] 16.1.5 | `src/backend/main.py` | Lifespan: `await ai.startup()` / `await ai.shutdown()` |
+
+**Verify:** `uvicorn main:app` starts without errors when `AI_API_KEY` empty (feature degrades gracefully).
+
+### 16.2 Backend – `/api/analyze-image` endpoint
+
+| # | File | Content |
+|---|------|---------|
+| [x] 16.2.1 | `src/backend/main.py` | `POST /api/analyze-image` route: `UploadFile` + `Json[AnalyzeImageHint]` form; auth dependency; MIME allow-list; byte cap; `ai_rate_check_and_increment()`; map AI exceptions → 422/502/503; return `ImageAnalysisResult` + `requestsRemainingToday` |
+| [x] 16.2.2 | `src/backend/main.py` | Extend `GET /api/status` with `aiConfigured`, `imageAnalysisRequestsToday` |
+
+**Verify:** `curl -F image=@strip.jpg -H "Authorization: Bearer ..." /api/analyze-image` → 200 with extracted values (against mocked AI in tests).
+
+### 16.3 Backend – Tests
+
+| # | File | Test cases |
+|---|------|------------|
+| [x] 16.3.1 | `src/backend/tests/test_ai.py` | Happy path (SDK mock returns valid parsed response) → `ImageAnalysisResult` · `msg.refusal` set → `AIRefusalError` · `ValidationError` on parsed → `AISchemaError` · SDK `AuthenticationError` → `AIAuthError` · SDK `TimeoutError` → `AITimeoutError` · file is persisted to storage path · image hash dedup |
+| [x] 16.3.2 | `src/backend/tests/test_api.py` | `POST /api/analyze-image`: 200 valid · 400 wrong MIME · 400 oversized · 401 missing token · 422 on `AIRefusalError` · 429 after `AI_MAX_REQUESTS_PER_DAY` reached · 503 on timeout · counter rolls over at UTC midnight (mock `datetime`) |
+| [x] 16.3.3 | `src/backend/tests/conftest.py` | Add fixtures: temp `AI_IMAGE_STORAGE_PATH` (`tmp_path`), patch `ai.analyze_pool_image` per test, reset `_ai_counter` between tests |
+
+**Verify:** `pytest -v` → all tests green incl. new AI tests.
+
+### 16.4 Frontend – Image capture & API call
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 16.4.1 | `src/frontend/src/composables/useImage.js` | `compress(file, {maxEdge, quality})` using `createImageBitmap` + `OffscreenCanvas`, returns JPEG `File` |
+| [ ] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image + JSON-stringified `data`), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
+| [ ] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · preview thumbnail · error display · emits `applied({pH, cl, time})` |
+| [ ] 16.4.4 | `src/frontend/src/components/MeasurementForm.vue` | "Analyze Photo" button between pool select and temperature; opens modal; on `applied` → merge values into form state + success toast |
+| [ ] 16.4.5 | `src/frontend/src/composables/useToast.js` | (no change – reuse) |
+
+**Verify:** `npm run dev` → tap button → camera opens → selected image shows preview, loading state, fields prefilled with mocked backend response.
+
+### 16.5 Frontend – Tests
+
+| # | File | Test cases |
+|---|------|------------|
+| [ ] 16.5.1 | `src/frontend/tests/useImage.spec.js` | Long-edge clamp respected · output is `image/jpeg` · output bytes < input bytes for an oversized fixture · throws on non-image file |
+| [ ] 16.5.2 | `src/frontend/tests/useApi.spec.js` (new) | `analyzeImage` builds correct `FormData`, sets only `Authorization` header, maps 401/422/429/5xx to distinct error strings (use `vi.fn()` on `fetch`) |
+
+**Verify:** `npm run test` → all tests green.
+
+### 16.6 Infrastructure
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 16.6.1 | `src/docker-compose.yml` | Add named volume `ai_data` mounted at `/data/ai` on the backend service |
+| [ ] 16.6.2 | `src/docker-compose.yml` | Pass new AI env vars to the backend service (`env_file: .env` already covers them) |
+| [ ] 16.6.3 | `src/Caddyfile` | Increase `request_body max_size 12MB` for `/api/analyze-image` route only |
+
+**Verify:** `docker compose config` clean; volume persists across `docker compose down && up`.
+
+### 16.7 End-to-end integration
+
+| # | Step | Expected result |
+|---|------|-----------------|
+| [ ] 16.7.1 | `.env`: set real `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL` | Backend logs "AI configured" |
+| [ ] 16.7.2 | Open PWA on phone, tap "Analyze Photo" | Camera opens, photo capture works |
+| [ ] 16.7.3 | Submit a test-strip photo | Form pH/cl prefilled within < 15 s; toast "Values extracted – please verify" |
+| [ ] 16.7.4 | Repeat 11× within one day | 11th request returns 429 + toast "Daily image-analysis limit reached" |
+| [ ] 16.7.5 | Inspect `AI_IMAGE_STORAGE_PATH` | Image + JSON pair stored per request, dated subdirectory |
+| [ ] 16.7.6 | Manually edit prefilled values, press SEND | Measurement reaches MQTT topic with corrected values |
+
+**Verify:** Full flow works end-to-end; failure modes (rate limit, timeout) degrade gracefully to manual entry.
 
 
 ---
@@ -257,23 +340,25 @@ Goal: Implement pool selection from backend list and optional notes field.
 ## File Overview
 
 ```
-src/                                   27 files total
+src/
 ├── .gitignore
 ├── .env.example
 ├── docker-compose.yml
 ├── Caddyfile
-├── backend/                           9 files
+├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── pyproject.toml
 │   ├── main.py
 │   ├── mqtt.py
+│   ├── ai.py                          # Phase 16
 │   └── tests/
 │       ├── conftest.py
 │       ├── test_models.py
 │       ├── test_api.py
-│       └── test_auth.py
-└── frontend/                          18 files
+│       ├── test_auth.py
+│       └── test_ai.py                 # Phase 16
+└── frontend/
     ├── Dockerfile
     ├── nginx.conf
     ├── package.json
@@ -290,13 +375,17 @@ src/                                   27 files total
     │   ├── components/
     │   │   ├── StepperInput.vue
     │   │   ├── MeasurementForm.vue
+    │   │   ├── ImageCaptureModal.vue  # Phase 16
     │   │   └── SettingsPanel.vue
     │   └── composables/
     │       ├── useSettings.js
     │       ├── useApi.js
+    │       ├── useImage.js            # Phase 16
     │       └── useToast.js
     └── tests/
         ├── validation.spec.js
         ├── useSettings.spec.js
-        └── StepperInput.spec.js
+        ├── StepperInput.spec.js
+        ├── useImage.spec.js           # Phase 16
+        └── useApi.spec.js             # Phase 16
 ```

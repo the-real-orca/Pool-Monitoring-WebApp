@@ -57,3 +57,26 @@ The app is delivered as a PWA. Installation happens without an app store via the
 - Virtual server with Docker environment (existing)
 - Secure connection (Let's Encrypt)
 - Authentication / login
+
+
+### Automatic Image Analysis
+
+Extend the app with intelligent image recognition for test strip analysis. Users can capture a photo of test strips and reference scale directly within the app. The image is sent to an AI service backend, which analyzes it to extract pH and chlorine values, then returns the results to prefill the measurement form. Users can review and optionally correct the extracted values before submitting the measurement.
+
+**Workflow:**
+1. Capture photo of test strips and reference scale via in-app camera.
+2. Send photo to backend for AI analysis.
+3. Backend stores image for logging and debugging purposes.
+4. AI service analyzes the image and extracts pH, chlorine, and metadata.
+5. Backend stores analysis results.
+6. Return extracted values to frontend and auto-populate measurement fields.
+7. User reviews and optionally corrects values.
+8. Submit measurement manually.
+
+**Security & Reliability:**
+- Rate limiting: Maximum 10 AI analysis requests per day (configurable in backend).
+- Robust error handling for AI service failures, invalid tokens, timeouts, and refusals.
+- Fallback to manual entry if image analysis fails.
+
+
+

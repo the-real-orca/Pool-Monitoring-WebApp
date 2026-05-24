@@ -11,6 +11,7 @@ Progressive Web App (PWA) for manual entry of pool measurements (pH, chlorine, t
 ### 1.2 Core Features
 
 - Manual data entry at the pool via smartphone
+- **Automatic Image Analysis:** Capture a photo of test strips + reference scale, extract pH/chlorine via multimodal AI, prefill form fields
 - Comparison of manual vs. automatic measurements (data foundation)
 - Sensor drift analysis and calibration (prepared, not part of this project)
 
@@ -31,13 +32,17 @@ graph TB
     PWA["Progressive Web App<br/><i>(Smartphone / Browser)</i>"]
     Caddy["Reverse Proxy (Caddy)"]
     Frontend["Frontend (Nginx)"]
-    API["API-Bridge (FastAPI)<br/><i>REST -> MQTT/DB Bridge</i>"]
+    API["API-Bridge (FastAPI)<br/><i>REST -> MQTT/AI Bridge</i>"]
     MQTT["Mosquitto Broker"]
+    AI["AI Service<br/><i>(OpenAI / Anthropic / Gemini)</i>"]
+    Disk["Local Disk<br/><i>(image + result logging)</i>"]
 
     PWA -->|HTTPS| Caddy
     Caddy -->|/api/*| API
     Caddy -->|/*| Frontend
     API -->|MQTT| MQTT
+    API -->|HTTPS| AI
+    API <-->|fs| Disk
 
 ```
 
@@ -62,12 +67,38 @@ sequenceDiagram
 
 ```
 
+**Analyze Test Strip Image**
+
+```mermaid
+sequenceDiagram
+    participant PWA as PWA (Smartphone)
+    participant Caddy as Caddy (Proxy)
+    participant API as API-Bridge (FastAPI)
+    participant AI as AI Service
+    participant FS as Disk
+
+    PWA->>PWA: Capture photo (camera)
+    PWA->>PWA: Compress (Canvas API)
+    PWA->>Caddy: POST /api/analyze-image (multipart, HTTPS)
+    Caddy->>API: Forward
+    API->>API: Validate token + rate limit (max N/day)
+    API->>API: Validate MIME type + file size
+    API->>FS: Persist image (debug / audit)
+    API->>AI: Send image + system prompt (structured output)
+    AI->>API: JSON {pH, cl, time, confidence}
+    API->>FS: Persist AI result alongside image
+    API->>Caddy: 200 + extracted values
+    Caddy->>PWA: Prefill form
+
+```
+
 ### 2.3 Technology Stack
 
 | Component     | Technology                                             |
 | ------------- | ------------------------------------------------------ |
 | Frontend      | Vue.js 3 (Composition API), Tailwind CSS, Vite, Chart.js |
-| Backend       | Python FastAPI, paho-mqtt                              |
+| Backend       | Python FastAPI, paho-mqtt, httpx (AI client)           |
+| AI Service    | Multimodal LLM (OpenAI / Anthropic / Gemini) – pluggable via env |
 | Infrastructure| Docker Compose, Caddy (SSL), Mosquitto, Nginx          |
 
 ---
@@ -75,6 +106,10 @@ sequenceDiagram
 ## 3. Frontend
 
 ### 3.1 Measurement Entry (Main View)
+
+In addition to manual data entry, the form offers a **"Analyze Photo"** action that opens
+the camera, lets the user capture a test-strip photo, and prefills pH/chlorine/time from
+the AI result. Manual correction remains possible before submitting.
 
 #### 3.1.1 Form Fields
 
@@ -129,6 +164,9 @@ sequenceDiagram
 │  [2026-05-16 14:30    ]     │
 │  🏊 Pool                    │
 │  [Pool 1              ▼]    │
+│  ┌─────────────────────┐    │
+│  │  📷 ANALYZE PHOTO   │    │
+│  └─────────────────────┘    │
 │  🌡️ Temperature (°C)       │
 │  [  -  ] [20.0] [  +  ] °C  │
 │  💧 pH Value                │
@@ -144,6 +182,28 @@ sequenceDiagram
 ```
 
 Numeric fields combine a direct number input (center) with +/- stepper buttons for touch-friendly incremental adjustment.
+
+### 3.1.3 Image Analysis Flow
+
+1. User taps **Analyze Photo** → device camera opens (`<input capture="environment">`).
+2. Captured image is **client-side compressed** (Canvas API, max 1600 px on long edge,
+   JPEG quality ~0.85) to minimize upload size and latency.
+3. Loading overlay is shown while the request runs (analysis can take several seconds
+   due to model latency, see TSD).
+4. On success: `pH`, `cl`, `time` (if detected) prefilled into the form fields, a toast
+   indicates "Values extracted – please verify". The user **must** still press SEND.
+5. On error: toast with cause (rate limit, AI refusal, timeout, no values detected).
+   Form remains unchanged so the user can fall back to fully manual entry.
+
+User-facing error variants:
+
+| Cause                       | Toast message                                                |
+| --------------------------- | ------------------------------------------------------------ |
+| Daily rate limit reached    | "Daily image-analysis limit reached. Please enter manually." |
+| AI refusal / safety filter  | "AI could not analyze the image. Please try a clearer photo."|
+| AI timeout / network        | "AI service unreachable. Please try again."                  |
+| Values out of plausible range | "Extracted values look implausible – please verify manually." |
+| File too large / wrong type | "Image rejected (size or format). Try again."                |
 
 ### 3.4 Settings
 
@@ -214,21 +274,67 @@ Settings are stored locally on the smartphone or in the browser.
 **Response 201:** `{ "status": "success", "message": "Measurement published to MQTT" }`
 **Errors:** 400 (invalid), 401 (unauthorized), 503 (MQTT down)
 
+#### POST /api/analyze-image
+
+Analyzes a photo of a pool test strip + reference scale and returns extracted values.
+
+**Request:** `Authorization: Bearer <token>`, `Content-Type: multipart/form-data`
+
+| Part      | Type    | Description                                            |
+| --------- | ------- | ------------------------------------------------------ |
+| `image`   | file    | JPEG or PNG, max 10 MB, max 4096 px edge               |
+| `data`    | string  | JSON-encoded metadata, e.g. `{"hint": "outdoor"}` (optional) |
+
+**Response 200:**
+
+```json
+{
+  "pH": 7.2,
+  "cl": 1.0,
+  "time": 1755724982,
+  "confidence": 0.86,
+  "model": "gpt-4o",
+  "requestsRemainingToday": 7
+}
+```
+
+`pH`, `cl`, `time` may individually be `null` if the model could not extract them.
+`confidence` is `0.0–1.0` (model-reported when available, else heuristic).
+
+**Errors:**
+
+| Status | Cause                                                                |
+| ------ | -------------------------------------------------------------------- |
+| 400    | Missing/invalid file, wrong MIME type, file too large                |
+| 401    | Invalid / missing token                                              |
+| 422    | AI refused (safety) or returned no usable values                     |
+| 429    | Per-IP / global daily rate limit reached                             |
+| 502    | AI service returned an unrecoverable error (auth, schema mismatch)   |
+| 503    | AI service unreachable / timeout                                     |
+
 #### GET /api/status
 
-**Response 200:** `{ "status": "healthy", "mqttConnected": true, "uptime": 3600, "version": "1.0.0" }`
+**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "uptime": 3600, "version": "2.0.0" }`
 
 ### 4.2 Configuration
 
 Settings are set via environment variables.
 
-| Setting       | Type     | Default          | Description              |
-| ------------- | -------- | ---------------- | ------------------------ |
-| API Token     | password | -                | Bearer token for backend |
-| MQTT Server   | text     | mqtt://localhost | MQTT server URL          |
-| MQTT User     | text     | -                | MQTT username            |
-| MQTT Password | password | -                | MQTT password            |
-| POOL_LIST     | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics |
+| Setting                      | Type     | Default          | Description                                                       |
+| ---------------------------- | -------- | ---------------- | ----------------------------------------------------------------- |
+| API Token                    | password | -                | Bearer token for backend                                          |
+| MQTT Server                  | text     | mqtt://localhost | MQTT server URL                                                   |
+| MQTT User                    | text     | -                | MQTT username                                                     |
+| MQTT Password                | password | -                | MQTT password                                                     |
+| POOL_LIST                    | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics    |
+| AI_PROVIDER                  | text     | `openrouter`     | One of `openrouter`, `openai`, `anthropic`, `gemini`               |
+| AI_API_KEY                   | password | -                | API key for the chosen provider (kept server-side only)           |
+| AI_MODEL                     | text     | `openai/gpt-4o`  | Concrete model identifier (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4`) |
+| AI_MAX_REQUESTS_PER_DAY      | int      | `10`             | Hard cap on `/api/analyze-image` calls per UTC day (security)     |
+| AI_TIMEOUT_SECONDS           | int      | `30`             | HTTP timeout for AI calls                                         |
+| AI_IMAGE_STORAGE_PATH        | path     | `/data/ai`       | Directory for persisted images + AI responses (logging / debug)   |
+| AI_IMAGE_RETENTION_DAYS      | int      | `30`             | Auto-cleanup age for stored images                                |
+| AI_MAX_IMAGE_BYTES           | int      | `10485760`       | Upload size limit in bytes (10 MB default)                        |
 
 ### 4.3 MQTT Integration
 
@@ -242,13 +348,15 @@ The MQTT topic is dynamically selected based on the submitted pool `name` mappin
 
 ## 5. Non-Functional Requirements
 
-| Requirement        | Target                |
-| ------------------ | --------------------- |
-| Load time (FCP)    | < 2s over 4G          |
-| API response (p95) | < 500ms               |
-| MQTT publish       | < 200ms               |
-| Availability       | 90% (hobby)           |
-| Database           | Up to 100,000 measurements |
+| Requirement              | Target                       |
+| ------------------------ | ---------------------------- |
+| Load time (FCP)          | < 2s over 4G                 |
+| API response (p95)       | < 500ms                      |
+| MQTT publish             | < 200ms                      |
+| Image analysis (p95)     | < 15s (incl. AI round-trip)  |
+| Image upload payload     | < 2 MB after client compression |
+| Availability             | 90% (hobby)                  |
+| Database                 | Up to 100,000 measurements   |
 
 ---
 
@@ -269,27 +377,35 @@ Via Docker Compose.
 | Network error      | Error message, manual retry                 |
 | Invalid input      | Inline validation, form blocked             |
 | API 401            | Error toast with token hint, user navigates to settings manually |
+| API 429            | Toast: daily limit reached, fall back to manual entry |
+| API 422 (AI refusal / no values) | Toast: "AI could not analyze the image", form unchanged |
 | API 5xx            | Error message, retry option                 |
 
 ### 7.2 Backend
 
-| Error              | Behavior                                    |
-| ------------------ | ------------------------------------------- |
-| MQTT lost          | Reconnect (exponential backoff, max 5 min)  |
-| MQTT down          | HTTP 503, client informed                   |
-| Invalid token      | HTTP 401, logging                           |
-| DB error           | HTTP 500, health check = unhealthy          |
+| Error                       | Behavior                                                  |
+| --------------------------- | --------------------------------------------------------- |
+| MQTT lost                   | Reconnect (exponential backoff, max 5 min)                |
+| MQTT down                   | HTTP 503, client informed                                 |
+| Invalid token               | HTTP 401, logging                                         |
+| DB error                    | HTTP 500, health check = unhealthy                        |
+| AI rate limit reached       | HTTP 429, no upstream call, log event                     |
+| AI authentication / 4xx     | HTTP 502, no retry, log redacted error                    |
+| AI timeout / network        | HTTP 503, no retry, log event                             |
+| AI safety refusal           | HTTP 422, no fields prefilled, log refusal reason         |
+| AI schema violation         | HTTP 502, log raw response (truncated), do not crash      |
+| AI returns implausible vals | HTTP 422 (out of FSD ranges) – frontend warns user        |
 
 ---
 
 ## 8. Tests
 
-| Level                | Framework                | Coverage                        |
-| -------------------- | ------------------------ | ------------------------------- |
-| Frontend Unit        | Vitest                   | Composables, utils, validation  |
-| Frontend Components  | Vitest + @vue/test-utils | StepperInput component          |
-| Backend Unit         | pytest                   | Models, validation, MQTT        |
-| Backend API          | httpx + pytest           | All endpoints                   |
+| Level                | Framework                | Coverage                                    |
+| -------------------- | ------------------------ | ------------------------------------------- |
+| Frontend Unit        | Vitest                   | Composables, utils, validation              |
+| Frontend Components  | Vitest + @vue/test-utils | StepperInput component, ImageCapture flow   |
+| Backend Unit         | pytest                   | Models, validation, MQTT, AI client (mocked)|
+| Backend API          | httpx + pytest           | All endpoints incl. `/api/analyze-image` (rate limit, refusal, timeout via mocks) |
 
 ---
 

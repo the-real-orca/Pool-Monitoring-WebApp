@@ -1,6 +1,6 @@
 # Technical Specification: Pool-Monitoring PWA
 
-**Version:** 1.0 | **Based on:** FSD 1.0 | **Date:** 2026-05-17
+**Version:** 2.0 | **Based on:** FSD 2.0 | **Date:** 2026-05-24
 
 ---
 
@@ -24,6 +24,8 @@ Every file, abstraction, and dependency must justify its place.
 | PWA      | `vite-plugin-pwa` (Workbox) | Auto-generates service worker + manifest |
 | Backend  | Python 3.12, FastAPI | FSD requirement; Pydantic validation included |
 | MQTT     | `paho-mqtt ≥ 2.0` | FSD requirement; built-in exponential backoff via `reconnect_delay_set` |
+| AI client | `openrouter` (Python SDK) | Official OpenRouter Python SDK – single key, 300+ models, type-safe |
+| Multipart | `python-multipart` | Required by FastAPI for `UploadFile` / `Form` parsing |
 | Linting  | Ruff + ESLint | Fast, minimal configuration |
 
 **Deliberately excluded:**
@@ -37,6 +39,9 @@ Every file, abstraction, and dependency must justify its place.
 | Axios | Native `fetch()` is sufficient; one less dependency |
 | Chart.js | Future Enhancement |
 | Separate `middleware/` | FastAPI `Depends()` inline on the route – 5 lines instead of a module |
+| Other provider SDKs (`openai`, `anthropic`, `google-genai`) | OpenRouter SDK provides unified access to all of them; no need for per-provider SDKs |
+| LangChain / LlamaIndex | Heavy abstractions for a single structured-output call – pure overkill |
+| Persistent rate-limit store (Redis) | In-process counter (UTC-day bucket) is sufficient for a single-instance hobby deployment |
 
 ---
 
@@ -45,8 +50,9 @@ Every file, abstraction, and dependency must justify its place.
 ```
 src/
 ├── backend/
-│   ├── main.py              # FastAPI app, all routes, Pydantic model, auth
+│   ├── main.py              # FastAPI app, all routes, Pydantic models, auth, rate-limit
 │   ├── mqtt.py              # MQTT client (connect, publish, reconnect)
+│   ├── ai.py                # AI client (provider-agnostic, structured output, image storage)
 │   ├── requirements.txt
 │   ├── pyproject.toml       # Ruff/Black configuration
 │   └── Dockerfile
@@ -56,12 +62,14 @@ src/
 │   │   ├── App.vue          # Root: view toggle (form|settings), toast display
 │   │   ├── validation.js    # Field constants (min, max, step, default, unit)
 │   │   ├── components/
-│   │   │   ├── StepperInput.vue    # Reusable +/- input stepper
-│   │   │   ├── MeasurementForm.vue # Measurement form with submit flow
-│   │   │   └── SettingsPanel.vue   # Settings (URL, token, name)
+│   │   │   ├── StepperInput.vue       # Reusable +/- input stepper
+│   │   │   ├── MeasurementForm.vue    # Measurement form with submit flow + photo button
+│   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
+│   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
 │   │   └── composables/
-│   │       ├── useApi.js      # fetch wrapper with Bearer auth
+│   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. analyzeImage)
 │   │       ├── useSettings.js # localStorage read/write (reactive)
+│   │       ├── useImage.js    # Canvas-based image compression utility
 │   │       └── useToast.js    # Toast state (module-level singleton)
 │   ├── public/
 │   │   └── icons/
@@ -83,12 +91,14 @@ src/
 backend/tests/
 ├── test_models.py
 ├── test_api.py
-└── test_auth.py
+├── test_auth.py
+└── test_ai.py            # AI client: structured output, refusal, timeout, rate limit
 
 frontend/tests/
 ├── validation.spec.js
 ├── useSettings.spec.js
-└── StepperInput.spec.js
+├── StepperInput.spec.js
+└── useImage.spec.js      # Image compression: dimensions, MIME, size cap
 ```
 
 ---
@@ -147,8 +157,9 @@ The app shell provides a centered card layout with a colored header bar. The for
 | File | Responsibility | Props | Emits |
 | ---- | -------------- | ----- | ----- |
 | `StepperInput.vue` | Number input + +/- stepper, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
-| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon | – | `open-settings` |
-| `SettingsPanel.vue` | Read/write API token, version display | – | `close` |
+| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-settings` |
+| `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `open` (boolean) | `close`, `applied` (payload `{pH, cl, time}`) |
+| `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
 **`StepperInput.vue`** – combined number input with +/- stepper buttons:
 
@@ -237,7 +248,7 @@ The form title ("Measurements") is rendered inside `MeasurementForm.vue` (matchi
 import { useSettings } from '../composables/useSettings.js'
 const { settings } = useSettings()
 const emit = defineEmits(['close'])
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '2.0.0'
 </script>
 
 <template>
@@ -447,23 +458,148 @@ Tailwind CSS v4: no `tailwind.config.js` needed. Only configuration in `src/main
 
 `jsdom` is required for `vitest` to run component tests in a simulated DOM environment (`environment: 'jsdom'` in `vite.config.js`).
 
+### 4.7 Image Capture & Analysis Flow
+
+The image-analysis feature lives in **`ImageCaptureModal.vue`** and the
+**`useImage`** composable. `MeasurementForm.vue` only renders a button and the modal:
+
+```js
+// Inside MeasurementForm.vue (setup)
+const showCapture = ref(false)
+
+function applyAnalysis({ pH, cl, time }) {
+  if (pH != null) form.pH = pH
+  if (cl != null) form.cl = cl
+  if (time != null) form.time = new Date(time * 1000).toISOString().slice(0, 16)
+  showCapture.value = false
+  showToast('Values extracted – please verify', 'success')
+}
+```
+
+**`ImageCaptureModal.vue`** orchestrates capture → compress → upload:
+
+```vue
+<script setup>
+import { ref } from 'vue'
+import { useApi } from '../composables/useApi.js'
+import { useImage } from '../composables/useImage.js'
+
+const props = defineProps({ open: Boolean })
+const emit = defineEmits(['close', 'applied'])
+
+const { analyzeImage, loading, error } = useApi()
+const { compress } = useImage()
+const fileRef = ref(null)
+const previewUrl = ref(null)
+
+async function onFileSelected(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  const compressed = await compress(file, { maxEdge: 1600, quality: 0.85 })
+  previewUrl.value = URL.createObjectURL(compressed)
+  const result = await analyzeImage(compressed)
+  if (result) emit('applied', result)
+}
+</script>
+
+<template>
+  <div v-if="open" class="fixed inset-0 ...">
+    <input ref="fileRef" type="file" accept="image/*" capture="environment"
+           class="hidden" @change="onFileSelected" />
+    <button @click="fileRef.click()" :disabled="loading">Take photo</button>
+    <img v-if="previewUrl" :src="previewUrl" />
+    <p v-if="loading">Analyzing…</p>
+    <p v-if="error" class="text-error">{{ error }}</p>
+    <button @click="emit('close')">Cancel</button>
+  </div>
+</template>
+```
+
+Key points:
+
+- `<input type="file" accept="image/*" capture="environment">` opens the rear camera on
+  mobile while gracefully degrading to a file picker on desktop.
+- Compression happens on the **client** (Canvas API) – upload payload stays < 2 MB.
+- The modal does **not** mutate form state directly; it only emits `applied` with the
+  values, and the parent merges them. This keeps the form the single source of truth.
+
+### 4.8 `useImage.js` – Compression Helper
+
+```js
+export function useImage() {
+  async function compress(file, { maxEdge = 1600, quality = 0.85 } = {}) {
+    const bmp = await createImageBitmap(file)
+    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))
+    const w = Math.round(bmp.width * scale)
+    const h = Math.round(bmp.height * scale)
+    const canvas = new OffscreenCanvas(w, h)
+    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h)
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality })
+    return new File([blob], 'capture.jpg', { type: 'image/jpeg' })
+  }
+  return { compress }
+}
+```
+
+`OffscreenCanvas` is supported on all modern target browsers (FSD 3.6). A `<canvas>`
+fallback can be added if iOS Safari < 17 needs to be supported.
+
+### 4.9 `useApi.analyzeImage`
+
+Extends the existing composable. Uses `multipart/form-data` so binary data is not
+Base64-bloated (see `Integration multimodaler KI-Agenten.md` §1):
+
+```js
+async function analyzeImage(file) {
+  loading.value = true; error.value = null
+  const fd = new FormData()
+  fd.append('image', file)
+  fd.append('data', JSON.stringify({ hint: 'pool test strip' }))
+  try {
+    const res = await fetch(`${settings.backendUrl}/analyze-image`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${settings.token}` }, // no Content-Type!
+      body: fd,
+    })
+    if (res.status === 401) { error.value = 'Unauthorized – check token'; return null }
+    if (res.status === 429) { error.value = 'Daily limit reached';        return null }
+    if (res.status === 422) { error.value = 'AI could not analyze image'; return null }
+    if (!res.ok)            { error.value = `AI service error (${res.status})`; return null }
+    return await res.json()
+  } catch {
+    error.value = 'Network error'
+    return null
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+> Critical: do **not** set `Content-Type` manually – the browser must add the multipart
+> boundary itself. Setting it breaks `python-multipart` parsing in FastAPI.
+
 ---
 
 ## 5. Backend
 
 ### 5.1 File Structure and Split
 
-`main.py` contains everything: configuration, Pydantic model, auth dependency, app lifespan, and all routes.
+`main.py` contains everything that does not need its own state: configuration, Pydantic
+models, auth dependency, app lifespan, rate-limit counter, and all routes.
 `mqtt.py` is separated because the client manages its own threading state (`loop_start()`).
+`ai.py` is separated because it owns the provider abstraction, prompt construction, and
+on-disk image/result persistence.
 
 ```
 main.py
  ├── Imports
- ├── Configuration (os.getenv, 6 lines)
- ├── Pydantic model: Measurement
+ ├── Configuration (os.getenv)
+ ├── Pydantic models: Measurement, ImageAnalysisResult
  ├── Auth dependency: verify_token()
- ├── App + Lifespan (MQTT connect/disconnect)
+ ├── Rate-limit counter (UTC-day bucket, in-process)
+ ├── App + Lifespan (MQTT connect/disconnect, AI client lifecycle)
  ├── POST /api/measurements
+ ├── POST /api/analyze-image
  └── GET  /api/status
 ```
 
@@ -483,7 +619,18 @@ MQTT_PORT   = int(os.getenv("MQTT_PORT", "2883"))
 MQTT_USER   = os.getenv("MQTT_USER", "")
 MQTT_PASS   = os.getenv("MQTT_PASS", "")
 POOL_LIST   = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
-APP_VERSION = "1.0.0"
+
+# AI image analysis
+AI_PROVIDER             = os.getenv("AI_PROVIDER", "openai")
+AI_API_KEY              = os.getenv("AI_API_KEY", "")
+AI_MODEL                = os.getenv("AI_MODEL", "openai/gpt-4o")
+AI_MAX_REQUESTS_PER_DAY = int(os.getenv("AI_MAX_REQUESTS_PER_DAY", "10"))
+AI_TIMEOUT_SECONDS      = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
+AI_IMAGE_STORAGE_PATH   = os.getenv("AI_IMAGE_STORAGE_PATH", "/data/ai")
+AI_IMAGE_RETENTION_DAYS = int(os.getenv("AI_IMAGE_RETENTION_DAYS", "30"))
+AI_MAX_IMAGE_BYTES      = int(os.getenv("AI_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+
+APP_VERSION = "2.0.0"
 _start_time = time.time()
 ```
 
@@ -562,7 +709,9 @@ import mqtt  # mqtt.py
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS)
+    await ai.startup()       # creates AI_IMAGE_STORAGE_PATH, opens OpenRouter SDK client
     yield
+    await ai.shutdown()
     mqtt.disconnect()
 
 app = FastAPI(lifespan=lifespan)
@@ -582,10 +731,12 @@ async def post_measurement(m: Measurement):
 @app.get("/api/status")
 async def get_status():
     return {
-        "status":       "healthy",
-        "mqttConnected": mqtt.is_connected(),
-        "uptime":        int(time.time() - _start_time),
-        "version":       APP_VERSION,
+        "status":                     "healthy",
+        "mqttConnected":              mqtt.is_connected(),
+        "aiConfigured":               bool(AI_API_KEY),
+        "imageAnalysisRequestsToday": _ai_counter["count"],
+        "uptime":                     int(time.time() - _start_time),
+        "version":                    APP_VERSION,
     }
 ```
 
@@ -634,18 +785,236 @@ def is_connected() -> bool:
 
 `connect_async()` is used instead of `connect()` to avoid blocking during startup. The `on_connect` callback logs connection success or failure, complementing the existing `on_disconnect` handler.
 
-### 5.7 Backend Dependencies (`requirements.txt`)
+### 5.7 `ai.py` – Multimodal AI Client
+
+Uses the official **`openrouter` Python SDK** (`pip install openrouter`). A single
+SDK instance (initialized in `startup()`) gives typed access to any of the 300+
+models in the OpenRouter catalog – OpenAI GPT-4o, Anthropic Claude, Google Gemini,
+Mistral, Aleph Alpha Pharia, and more – via one API key.
+
+**Pydantic result model** – consumed by both `ai.py` and the route handler:
+
+```python
+from pydantic import BaseModel, Field
+
+class ImageAnalysisResult(BaseModel):
+    pH:         float | None = Field(default=None, ge=0.0, le=14.0)
+    cl:         float | None = Field(default=None, ge=0.0, le=10.0)
+    time:       int   | None = None     # Unix timestamp if visible on the strip / clock
+    confidence: float        = Field(default=0.0, ge=0.0, le=1.0)
+    model:      str
+```
+
+**SDK client lifecycle** (`startup()` / `shutdown()`):
+
+```python
+import openrouter
+
+_client: openrouter.OpenRouter | None = None
+
+async def startup() -> None:
+    global _client
+    _client = openrouter.OpenRouter(
+        api_key=AI_API_KEY,
+        timeout=AI_TIMEOUT_SECONDS,
+        http_referer=FRONTEND_URL or "https://pool-monitor.local",
+        x_open_router_title="PoolMonitor/2.0",
+    )
+    os.makedirs(AI_IMAGE_STORAGE_PATH, exist_ok=True)
+    _prune_old_images()
+
+async def shutdown() -> None:
+    global _client
+    _client = None   # context manager handles close
+```
+
+**Image sending** – the OpenRouter multimodal API accepts images as URL objects or
+as base64-encoded data URIs inline in the message content:
+
+```python
+import base64, hashlib
+
+def _image_content(image_bytes: bytes, mime: str) -> list[dict]:
+    b64 = base64.b64encode(image_bytes).decode()
+    return [
+        {"type": "text", "text": SYSTEM_PROMPT},
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{b64}"},
+        },
+    ]
+
+SYSTEM_PROMPT = (
+    "You analyze a photo of a pool test strip held next to its reference color scale. "
+    "Return ONLY JSON matching the provided schema. Compare the strip's color fields "
+    "against the reference scale visible in the same image. Account for outdoor lighting "
+    "and reflections; if uncertain about a value, return null instead of guessing. "
+    "Never hallucinate values that you cannot see clearly."
+)
+```
+
+**Structured output** – the OpenRouter SDK extends the OpenAI `response_format`
+mechanism. The schema is passed as a Pydantic model to `response_format`;
+the SDK handles serialization and the provider returns guaranteed-JSON:
+
+```python
+async def analyze_pool_image(image_bytes: bytes, mime: str,
+                             hint: dict | None = None) -> ImageAnalysisResult:
+
+    assert _client is not None, "startup() not called"
+
+    content = _image_content(image_bytes, mime)
+    if hint:
+        content.insert(0, {"type": "text", "text": f"Context: {hint.get('hint','')}"})
+
+    raw = _client.chat.send(
+        messages=[{"role": "user", "content": content}],
+        model=AI_MODEL,
+        response_format=ImageAnalysisResult,   # Pydantic model → JSON schema
+        # provider: {"sort": "price"}  # optional: let OpenRouter pick cheapest suitable model
+    )
+
+    # raw is a full OpenAI-compatible response object
+    msg = raw.choices[0].message
+
+    # Refusal check (OpenAI-compatible)
+    if getattr(msg, "refusal", None):
+        raise AIRefusalError(msg.refusal)
+
+    parsed = msg.parsed          # typed Pydantic model when response_format is set
+    return ImageAnalysisResult(
+        pH=parsed.pH, cl=parsed.cl, time=parsed.time,
+        confidence=getattr(parsed, "confidence", 0.0),
+        model=raw.model or AI_MODEL,
+    )
+```
+
+**Error taxonomy** – the SDK raises provider/HTTP exceptions that are caught and
+re-mapped to application-level errors:
+
+| Exception           | HTTP | Trigger                                                            |
+| ------------------- | ---- | ------------------------------------------------------------------ |
+| `AIRefusalError`    | 422  | `msg.refusal` is non-empty (OpenAI-compatible refusal marker)     |
+| `AISchemaError`     | 502  | `msg.parsed` raises `ValidationError` or raw is not JSON           |
+| `AIAuthError`       | 502  | SDK raises `AuthenticationError` (401/403 from provider)          |
+| `AITimeoutError`    | 503  | SDK raises `TimeoutError` or request exceeds `AI_TIMEOUT_SECONDS` |
+| `AIServiceError`    | 503  | SDK raises `RateLimitError` (429) or other 5xx from provider      |
+
+> **SDK note:** `openrouter` is in beta; pin the package version in `requirements.txt`
+> to avoid unexpected breaking changes (e.g. `openrouter>=0.9,<1.0`).
+
+**Image persistence** – on every `/api/analyze-image` call:
+
+```
+$AI_IMAGE_STORAGE_PATH/
+└── 2026-05-24/
+    ├── 20260524T143012Z_<sha256[:12]>.jpg     # original (post-compression) image
+    └── 20260524T143012Z_<sha256[:12]>.json    # request meta + AI raw + parsed result
+```
+
+A startup task prunes directories older than `AI_IMAGE_RETENTION_DAYS`.
+SHA256 prefix in the filename allows cheap deduplication without a database.
+
+**Public API of `ai.py`:**
+
+```python
+async def analyze_pool_image(image_bytes: bytes, mime: str,
+                             hint: dict | None = None) -> ImageAnalysisResult: ...
+
+async def startup() -> None: ...   # creates AI_IMAGE_STORAGE_PATH, starts OpenRouter client
+async def shutdown() -> None: ...  # closes client (context manager)
+
+### 5.8 Rate Limiting for `/api/analyze-image`
+
+In addition to the global Phase-14 rate limiter (per-IP, sliding window on `/api/*`),
+image analysis has a stricter **per-day cap** to bound AI costs and abuse. It is a
+simple in-process counter keyed by the current UTC date – no Redis, no DB:
+
+```python
+from datetime import datetime, timezone
+
+_ai_counter = {"date": "", "count": 0}
+
+def ai_rate_check_and_increment() -> int:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _ai_counter["date"] != today:
+        _ai_counter.update(date=today, count=0)
+    if _ai_counter["count"] >= AI_MAX_REQUESTS_PER_DAY:
+        raise HTTPException(status_code=429, detail="Daily image-analysis limit reached")
+    _ai_counter["count"] += 1
+    return AI_MAX_REQUESTS_PER_DAY - _ai_counter["count"]
+```
+
+Limitations (acceptable for a single-instance hobby deployment):
+
+- Counter resets on container restart – an attacker can re-burst once per restart.
+  Mitigated by the existing per-IP sliding-window limiter from Phase 14.
+- Not shared across replicas. A future migration to Redis is straightforward.
+
+### 5.9 `POST /api/analyze-image` Route
+
+```python
+from fastapi import File, Form, UploadFile
+from pydantic import Json, BaseModel
+
+class AnalyzeImageHint(BaseModel):
+    hint: str | None = None
+
+@app.post("/api/analyze-image",
+          dependencies=[Depends(verify_token)],
+          response_model=ImageAnalysisResult)
+async def analyze_image_endpoint(
+    image: UploadFile = File(...),
+    data:  Json[AnalyzeImageHint] = Form(default=AnalyzeImageHint()),
+):
+    if image.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(400, "Only JPEG or PNG accepted")
+    raw = await image.read()
+    if len(raw) > AI_MAX_IMAGE_BYTES:
+        raise HTTPException(400, "Image too large")
+
+    remaining = ai_rate_check_and_increment()
+
+    try:
+        result = await ai.analyze_pool_image(raw, image.content_type, data.model_dump())
+    except ai.AIRefusalError:    raise HTTPException(422, "AI refused to analyze")
+    except ai.AISchemaError:     raise HTTPException(502, "AI returned invalid schema")
+    except ai.AIAuthError:       raise HTTPException(502, "AI authentication failed")
+    except ai.AITimeoutError:    raise HTTPException(503, "AI service timeout")
+    except ai.AIServiceError:    raise HTTPException(503, "AI service unavailable")
+
+    response = result.model_dump()
+    response["requestsRemainingToday"] = remaining
+    return response
+```
+
+Notes:
+
+- `pydantic.Json[AnalyzeImageHint]` parses the `data` form field as JSON
+  (see `Integration multimodaler KI-Agenten.md` §2 – this is the "magic link").
+- `image.content_type` and explicit byte-size check defend against oversized uploads
+  before any AI cost is incurred.
+- The token check (`verify_token`) is applied **before** the file is read, so
+  unauthenticated callers cannot consume bandwidth or daily quota.
+
+### 5.10 Backend Dependencies (`requirements.txt`)
 
 ```
 fastapi>=0.115
 uvicorn[standard]>=0.30
 paho-mqtt>=2.0
 python-dotenv>=1.0
+python-multipart>=0.0.9
+openrouter>=0.9,<1.0    # Official OpenRouter Python SDK (beta – pin major version)
+httpx>=0.27             # Test transport (TestClient) + SDK internals; not used directly in app code
 pytest>=8.0
-httpx>=0.27
+pytest-asyncio>=0.23
 ```
 
-`pytest` and `httpx` are included for the test suite (`TestClient` is built on `httpx`). They are listed alongside runtime dependencies for simplicity – in production they are not imported.
+`python-multipart` is required by FastAPI's `UploadFile` / `Form`. The OpenRouter SDK is
+pinned to `>=0.9,<1.0` because it is in beta – this prevents unexpected breaking changes
+after a minor version bump. `httpx` remains for the test transport (`TestClient`). `pytest-asyncio` enables
+testing the async AI client without a real provider.
 
 ---
 
@@ -783,6 +1152,18 @@ MQTT_USER=
 MQTT_PASS=
 MQTT_TOPIC=pool/manual
 FRONTEND_URL=https://pool.io10.org
+
+# AI image analysis (optional – feature is disabled when AI_API_KEY is empty)
+# openrouter is the preferred default; it provides a unified API to models from
+# OpenAI, Anthropic, Google, Mistral, Aleph Alpha and others via a single key.
+AI_PROVIDER=openrouter
+AI_API_KEY=
+AI_MODEL=openai/gpt-4o
+AI_MAX_REQUESTS_PER_DAY=10
+AI_TIMEOUT_SECONDS=30
+AI_IMAGE_STORAGE_PATH=/data/ai
+AI_IMAGE_RETENTION_DAYS=30
+AI_MAX_IMAGE_BYTES=10485760
 ```
 
 **Note:** `MQTT_PORT=2883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
@@ -801,6 +1182,11 @@ FRONTEND_URL=https://pool.io10.org
 | CORS | FastAPI `CORSMiddleware`, own domain only, `allow_origins=[FRONTEND_URL]` |
 | MQTT auth | Username/password, backend-internal, never exposed to frontend |
 | MQTT QoS | QoS 1 (at least once) for publish |
+| AI API key | Server-side env var only, **never** sent to or referenced from the frontend |
+| Image upload | MIME allow-list (`image/jpeg`, `image/png`), hard byte cap, auth before read |
+| AI rate limit | Per-day counter (`AI_MAX_REQUESTS_PER_DAY`) returns HTTP 429 before AI call |
+| AI logging | Persisted images + raw responses are written to a non-public path inside the container; rotated by `AI_IMAGE_RETENTION_DAYS` |
+| AI output validation | Provider response parsed via Pydantic with field bounds; invalid → HTTP 502 (no passthrough) |
 
 ---
 
@@ -811,8 +1197,11 @@ FRONTEND_URL=https://pool.io10.org
 ```
 backend/tests/
 ├── test_models.py   # Pydantic: valid values, boundaries, invalid values, rounding
-├── test_api.py      # HTTP endpoints via TestClient (MQTT mocked)
-└── test_auth.py     # verify_token: valid, missing, wrong
+├── test_api.py      # HTTP endpoints via TestClient (MQTT + AI mocked)
+├── test_auth.py     # verify_token: valid, missing, wrong
+└── test_ai.py       # ai.analyze_pool_image: structured-output happy path,
+                     #   refusal -> AIRefusalError, schema mismatch -> AISchemaError,
+                     #   timeout -> AITimeoutError, rate-limit counter rollover
 ```
 
 Base fixture in `conftest.py`:
@@ -846,7 +1235,8 @@ def client():
 frontend/tests/
 ├── validation.spec.js      # FIELD_CONFIG boundaries and NAME_CONFIG pattern
 ├── useSettings.spec.js     # localStorage read/write, defaults, token encoding
-└── StepperInput.spec.js    # Stepper logic: steps, min/max boundaries, emit
+├── StepperInput.spec.js    # Stepper logic: steps, min/max boundaries, emit
+└── useImage.spec.js        # Compression: max edge clamp, JPEG output, byte cap
 ```
 
 ---
@@ -865,3 +1255,8 @@ frontend/tests/
 | 8 | Frontend: App shell + PWA | `App.vue`, `main.js`, `vite.config.js`, icons |
 | 9 | Frontend tests | `tests/*.spec.js` |
 | 10 | Integration | `docker compose up` end-to-end verification |
+| 11 | Backend: AI client | `ai.py`, AI env vars, rate-limit counter |
+| 12 | Backend: `/api/analyze-image` route + tests | `main.py`, `tests/test_ai.py` |
+| 13 | Frontend: Image capture flow | `useImage.js`, `ImageCaptureModal.vue`, `useApi.analyzeImage`, button in `MeasurementForm.vue` |
+| 14 | Frontend tests | `tests/useImage.spec.js` |
+| 15 | Integration | End-to-end photo capture → AI → form prefill |
