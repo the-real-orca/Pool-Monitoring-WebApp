@@ -5,14 +5,15 @@ import secrets as _secrets
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
+import ai
 import mqtt
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,26 @@ if _mqtt_tls_env:
 else:
     MQTT_TLS = MQTT_PORT == 8883
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+AI_MAX_REQUESTS_PER_DAY = int(os.getenv("AI_MAX_REQUESTS_PER_DAY", "10"))
+AI_MAX_IMAGE_BYTES = int(os.getenv("AI_MAX_IMAGE_BYTES", "10485760"))
+ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
+_ai_counter: dict[str, int] = {}
+_ai_counter_date: str = ""
+
+
+def ai_rate_check_and_increment() -> tuple[bool, int]:
+    global _ai_counter, _ai_counter_date
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if today != _ai_counter_date:
+        _ai_counter = {}
+        _ai_counter_date = today
+    remaining = AI_MAX_REQUESTS_PER_DAY - _ai_counter.get(today, 0)
+    if remaining <= 0:
+        return False, 0
+    _ai_counter[today] = _ai_counter.get(today, 0) + 1
+    return True, AI_MAX_REQUESTS_PER_DAY - _ai_counter[today]
+
 
 APP_VERSION = "1.0.0"
 _start_time = time.time()
@@ -73,6 +94,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
         return response
+
+
+class AnalyzeImageHint(BaseModel):
+    hint: str | None = None
 
 
 class Measurement(BaseModel):
@@ -122,7 +147,9 @@ async def verify_token(authorization: str = Header(alias="Authorization")):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS)
+    await ai.get_client().startup()
     yield
+    await ai.get_client().shutdown()
     mqtt.disconnect()
 
 
@@ -151,11 +178,53 @@ async def post_measurement(m: Measurement):
     return {"status": "success", "message": "Measurement published to MQTT"}
 
 
+@app.post("/api/analyze-image", dependencies=[Depends(verify_token)])
+async def analyze_image(
+    image: UploadFile = File(...),
+    data: str = Form("{}"),
+):
+    if image.content_type not in ALLOWED_IMAGE_MIMES:
+        raise HTTPException(status_code=400, detail=f"Unsupported MIME type: {image.content_type}")
+
+    image_bytes = await image.read()
+    if len(image_bytes) > AI_MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail=f"Image too large: {len(image_bytes)} > {AI_MAX_IMAGE_BYTES} bytes")
+
+    ok, remaining = ai_rate_check_and_increment()
+    if not ok:
+        raise HTTPException(status_code=429, detail="Daily image-analysis limit reached")
+
+    hint = AnalyzeImageHint.model_validate_json(data)
+
+    try:
+        result = await ai.analyze_pool_image(image_bytes, image.content_type, hint.hint)
+    except ai.AIRefusalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ai.AISchemaError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ai.AIAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except ai.AITimeoutError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ai.AIServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return {
+        "ph": result.ph,
+        "cl": result.cl,
+        "time": result.time,
+        "requestsRemainingToday": remaining,
+    }
+
+
 @app.get("/api/status")
 async def get_status():
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return {
         "status": "healthy",
         "mqttConnected": mqtt.is_connected(),
         "uptime": int(time.time() - _start_time),
         "version": APP_VERSION,
+        "aiConfigured": ai.get_client().is_configured(),
+        "imageAnalysisRequestsToday": _ai_counter.get(today, 0),
     }
