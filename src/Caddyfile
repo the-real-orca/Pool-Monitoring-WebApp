@@ -3,6 +3,10 @@ pool.io10.org {
     header X-Content-Type-Options "nosniff"
     header Referrer-Policy "strict-origin-when-cross-origin"
     header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    handle /api/analyze-image {
+        request_body max_size 12MB
+        reverse_proxy backend:8000
+    }
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -12,6 +16,10 @@ pool.io10.org {
 }
 
 :80 {
+    handle /api/analyze-image {
+        request_body max_size 12MB
+        reverse_proxy backend:8000
+    }
     handle /api/* {
         reverse_proxy backend:8000
     }

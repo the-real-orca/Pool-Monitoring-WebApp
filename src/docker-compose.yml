@@ -12,6 +12,8 @@ services:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - ai_data:/data/ai
     deploy:
       resources:
         limits:
@@ -51,3 +53,4 @@ services:
 
 volumes:
   caddy_data:
+  ai_data:

@@ -95,7 +95,7 @@ def _prune_old_images() -> None:
         for subdir in date_dir.iterdir():
             if subdir.is_dir():
                 try:
-                    dir_date = datetime.strptime(subdir.name, "%Y-%m-%d")
+                    dir_date = datetime.strptime(subdir.name, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                     if dir_date < cutoff:
                         shutil.rmtree(subdir)
                 except ValueError:
@@ -115,7 +115,7 @@ class AIClient:
             return
         self._client = openrouter.OpenRouter(api_key=AI_API_KEY)
         self._started = True
-        log.info("AI client initialized (provider=%s, model=%s)", AI_PROVIDER, AI_MODEL)
+        log.warning("AI client initialized (provider=%s, model=%s)", AI_PROVIDER, AI_MODEL)
         _prune_old_images()
 
     async def shutdown(self) -> None:

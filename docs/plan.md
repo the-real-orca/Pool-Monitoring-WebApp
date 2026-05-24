@@ -314,9 +314,9 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Content |
 |---|------|---------|
-| [ ] 16.6.1 | `src/docker-compose.yml` | Add named volume `ai_data` mounted at `/data/ai` on the backend service |
-| [ ] 16.6.2 | `src/docker-compose.yml` | Pass new AI env vars to the backend service (`env_file: .env` already covers them) |
-| [ ] 16.6.3 | `src/Caddyfile` | Increase `request_body max_size 12MB` for `/api/analyze-image` route only |
+| [x] 16.6.1 | `src/docker-compose.yml` | Add named volume `ai_data` mounted at `/data/ai` on the backend service |
+| [x] 16.6.2 | `src/docker-compose.yml` | Pass new AI env vars to the backend service (`env_file: .env` already covers them) |
+| [x] 16.6.3 | `src/Caddyfile` | Increase `request_body max_size 12MB` for `/api/analyze-image` route only |
 
 **Verify:** `docker compose config` clean; volume persists across `docker compose down && up`.
 
@@ -324,7 +324,7 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | Step | Expected result |
 |---|------|-----------------|
-| [ ] 16.7.1 | `.env`: set real `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL` | Backend logs "AI configured" |
+| [x] 16.7.1 | `.env`: set real `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL` | Backend logs "AI configured" |
 | [ ] 16.7.2 | Open PWA on phone, tap "Analyze Photo" | Camera opens, photo capture works |
 | [ ] 16.7.3 | Submit a test-strip photo | Form pH/cl prefilled within < 15 s; toast "Values extracted – please verify" |
 | [ ] 16.7.4 | Repeat 11× within one day | 11th request returns 429 + toast "Daily image-analysis limit reached" |
