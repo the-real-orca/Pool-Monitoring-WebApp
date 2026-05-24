@@ -293,11 +293,11 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Content |
 |---|------|---------|
-| [ ] 16.4.1 | `src/frontend/src/composables/useImage.js` | `compress(file, {maxEdge, quality})` using `createImageBitmap` + `OffscreenCanvas`, returns JPEG `File` |
-| [ ] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image + JSON-stringified `data`), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
-| [ ] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · preview thumbnail · error display · emits `applied({pH, cl, time})` |
-| [ ] 16.4.4 | `src/frontend/src/components/MeasurementForm.vue` | "Analyze Photo" button between pool select and temperature; opens modal; on `applied` → merge values into form state + success toast |
-| [ ] 16.4.5 | `src/frontend/src/composables/useToast.js` | (no change – reuse) |
+| [x] 16.4.1 | `src/frontend/src/composables/useImage.js` | `compress(file, {maxEdge, quality})` using `createImageBitmap` + `OffscreenCanvas`, returns JPEG `File` |
+| [x] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image + JSON-stringified `data`), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
+| [x] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · preview thumbnail · error display · emits `applied({pH, cl, time})` |
+| [x] 16.4.4 | `src/frontend/src/components/MeasurementForm.vue` | "Analyze Photo" button between pool select and temperature; opens modal; on `applied` → merge values into form state + success toast |
+| [x] 16.4.5 | `src/frontend/src/composables/useToast.js` | (no change – reuse) |
 
 **Verify:** `npm run dev` → tap button → camera opens → selected image shows preview, loading state, fields prefilled with mocked backend response.
 
@@ -305,8 +305,8 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Test cases |
 |---|------|------------|
-| [ ] 16.5.1 | `src/frontend/tests/useImage.spec.js` | Long-edge clamp respected · output is `image/jpeg` · output bytes < input bytes for an oversized fixture · throws on non-image file |
-| [ ] 16.5.2 | `src/frontend/tests/useApi.spec.js` (new) | `analyzeImage` builds correct `FormData`, sets only `Authorization` header, maps 401/422/429/5xx to distinct error strings (use `vi.fn()` on `fetch`) |
+| [x] 16.5.1 | `src/frontend/tests/useImage.spec.js` | Long-edge clamp respected · output is `image/jpeg` · output bytes < input bytes for an oversized fixture · throws on non-image file |
+| [x] 16.5.2 | `src/frontend/tests/useApi.spec.js` (new) | `analyzeImage` builds correct `FormData`, sets only `Authorization` header, maps 401/422/429/5xx to distinct error strings (use `vi.fn()` on `fetch`) |
 
 **Verify:** `npm run test` → all tests green.
 

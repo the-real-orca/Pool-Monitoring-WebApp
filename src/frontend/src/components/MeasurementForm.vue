@@ -5,6 +5,7 @@ import { useSettings } from '../composables/useSettings.js'
 import { useApi } from '../composables/useApi.js'
 import { useToast } from '../composables/useToast.js'
 import StepperInput from './StepperInput.vue'
+import ImageCaptureModal from './ImageCaptureModal.vue'
 
 const emit = defineEmits(['open-settings'])
 
@@ -14,6 +15,7 @@ const { show: showToast } = useToast()
 
 const pools = ref([])
 const showStatus = ref(false)
+const showCapture = ref(false)
 
 const form = reactive({
   time: '',
@@ -21,7 +23,7 @@ const form = reactive({
   temp: FIELD_CONFIG.temp.default,
   pH: FIELD_CONFIG.pH.default,
   cl: FIELD_CONFIG.cl.default,
-  notes: '',
+  status: '',
 })
 
 watch(() => form.name, (newName) => {
@@ -80,6 +82,13 @@ async function submit() {
   }
 }
 
+function onCaptureApplied({ pH, cl, time }) {
+  if (pH != null) form.pH = pH
+  if (cl != null) form.cl = cl
+  showToast('Values extracted – please verify', 'success')
+  showCapture.value = false
+}
+
 function initDateTime() {
   const now = new Date()
   const offset = now.getTimezoneOffset()
@@ -117,6 +126,20 @@ initDateTime()
         </option>
       </select>
       <p v-if="errors.name" class="text-sm text-error">{{ errors.name }}</p>
+    </div>
+
+    <div class="space-y-1">
+      <button
+        type="button"
+        @click="showCapture = true"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/40 px-4 py-3 text-sm font-semibold text-primary hover:border-primary hover:bg-primary/5"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        Analyze Photo
+      </button>
     </div>
 
     <div class="space-y-4">
@@ -202,5 +225,11 @@ initDateTime()
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
     </svg>
   </button>
+
+  <ImageCaptureModal
+    v-if="showCapture"
+    @applied="onCaptureApplied"
+    @close="showCapture = false"
+  />
 
 </template>

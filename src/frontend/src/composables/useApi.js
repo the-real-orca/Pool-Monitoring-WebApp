@@ -52,5 +52,30 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement, fetchPools }
+  async function analyzeImage(file) {
+    loading.value = true
+    error.value = null
+    const fd = new FormData()
+    fd.append('image', file)
+    fd.append('data', '{}')
+    try {
+      const res = await fetch(`/api/analyze-image`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${settings.token}` },
+        body: fd,
+      })
+      if (res.status === 401) { error.value = '401'; return null }
+      if (res.status === 422) { error.value = '422'; return null }
+      if (res.status === 429) { error.value = '429'; return null }
+      if (!res.ok) { error.value = String(res.status); return null }
+      return await res.json()
+    } catch {
+      error.value = 'network'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { loading, error, postMeasurement, fetchPools, analyzeImage }
 }
