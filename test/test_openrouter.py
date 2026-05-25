@@ -225,14 +225,19 @@ async def test_image_analysis(image_path: str, hint: str | None = None):
 
 
 async def _lookup_cost(client: openrouter.OpenRouter, generation_id: str) -> float | None:
-    for attempt in range(5):
+    delay = 1.0
+    for attempt in range(12):
         if attempt:
-            await asyncio.sleep(3)
+            await asyncio.sleep(delay)
+            delay = min(delay * 1.5, 5.0)
         try:
             gen = await client.generations.get_generation_async(id=generation_id)
             return gen.data.total_cost
         except openrouter.errors.NotFoundResponseError:
             continue
+        except Exception as e:
+            print(f"   [DEBUG] Cost lookup failed for {generation_id} with {type(e).__name__}: {e}")
+            return None
     return None
 
 
@@ -267,19 +272,25 @@ async def main():
         print("\n⚠️  No test images found at ../../test_images/")
         print("   Place images there or adjust the path and re-run.")
 
-    # Sum up costs
+    # Sum up costs (parallel lookup so the slow generations have time to be indexed
+    # while the fast ones return immediately)
     if gen_ids:
         print(f"\n{'='*60}")
         print("COST SUMMARY")
         print(f"{'='*60}")
+        costs = await asyncio.gather(*[_lookup_cost(client, gid) for gid in gen_ids])
+        known = [c for c in costs if c is not None]
+        avg_cost = sum(known) / len(known) if known else 0.0
         total = 0.0
-        for gid in gen_ids:
-            cost = await _lookup_cost(client, gid)
+        for gid, cost in zip(gen_ids, costs):
             if cost is not None:
                 print(f"   {gid}: ${cost:.6f}")
                 total += cost
+            elif avg_cost:
+                print(f"   {gid}: ${avg_cost:.6f} (estimated)")
+                total += avg_cost
             else:
-                print(f"   {gid}: not yet available")
+                print(f"   {gid}: unknown (no data)")
         print(f"   {'─'*40}")
         print(f"   Total: ${total:.6f}")
         print()

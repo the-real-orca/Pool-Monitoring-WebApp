@@ -340,6 +340,12 @@ error mapping for refusals/timeouts/auth failures.
 | [x] 16.8.1 | `test/test_openrouter.py` | Standalone connectivity test: text + image analysis; loads defaults from `src/.env` with env override; resizes images to configurable max dimension via Pillow; sums total costs via generation endpoint |
 | [x] 16.8.2 | `src/backend/requirements.txt` | Add `Pillow>=11.0` for image resizing |
 
+### 16.9 Developer tool: Benchmark script `test/benchmark_openrouter.py`
+
+| # | File | Content |
+|---|------|---------|
+| [x] 16.9.1 | `test/benchmark_openrouter.py` | Benchmark script: reads ground truth values, runs OpenRouter AI analysis on multiple test-strip images, computes accuracy score for pH & Cl, detects warnings mismatches with penalty, and aggregates total/estimated costs |
+
 
 ---
 

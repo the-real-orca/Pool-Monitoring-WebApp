@@ -92,6 +92,7 @@ class BenchmarkResult:
     ph_score: float
     cl_score: float
     total_score: float
+    warnings_mismatch: bool = False
     error: str | None = None
 
 
@@ -194,7 +195,7 @@ async def _analyze_one(client: openrouter.OpenRouter, image_path: str, hint: str
 
 async def _lookup_cost(client: openrouter.OpenRouter, generation_id: str) -> float | None:
     delay = 1.0
-    for attempt in range(8):
+    for attempt in range(12):
         if attempt:
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 5.0)
@@ -203,7 +204,8 @@ async def _lookup_cost(client: openrouter.OpenRouter, generation_id: str) -> flo
             return gen.data.total_cost
         except openrouter.errors.NotFoundResponseError:
             continue
-        except Exception:
+        except Exception as e:
+            print(f"  [DEBUG] Cost lookup failed for {generation_id} with {type(e).__name__}: {e}")
             return None
     return None
 
@@ -251,9 +253,15 @@ async def main():
             ph_score = _score_value(result.ph, gt.ph, PH_TOLERANCE)
             cl_score = _score_value(result.cl, gt.cl, CL_TOLERANCE)
             total_score = (ph_score + cl_score) / 2
+            gt_has_warnings = len(gt.warnings) > 0
+            ai_has_warnings = bool(result.warnings)
+            warnings_mismatch = gt_has_warnings != ai_has_warnings
+            if warnings_mismatch:
+                total_score *= 0.75
             results.append(BenchmarkResult(
                 image=gt.image, ground_truth=gt, predicted=result,
                 ph_score=ph_score, cl_score=cl_score, total_score=total_score,
+                warnings_mismatch=warnings_mismatch,
             ))
         else:
             print("FAILED")
@@ -275,7 +283,11 @@ async def main():
         print(f"    Ground truth:  pH={r.ground_truth.ph}, Cl={r.ground_truth.cl}  ({r.ground_truth.date})")
         if r.predicted:
             print(f"    Predicted:     pH={r.predicted.ph}, Cl={r.predicted.cl}")
-            print(f"    Scores:        pH={r.ph_score:.0f}%  Cl={r.cl_score:.0f}%  =>  Total: {r.total_score:.0f}%")
+            gt_w = ", ".join(r.ground_truth.warnings) if r.ground_truth.warnings else "–"
+            ai_w = ", ".join(r.predicted.warnings) if r.predicted.warnings else "–"
+            print(f"    Warnings:      GT: {gt_w}  |  AI: {ai_w}")
+            warn = "  ⚠ mismatch (-25%)" if r.warnings_mismatch else ""
+            print(f"    Scores:        pH={r.ph_score:.0f}%  Cl={r.cl_score:.0f}%  =>  Total: {r.total_score:.0f}%{warn}")
             if r.total_score >= 50:
                 passed += 1
         else:
