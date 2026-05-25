@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 AI_PROVIDER = os.getenv("AI_PROVIDER", "")
 AI_API_KEY = os.getenv("AI_API_KEY", "")
-AI_MODEL = os.getenv("AI_MODEL", "anthropic/claude-3-haiku")
+AI_MODEL = os.getenv("AI_MODEL", "google/gemini-3-flash-preview")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 AI_IMAGE_STORAGE_PATH = os.getenv("AI_IMAGE_STORAGE_PATH", "/tmp/ai_images")
 AI_IMAGE_RETENTION_DAYS = int(os.getenv("AI_IMAGE_RETENTION_DAYS", "30"))
@@ -56,7 +56,10 @@ SYSTEM_PROMPT = """You are an expert at analyzing pool test strip images. Given 
 - cl (chlorine, 0.0-10.0, one decimal)
 - time (Unix timestamp when the photo was taken, in seconds; if unknown use the current time)
 
-Be precise and match colors carefully against the reference scale. If you cannot determine a value accurately, indicate your uncertainty.
+When the color on the strip falls between two reference colors, interpolate to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+
+Populate the "warnings" list ONLY for significant image-quality problems that make analysis unreliable, such as: severe blur, very poor lighting, reversed orientation, or obstructed pads. Do NOT warn about minor imperfections (e.g. slight glare, minor shadows, or standard lighting variation) – these are expected in real-world photos and do not meaningfully affect accuracy. Do NOT warn about the values themselves – extreme readings, interpolation, or values between reference points are expected and handled correctly by the numeric fields.
+
 Return ONLY the structured analysis result, no additional text."""
 
 
@@ -65,6 +68,14 @@ class ImageAnalysisResult(BaseModel):
     cl: float
     time: int
     refusal: str | None = None
+    warnings: list[str] | None = None
+
+
+_ALIAS_MAP = {"pH": "ph", "PH": "ph", "Cl": "cl", "P_H": "ph", "chlorine": "cl"}
+
+
+def _normalize_keys(d: dict) -> dict:
+    return {_ALIAS_MAP.get(k, k): v for k, v in d.items()}
 
 
 def _persist_image(image_bytes: bytes, result: ImageAnalysisResult) -> None:
@@ -182,20 +193,24 @@ async def analyze_pool_image(image_bytes: bytes, mime: str, hint: str | None = N
     if finish_reason == "refuse":
         raise AIRefusalError("AI refused to analyze the image")
 
-    parsed = choice.message.parsed
-    if parsed is None:
-        raise AISchemaError("AI returned unparseable response")
+    content = choice.message.content
+    refusal = choice.message.refusal
 
-    if isinstance(parsed, dict):
-        try:
-            result = ImageAnalysisResult.model_validate(parsed)
-        except ValidationError as e:
-            raise AISchemaError(f"AI returned invalid schema: {e}") from e
-    else:
-        try:
-            result = ImageAnalysisResult.model_validate(parsed.model_dump())
-        except ValidationError as e:
-            raise AISchemaError(f"AI returned invalid schema: {e}") from e
+    if refusal:
+        raise AIRefusalError(f"AI refused: {refusal}")
+
+    if not content:
+        raise AISchemaError("AI returned empty response")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise AISchemaError(f"AI returned unparseable response: {e}") from e
+
+    try:
+        result = ImageAnalysisResult.model_validate(_normalize_keys(parsed))
+    except ValidationError as e:
+        raise AISchemaError(f"AI returned invalid schema: {e}") from e
 
     if result.refusal:
         raise AIRefusalError(f"AI refused: {result.refusal}")

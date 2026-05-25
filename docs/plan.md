@@ -333,6 +333,13 @@ error mapping for refusals/timeouts/auth failures.
 
 **Verify:** Full flow works end-to-end; failure modes (rate limit, timeout) degrade gracefully to manual entry.
 
+### 16.8 Developer tool: Test script `test/test_openrouter.py`
+
+| # | File | Content |
+|---|------|---------|
+| [x] 16.8.1 | `test/test_openrouter.py` | Standalone connectivity test: text + image analysis; loads defaults from `src/.env` with env override; resizes images to configurable max dimension via Pillow; sums total costs via generation endpoint |
+| [x] 16.8.2 | `src/backend/requirements.txt` | Add `Pillow>=11.0` for image resizing |
+
 
 ---
 

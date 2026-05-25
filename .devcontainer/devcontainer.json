@@ -46,7 +46,9 @@
 				"nickcrv.markdown-pdf-vscode",
 				"shd101wyy.markdown-preview-enhanced",
 				"rpdswtk.vsmqtt",
-				"Vue.volar"
+				"Vue.volar",
+				"humao.rest-client",
+				"mechatroner.rainbow-csv"
 			]
 		}
 	}

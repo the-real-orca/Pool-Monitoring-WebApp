@@ -1,0 +1,28 @@
+### Analyze pool image (no hint)
+POST http://localhost:8000/api/analyze-image
+Authorization: testtoken
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+
+< test_images/20260524_115452.jpg
+--boundary--
+
+###
+
+### Analyze pool image with hint
+POST http://localhost:8000/api/analyze-image
+Authorization: Bearer testtoken
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+
+< test_images/20260524_115452.jpg
+--boundary
+Content-Disposition: form-data; name="data"
+
+{"intendedPoolName": "Testbecken"}
+--boundary--
+

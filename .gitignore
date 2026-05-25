@@ -2,3 +2,4 @@
 todo.txt
 /log
 /deploy
+/test/__pycache__

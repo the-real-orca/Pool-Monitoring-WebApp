@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - ai_data:/data/ai
+      - ./data/ai:/data/ai
     deploy:
       resources:
         limits:
@@ -40,17 +40,16 @@ services:
           cpus: '0.25'
           memory: 64M
 
-# # for testing purposes only!
-# # expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
-#   mosquitto:
-#     image: eclipse-mosquitto:2
-#     restart: unless-stopped
-#     ports:
-#       - "2883:2883"
-#     volumes:
-#       - ./mosquitto/config:/mosquitto/config:ro
+# for testing purposes only!
+# expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "2883:2883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
 
 
 volumes:
   caddy_data:
-  ai_data:

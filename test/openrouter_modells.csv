@@ -1,0 +1,17 @@
+modell name,model id,cost input,cost output
+Anthropic: Claude Opus 4.7,anthropic/claude-opus-4.7,$5.00 / 1M tokens,$25.00 / 1M tokens
+OpenAI: GPT-5.5,openai/gpt-5.5,$5.00 / 1M tokens,$30.00 / 1M tokens
+Google: Gemini 3.1 Pro Preview,google/gemini-3.1-pro-preview,$2.00 / 1M tokens,$12.00 / 1M tokens
+Google: Gemini 3.5 Flash,google/gemini-3.5-flash,$1.50 / 1M tokens,$9.00 / 1M tokens
+OpenAI: GPT-5.4,openai/gpt-5.4,$2.50 / 1M tokens,$15.00 / 1M tokens
+Anthropic: Claude Sonnet 4.6,anthropic/claude-sonnet-4.6,$3.00 / 1M tokens,$15.00 / 1M tokens
+Google: Gemini 3 Flash Preview,google/gemini-3-flash-preview,$0.50 / 1M tokens,$3.00 / 1M tokens
+Google: Gemini 2.5 Pro,google/gemini-2.5-pro,$1.25 / 1M tokens,$10.00 / 1M tokens
+OpenAI: o3,openai/o3,$2.00 / 1M tokens,$8.00 / 1M tokens
+OpenAI: GPT-4.1,openai/gpt-4.1,$2.00 / 1M tokens,$8.00 / 1M tokens
+Qwen: Qwen3 VL 235B A22B Instruct,qwen/qwen3-vl-235b-a22b-instruct,$0.20 / 1M tokens,$0.88 / 1M tokens
+Google: Gemini 2.5 Flash,google/gemini-2.5-flash,$0.30 / 1M tokens,$2.50 / 1M tokens
+Google: Gemma 4 31B,google/gemma-4-31b-it,$0.12 / 1M tokens,$0.37 / 1M tokens
+Z.ai: GLM 5V Turbo,z-ai/glm-5v-turbo,$1.20 / 1M tokens,$4.00 / 1M tokens
+Meta: Llama 4 Maverick,meta-llama/llama-4-maverick,$0.15 / 1M tokens,$0.60 / 1M tokens
+Meta: Llama 4 Scout,meta-llama/llama-4-scout,$0.08 / 1M tokens,$0.30 / 1M tokens
