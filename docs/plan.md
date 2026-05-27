@@ -345,6 +345,7 @@ error mapping for refusals/timeouts/auth failures.
 | # | File | Content |
 |---|------|---------|
 | [x] 16.9.1 | `test/benchmark_openrouter.py` | Benchmark script: reads ground truth values, runs OpenRouter AI analysis on multiple test-strip images, computes accuracy score for pH & Cl, detects warnings mismatches with penalty, and aggregates total/estimated costs |
+| [x] 16.9.2 | `test/benchmark_openrouter.py` | Env vars `AI_BENCHMARK_LIMIT`, `AI_PH_TOLERANCE`, `AI_CL_TOLERANCE`, `AI_CL_TOLERANCE_STOPS`; log-scale Cl scoring via "stops"; image size display (px + KB); -1 return for uncertain values with scoring: both -1 → 100%, mismatch → 0% |
 
 
 ---

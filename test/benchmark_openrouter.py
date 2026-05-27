@@ -3,8 +3,10 @@ OpenRouter benchmark: runs AI analysis on test images and scores against ground 
 
 Usage:
     AI_API_KEY=sk-or-... python benchmark_openrouter.py
+    AI_BENCHMARK_LIMIT=5 AI_API_KEY=sk-or-... python benchmark_openrouter.py
 
 Reads ground_truth.csv from test_images/ next to this script.
+Set AI_BENCHMARK_LIMIT=n to only test the first n images.
 """
 
 import asyncio
@@ -46,6 +48,12 @@ API_KEY = os.environ.get("AI_API_KEY", "")
 MODEL = os.environ.get("AI_MODEL", "")
 TIMEOUT_MS = int(os.environ.get("AI_TIMEOUT_SECONDS", "30")) * 1000
 MAX_IMAGE_DIMENSION = int(os.environ.get("AI_MAX_IMAGE_DIMENSION", 2048))
+PH_TOLERANCE = float(os.environ.get("AI_PH_TOLERANCE", "1.0"))
+CL_TOLERANCE = float(os.environ.get("AI_CL_TOLERANCE", "1.0"))
+# Cl tolerance in "stops" (log2 doublings). The Cl color scale is roughly exponential
+# (0.5, 1, 3, 5, 10 ppm) so absolute error is misleading. 1 stop = 1 doubling/halving.
+# E.g. expected=3.0, actual=6.0 → 1 stop → 0%; expected=3.0, actual=4.2 → 0.5 stops → 50%.
+CL_TOLERANCE_STOPS = float(os.environ.get("AI_CL_TOLERANCE_STOPS", "1.0"))
 
 
 class ImageAnalysisResult(BaseModel):
@@ -65,10 +73,12 @@ def _normalize_keys(d: dict) -> dict:
 
 SYSTEM_PROMPT = """You are an expert at analyzing pool test strip images. Given an image of a test strip next to a color reference scale, extract the following values:
 
-- pH (0.0-14.0, one decimal)
-- cl (chlorine, 0.0-10.0, one decimal)
+- pH (0.0-14.0, one decimal). Return -1 if the pH pad cannot be reliably matched.
+- cl (chlorine, 0.0-10.0, one decimal). Return -1 if the Cl pad cannot be reliably matched.
 
-When the color on the strip falls between two reference colors, interpolate to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+When a pad is clearly visible and matches the reference scale, interpolate between the nearest reference colors to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+
+If lighting, blur, orientation, or other image issues make a pad unreadable, set that value to -1 instead of guessing. It is better to return -1 than to fabricate a plausible-looking number.
 
 Populate the "warnings" list ONLY for significant image-quality problems that make analysis unreliable, such as: severe blur, very poor lighting, reversed orientation, or obstructed pads. Do NOT warn about minor imperfections (e.g. slight glare, minor shadows, or standard lighting variation) – these are expected in real-world photos and do not meaningfully affect accuracy. Do NOT warn about the values themselves – extreme readings, interpolation, or values between reference points are expected and handled correctly by the numeric fields.
 
@@ -130,17 +140,47 @@ def _resize_image(image_bytes: bytes, max_dim: int) -> bytes:
 
 
 def _score_value(actual: float, expected: float, tolerance: float) -> float:
+    if actual < 0 and expected < 0:
+        return 100.0
+    if actual < 0 or expected < 0:
+        return 0.0
     diff = abs(actual - expected)
     return max(0.0, 100.0 * (1.0 - diff / tolerance))
 
 
+# Logarithmic scoring for Cl: measures deviation in doublings ("stops").
+# Cl test-strip color scale is roughly exponential, so absolute error is misleading.
+# 1 stop = factor-of-2 deviation (e.g. 3.0 vs 6.0 or 3.0 vs 1.5).
+# When actual or expected is ≤ 0.5, falls back to linear scoring (no sensible log2
+# from such small values; the reference scale starts at 0.5 ppm).
+def _score_log_value(actual: float, expected: float, tolerance_stops: float) -> float:
+    import math
+    if actual < 0 and expected < 0:
+        return 100.0
+    if actual < 0 or expected < 0:
+        return 0.0
+    if expected <= 0.5 or actual <= 0.5:
+        return _score_value(actual, expected, CL_TOLERANCE)
+    stops = abs(math.log2(actual / expected))
+    return max(0.0, 100.0 * (1.0 - stops / tolerance_stops))
 
 
-async def _analyze_one(client: openrouter.OpenRouter, image_path: str, hint: str | None = None) -> tuple[ImageAnalysisResult | None, str | None]:
+
+
+def _get_image_size(image_bytes: bytes) -> tuple[int, int]:
+    from PIL import Image
+    import io
+    img = Image.open(io.BytesIO(image_bytes))
+    return img.width, img.height
+
+async def _analyze_one(client: openrouter.OpenRouter, image_path: str, hint: str | None = None) -> tuple[ImageAnalysisResult | None, str | None, tuple[int, int, float]]:
     with open(image_path, "rb") as f:
         image_bytes = f.read()
     if MAX_IMAGE_DIMENSION:
         image_bytes = _resize_image(image_bytes, MAX_IMAGE_DIMENSION)
+    sent_w, sent_h = _get_image_size(image_bytes)
+    sent_kb = len(image_bytes) / 1024
+    sent_info = (sent_w, sent_h, sent_kb)
 
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
     data_uri = f"data:image/jpeg;base64,{base64_image}"
@@ -173,24 +213,24 @@ async def _analyze_one(client: openrouter.OpenRouter, image_path: str, hint: str
             timeout_ms=TIMEOUT_MS,
         )
     except (UnauthorizedResponseError, RequestTimeoutResponseError, Exception):
-        return None, None
+        return None, None, sent_info
 
     choice = response.choices[0]
     if getattr(choice, "finish_reason", None) == "refuse":
-        return None, None
+        return None, None, sent_info
     content = choice.message.content
     refusal_text = getattr(choice.message, "refusal", None)
     if refusal_text or not content:
-        return None, None
+        return None, None, sent_info
 
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
-        return None, None
+        return None, None, sent_info
     result = ImageAnalysisResult.model_validate(_normalize_keys(parsed))
     if result.refusal:
-        return None, None
-    return result, response.id
+        return None, None, sent_info
+    return result, response.id, sent_info
 
 
 async def _lookup_cost(client: openrouter.OpenRouter, generation_id: str) -> float | None:
@@ -211,6 +251,9 @@ async def _lookup_cost(client: openrouter.OpenRouter, generation_id: str) -> flo
 
 
 async def main():
+    limit_env = os.environ.get("AI_BENCHMARK_LIMIT", "0")
+    limit = int(limit_env)
+
     if not API_KEY:
         print("❌ AI_API_KEY environment variable is not set")
         sys.exit(1)
@@ -226,6 +269,9 @@ async def main():
         print("❌ No entries in ground_truth.csv")
         sys.exit(1)
 
+    if limit > 0:
+        ground_truths = ground_truths[:limit]
+
     images_dir = script_dir / "test_images"
     client = openrouter.OpenRouter(api_key=API_KEY)
 
@@ -236,22 +282,23 @@ async def main():
     results: list[BenchmarkResult] = []
     gen_ids: list[str] = []
 
-    PH_TOLERANCE = 1.0
-    CL_TOLERANCE = 1.0
     for gt in ground_truths:
         img_path = images_dir / gt.image
         if not img_path.exists():
             print(f"  {gt.image} not found, skipping")
             continue
 
-        print(f"  Analyzing {gt.image} ...", end=" ", flush=True)
-        result, gen_id = await _analyze_one(client, str(img_path))
+        with open(img_path, "rb") as f:
+            orig_bytes = f.read()
+        orig_w, orig_h = _get_image_size(orig_bytes)
+        result, gen_id, (sent_w, sent_h, sent_kb) = await _analyze_one(client, str(img_path))
+        print(f"  Analyzing {gt.image} ({orig_w}×{orig_h} → {sent_w}×{sent_h} px, {sent_kb:.0f} KB) ...", end=" ", flush=True)
         if gen_id:
             gen_ids.append(gen_id)
         if result:
             print("OK")
             ph_score = _score_value(result.ph, gt.ph, PH_TOLERANCE)
-            cl_score = _score_value(result.cl, gt.cl, CL_TOLERANCE)
+            cl_score = _score_log_value(result.cl, gt.cl, CL_TOLERANCE_STOPS)
             total_score = (ph_score + cl_score) / 2
             gt_has_warnings = len(gt.warnings) > 0
             ai_has_warnings = bool(result.warnings)
@@ -264,11 +311,13 @@ async def main():
                 warnings_mismatch=warnings_mismatch,
             ))
         else:
-            print("FAILED")
+            print("FAILED → -1")
+            fallback = ImageAnalysisResult(ph=-1.0, cl=-1.0, time=0, warnings=["analysis failed or refused"])
             results.append(BenchmarkResult(
-                image=gt.image, ground_truth=gt, predicted=None,
-                ph_score=0, cl_score=0, total_score=0,
-                error="analysis failed",
+                image=gt.image, ground_truth=gt, predicted=fallback,
+                ph_score=_score_value(-1.0, gt.ph, PH_TOLERANCE),
+                cl_score=_score_log_value(-1.0, gt.cl, CL_TOLERANCE_STOPS),
+                total_score=(_score_value(-1.0, gt.ph, PH_TOLERANCE) + _score_log_value(-1.0, gt.cl, CL_TOLERANCE_STOPS)) / 2,
             ))
 
     # ---- Print results ----
