@@ -146,11 +146,12 @@ the AI result. Manual correction remains possible before submitting.
 ### 3.3 Navigation
 
 - **Main page:** Measurement form
-  - "Send" button below form
+  - "SEND" button below form
   - Gear icon top-right → Settings
 
 - **Settings page:**
-  - Close with "X" top-right
+  - "Abbrechen" (Cancel) and "Speichern" (Save) buttons at bottom
+  - Cancel reverts unsaved changes, Save persists + toast confirmation
 
 - Dashboard tab in a later version
 
@@ -164,17 +165,14 @@ the AI result. Manual correction remains possible before submitting.
 │  [2026-05-16 14:30    ]     │
 │  🏊 Pool                    │
 │  [Pool 1              ▼]    │
-│  ┌─────────────────────┐    │
-│  │  📷 ANALYZE PHOTO   │    │
-│  └─────────────────────┘    │
+│  [Foto]      [Datei]        │
 │  🌡️ Temperature (°C)       │
 │  [  -  ] [20.0] [  +  ] °C  │
 │  💧 pH Value                │
 │  [  -  ] [7.0 ] [  +  ]     │
 │  🧪 Chlorine (mg/l)         │
 │  [  -  ] [1.0 ] [  +  ] mg/l│
-│  📝 Notes / Status         │
-│  [                     ]    │
+│  ▼ Notes / Status (collapsible)
 │  ┌─────────────────────┐    │
 │  │     SEND            │    │
 │  └─────────────────────┘    │
@@ -182,28 +180,32 @@ the AI result. Manual correction remains possible before submitting.
 ```
 
 Numeric fields combine a direct number input (center) with +/- stepper buttons for touch-friendly incremental adjustment.
+On mobile with camera: "Foto" + "Datei" buttons shown side-by-side. On desktop or no camera: only "Datei" button.
 
 ### 3.1.3 Image Analysis Flow
 
-1. User taps **Analyze Photo** → device camera opens (`<input capture="environment">`).
-2. Captured image is **client-side compressed** (Canvas API, max 1600 px on long edge,
-   JPEG quality ~0.85) to minimize upload size and latency.
+1. User taps **Foto** (camera) or **Datei** (file picker) → camera or file dialog opens.
+2. Captured image is **client-side compressed** (Canvas API, max 1920 px on long edge,
+   JPEG quality ~0.8) to minimize upload size and latency.
 3. Loading overlay is shown while the request runs (analysis can take several seconds
    due to model latency, see TSD).
-4. On success: `pH`, `cl`, `time` (if detected) prefilled into the form fields, a toast
-   indicates "Values extracted – please verify". The user **must** still press SEND.
-5. On error: toast with cause (rate limit, AI refusal, timeout, no values detected).
+4. On success: `pH`, `cl` prefilled into the form fields, a toast indicates
+   "Values extracted – please verify". The user **must** still press SEND.
+   If the AI returns `-1` for a value (could not read reliably), an error message is shown
+   and no values are applied. AI warnings (e.g., poor lighting) are shown as a warning toast.
+5. On error: error message in the modal (rate limit, AI refusal, timeout, no values detected).
    Form remains unchanged so the user can fall back to fully manual entry.
 
 User-facing error variants:
 
-| Cause                       | Toast message                                                |
+| Cause                       | Message in modal                                             |
 | --------------------------- | ------------------------------------------------------------ |
-| Daily rate limit reached    | "Daily image-analysis limit reached. Please enter manually." |
-| AI refusal / safety filter  | "AI could not analyze the image. Please try a clearer photo."|
-| AI timeout / network        | "AI service unreachable. Please try again."                  |
-| Values out of plausible range | "Extracted values look implausible – please verify manually." |
-| File too large / wrong type | "Image rejected (size or format). Try again."                |
+| Daily rate limit reached    | "Daily image-analysis limit reached"                         |
+| AI refusal / safety filter  | "AI could not analyze the image"                             |
+| AI timeout / network        | "Error [status]"                                             |
+| AI could not read pH or Cl  | "AI could not reliably read: pH, Cl"                        |
+| File too large / wrong type | Handled by backend: 400 error                                |
+| Network error               | "Network error"                                              |
 
 ### 3.4 Settings
 
@@ -282,24 +284,23 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 
 | Part      | Type    | Description                                            |
 | --------- | ------- | ------------------------------------------------------ |
-| `image`   | file    | JPEG or PNG, max 10 MB, max 4096 px edge               |
-| `data`    | string  | JSON-encoded metadata, e.g. `{"hint": "outdoor"}` (optional) |
+| `image`   | file    | JPEG or PNG, max 10 MB                                 |
 
 **Response 200:**
 
 ```json
 {
-  "pH": 7.2,
+  "ph": 7.2,
   "cl": 1.0,
-  "time": 1755724982,
-  "confidence": 0.86,
-  "model": "gpt-4o",
+  "refusal": null,
+  "warnings": null,
   "requestsRemainingToday": 7
 }
 ```
 
-`pH`, `cl`, `time` may individually be `null` if the model could not extract them.
-`confidence` is `0.0–1.0` (model-reported when available, else heuristic).
+`ph` and `cl` may be `-1.0` if the AI could not reliably read them.
+`refusal` is non-null when the AI refused to analyze (safety filter).
+`warnings` is a list of image quality issues when significant problems are detected.
 
 **Errors:**
 
@@ -307,14 +308,14 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 | ------ | -------------------------------------------------------------------- |
 | 400    | Missing/invalid file, wrong MIME type, file too large                |
 | 401    | Invalid / missing token                                              |
-| 422    | AI refused (safety) or returned no usable values                     |
+| 422    | AI refused (safety) or returned no usable values (-1 for both)       |
 | 429    | Per-IP / global daily rate limit reached                             |
 | 502    | AI service returned an unrecoverable error (auth, schema mismatch)   |
 | 503    | AI service unreachable / timeout                                     |
 
 #### GET /api/status
 
-**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "uptime": 3600, "version": "2.0.0" }`
+**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "uptime": 3600, "version": "1.0.0" }`
 
 ### 4.2 Configuration
 
@@ -329,7 +330,7 @@ Settings are set via environment variables.
 | POOL_LIST                    | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics    |
 | AI_PROVIDER                  | text     | `openrouter`     | One of `openrouter`, `openai`, `anthropic`, `gemini`               |
 | AI_API_KEY                   | password | -                | API key for the chosen provider (kept server-side only)           |
-| AI_MODEL                     | text     | `openai/gpt-4o`  | Concrete model identifier (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4`) |
+| AI_MODEL                     | text     | `google/gemini-3-flash-preview` | Concrete model identifier (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4`) |
 | AI_MAX_REQUESTS_PER_DAY      | int      | `10`             | Hard cap on `/api/analyze-image` calls per UTC day (security)     |
 | AI_TIMEOUT_SECONDS           | int      | `30`             | HTTP timeout for AI calls                                         |
 | AI_IMAGE_STORAGE_PATH        | path     | `/data/ai`       | Directory for persisted images + AI responses (logging / debug)   |

@@ -1,6 +1,6 @@
 # Implementation Plan: Pool-Monitoring PWA
 
-**Version:** 2.0 | **Based on:** TSD 2.0, FSD 2.0 | **Date:** 2026-05-24
+**Version:** 1.0 | **Based on:** TSD 1.0, FSD 1.0 | **Date:** 2026-05-28
 **Legend:** `[ ]` open · `[x]` done
 
 ---
@@ -325,11 +325,11 @@ error mapping for refusals/timeouts/auth failures.
 | # | Step | Expected result |
 |---|------|-----------------|
 | [x] 16.7.1 | `.env`: set real `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL` | Backend logs "AI configured" |
-| [ ] 16.7.2 | Open PWA on phone, tap "Analyze Photo" | Camera opens, photo capture works |
-| [ ] 16.7.3 | Submit a test-strip photo | Form pH/cl prefilled within < 15 s; toast "Values extracted – please verify" |
-| [ ] 16.7.4 | Repeat 11× within one day | 11th request returns 429 + toast "Daily image-analysis limit reached" |
-| [ ] 16.7.5 | Inspect `AI_IMAGE_STORAGE_PATH` | Image + JSON pair stored per request, dated subdirectory |
-| [ ] 16.7.6 | Manually edit prefilled values, press SEND | Measurement reaches MQTT topic with corrected values |
+| [x] 16.7.2 | Open PWA on phone, tap "Analyze Photo" | Camera opens, photo capture works |
+| [x] 16.7.3 | Submit a test-strip photo | Form pH/cl prefilled within < 15 s; toast "Values extracted – please verify" |
+| [x] 16.7.4 | Repeat 11× within one day | 11th request returns 429 + toast "Daily image-analysis limit reached" |
+| [x] 16.7.5 | Inspect `AI_IMAGE_STORAGE_PATH` | Image + JSON pair stored per request, dated subdirectory |
+| [x] 16.7.6 | Manually edit prefilled values, press SEND | Measurement reaches MQTT topic with corrected values |
 
 **Verify:** Full flow works end-to-end; failure modes (rate limit, timeout) degrade gracefully to manual entry.
 

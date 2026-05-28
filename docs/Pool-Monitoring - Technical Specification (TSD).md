@@ -1,6 +1,6 @@
 # Technical Specification: Pool-Monitoring PWA
 
-**Version:** 2.0 | **Based on:** FSD 2.0 | **Date:** 2026-05-24
+**Version:** 1.0 | **Based on:** FSD 1.0 | **Date:** 2026-05-28
 
 ---
 
@@ -70,7 +70,8 @@ src/
 │   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. analyzeImage)
 │   │       ├── useSettings.js # localStorage read/write (reactive)
 │   │       ├── useImage.js    # Canvas-based image compression utility
-│   │       └── useToast.js    # Toast state (module-level singleton)
+│   │       ├── useToast.js    # Toast state (module-level singleton)
+│   │       └── useCamera.js   # Camera detection via enumerateDevices
 │   ├── public/
 │   │   └── icons/
 │   │       ├── icon-192.png
@@ -248,7 +249,7 @@ The form title ("Measurements") is rendered inside `MeasurementForm.vue` (matchi
 import { useSettings } from '../composables/useSettings.js'
 const { settings } = useSettings()
 const emit = defineEmits(['close'])
-const APP_VERSION = '2.0.0'
+const APP_VERSION = '1.0.0'
 </script>
 
 <template>
@@ -273,7 +274,7 @@ Token is stored Base64-encoded (obfuscation, not a security feature).
 import { reactive, watch } from 'vue'
 
 const KEY = 'pool_monitor_settings'
-const DEFAULTS = { backendUrl: '/api', token: '' }
+const DEFAULTS = { token: '' }
 
 function load() {
   try {
@@ -297,7 +298,7 @@ export function useSettings() {
 
 #### `useApi.js`
 
-Reads `settings.backendUrl` and `settings.token`.
+Reads `settings.token`. API base path is hardcoded as `/api` (same origin as frontend).
 Returns a local `{ loading, error }` per call (no global loading state).
 No automatic retry – the user has a retry button (FSD 7.1).
 
@@ -324,10 +325,12 @@ export function useApi() {
       pH:         form.pH,
       cl:         form.cl,
       temp:       form.temp,
-      notes:      form.notes || null,
+    }
+    if (form.status) {
+      payload.status = form.status
     }
     try {
-      const res = await fetch(`${settings.backendUrl}/measurements`, {
+      const res = await fetch(`/api/measurements`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -346,7 +349,56 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement }
+  async function analyzeImage(file) {
+    loading.value = true
+    error.value = null
+    const fd = new FormData()
+    fd.append('image', file)
+    try {
+      const res = await fetch(`/api/analyze-image`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${settings.token}` },
+        body: fd,
+      })
+      if (res.status === 401) { error.value = '401'; return null }
+      if (res.status === 422) { error.value = '422'; return null }
+      if (res.status === 429) { error.value = '429'; return null }
+      if (!res.ok) { error.value = String(res.status); return null }
+      return await res.json()
+    } catch {
+      error.value = 'network'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { loading, error, postMeasurement, fetchPools, analyzeImage }
+}
+```
+
+#### `useCamera.js`
+
+Detects whether the device has a camera using `navigator.mediaDevices.enumerateDevices`.
+Used by `MeasurementForm.vue` to show camera/file buttons on mobile or file-only button on desktop.
+
+```js
+import { ref, onMounted } from 'vue'
+
+export function useCamera() {
+  const hasCamera = ref(false)
+
+  onMounted(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      hasCamera.value = devices.some(d => d.kind === 'videoinput')
+    } catch {
+      hasCamera.value = false
+    }
+  })
+
+  return { hasCamera }
 }
 ```
 
@@ -461,67 +513,132 @@ Tailwind CSS v4: no `tailwind.config.js` needed. Only configuration in `src/main
 ### 4.7 Image Capture & Analysis Flow
 
 The image-analysis feature lives in **`ImageCaptureModal.vue`** and the
-**`useImage`** composable. `MeasurementForm.vue` only renders a button and the modal:
+**`useImage`** composable. `MeasurementForm.vue` uses `useCamera()` to detect
+camera availability and shows two buttons (Foto/File) on mobile or just File on desktop:
 
 ```js
 // Inside MeasurementForm.vue (setup)
+const { hasCamera } = useCamera()
 const showCapture = ref(false)
+const captureMode = ref('camera')
 
-function applyAnalysis({ pH, cl, time }) {
+function openCapture(mode) {
+  captureMode.value = mode
+  showCapture.value = true
+}
+
+function onCaptureApplied({ pH, cl }) {
   if (pH != null) form.pH = pH
   if (cl != null) form.cl = cl
-  if (time != null) form.time = new Date(time * 1000).toISOString().slice(0, 16)
-  showCapture.value = false
   showToast('Values extracted – please verify', 'success')
+  showCapture.value = false
 }
 ```
 
-**`ImageCaptureModal.vue`** orchestrates capture → compress → upload:
+**`ImageCaptureModal.vue`** supports two modes (`mode` prop: `'camera'` or `'file'`).
+It compresses the image and sends it to `/api/analyze-image`. The AI can return `-1`
+for pH or cl if it cannot reliably read the value – the modal shows an error in that case.
+Warnings from the AI (e.g., poor lighting) are shown as a toast.
 
 ```vue
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { compress } from '../composables/useImage.js'
 import { useApi } from '../composables/useApi.js'
-import { useImage } from '../composables/useImage.js'
+import { useToast } from '../composables/useToast.js'
 
-const props = defineProps({ open: Boolean })
-const emit = defineEmits(['close', 'applied'])
+const props = defineProps({ mode: { type: String, default: 'camera' } })
+const emit = defineEmits(['applied', 'close'])
 
-const { analyzeImage, loading, error } = useApi()
-const { compress } = useImage()
-const fileRef = ref(null)
-const previewUrl = ref(null)
+const { loading, error, analyzeImage } = useApi()
+const { show: showToast } = useToast()
+const localError = ref(null)
+const cameraInput = ref(null)
+const fileInput = ref(null)
 
-async function onFileSelected(event) {
-  const file = event.target.files?.[0]
+onMounted(() => {
+  // Auto-open camera or file picker on mount
+  if (props.mode === 'camera') {
+    cameraInput.value?.click()
+  } else {
+    fileInput.value?.click()
+  }
+})
+
+async function onFileChange(e) {
+  const file = e.target.files?.[0]
   if (!file) return
-  const compressed = await compress(file, { maxEdge: 1600, quality: 0.85 })
-  previewUrl.value = URL.createObjectURL(compressed)
-  const result = await analyzeImage(compressed)
-  if (result) emit('applied', result)
+  localError.value = null
+  try {
+    const compressed = await compress(file, { maxEdge: 1920, quality: 0.8 })
+    const result = await analyzeImage(compressed)
+    if (result) {
+      if (result.ph === -1 || result.cl === -1) {
+        const parts = []
+        if (result.ph === -1) parts.push('pH')
+        if (result.cl === -1) parts.push('Cl')
+        localError.value = `AI could not reliably read: ${parts.join(', ')}`
+        return
+      }
+      if (result.warnings?.length) {
+        showToast(result.warnings.join('; '), 'warning', 5000)
+      }
+      emit('applied', { pH: result.ph, cl: result.cl })
+    } else if (error.value === '401') {
+      localError.value = 'Unauthorized – check your token'
+    } else if (error.value === '422') {
+      localError.value = 'AI could not analyze the image'
+    } else if (error.value === '429') {
+      localError.value = 'Daily image-analysis limit reached'
+    } else if (error.value) {
+      localError.value = `Error ${error.value}`
+    } else {
+      localError.value = 'Network error'
+    }
+  } catch {
+    localError.value = 'Could not read image file'
+  }
 }
 </script>
 
 <template>
-  <div v-if="open" class="fixed inset-0 ...">
-    <input ref="fileRef" type="file" accept="image/*" capture="environment"
-           class="hidden" @change="onFileSelected" />
-    <button @click="fileRef.click()" :disabled="loading">Take photo</button>
-    <img v-if="previewUrl" :src="previewUrl" />
-    <p v-if="loading">Analyzing…</p>
-    <p v-if="error" class="text-error">{{ error }}</p>
-    <button @click="emit('close')">Cancel</button>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div class="relative w-full max-w-sm rounded-2xl bg-white p-6">
+      <!-- Camera input (mobile: opens rear camera) -->
+      <input ref="cameraInput" type="file" accept="image/*" capture="environment"
+             class="hidden" @change="onFileChange" />
+      <!-- File input (desktop fallback) -->
+      <input ref="fileInput" type="file" accept="image/*"
+             class="hidden" @change="onFileChange" />
+
+      <div v-if="loading" class="flex items-center justify-center gap-2 rounded-lg bg-slate-100 py-4 text-slate-600">
+        <svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+        Analyzing image…
+      </div>
+
+      <div v-if="localError" class="rounded-lg bg-error/10 px-4 py-3 text-sm text-error">
+        {{ localError }}
+      </div>
+
+      <button type="button" @click="emit('close')"
+              class="mt-4 w-full rounded-lg border border-slate-300 py-2.5 text-slate-600 hover:bg-slate-100">
+        Abbrechen
+      </button>
+    </div>
   </div>
 </template>
 ```
 
 Key points:
 
-- `<input type="file" accept="image/*" capture="environment">` opens the rear camera on
-  mobile while gracefully degrading to a file picker on desktop.
-- Compression happens on the **client** (Canvas API) – upload payload stays < 2 MB.
+- `mode="camera"` uses `capture="environment"` to open the rear camera on mobile.
+- `mode="file"` shows a file picker (used on desktop or when no camera detected).
+- `useCamera()` in `MeasurementForm.vue` decides whether to show one button (file-only)
+  or two buttons (Foto + File).
+- Compression: `maxEdge: 1920`, `quality: 0.8` (higher resolution than initial implementation).
+- `-1` handling: if AI returns -1 for pH or cl, the modal shows an error and does not apply values.
 - The modal does **not** mutate form state directly; it only emits `applied` with the
-  values, and the parent merges them. This keeps the form the single source of truth.
+  values, and the parent merges them.
 
 ### 4.8 `useImage.js` – Compression Helper
 
@@ -543,40 +660,6 @@ export function useImage() {
 
 `OffscreenCanvas` is supported on all modern target browsers (FSD 3.6). A `<canvas>`
 fallback can be added if iOS Safari < 17 needs to be supported.
-
-### 4.9 `useApi.analyzeImage`
-
-Extends the existing composable. Uses `multipart/form-data` so binary data is not
-Base64-bloated (see `Integration multimodaler KI-Agenten.md` §1):
-
-```js
-async function analyzeImage(file) {
-  loading.value = true; error.value = null
-  const fd = new FormData()
-  fd.append('image', file)
-  fd.append('data', JSON.stringify({ hint: 'pool test strip' }))
-  try {
-    const res = await fetch(`${settings.backendUrl}/analyze-image`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${settings.token}` }, // no Content-Type!
-      body: fd,
-    })
-    if (res.status === 401) { error.value = 'Unauthorized – check token'; return null }
-    if (res.status === 429) { error.value = 'Daily limit reached';        return null }
-    if (res.status === 422) { error.value = 'AI could not analyze image'; return null }
-    if (!res.ok)            { error.value = `AI service error (${res.status})`; return null }
-    return await res.json()
-  } catch {
-    error.value = 'Network error'
-    return null
-  } finally {
-    loading.value = false
-  }
-}
-```
-
-> Critical: do **not** set `Content-Type` manually – the browser must add the multipart
-> boundary itself. Setting it breaks `python-multipart` parsing in FastAPI.
 
 ---
 
@@ -623,14 +706,14 @@ POOL_LIST   = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "poo
 # AI image analysis
 AI_PROVIDER             = os.getenv("AI_PROVIDER", "openai")
 AI_API_KEY              = os.getenv("AI_API_KEY", "")
-AI_MODEL                = os.getenv("AI_MODEL", "openai/gpt-4o")
+AI_MODEL                = os.getenv("AI_MODEL", "google/gemini-3-flash-preview")
 AI_MAX_REQUESTS_PER_DAY = int(os.getenv("AI_MAX_REQUESTS_PER_DAY", "10"))
 AI_TIMEOUT_SECONDS      = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 AI_IMAGE_STORAGE_PATH   = os.getenv("AI_IMAGE_STORAGE_PATH", "/data/ai")
 AI_IMAGE_RETENTION_DAYS = int(os.getenv("AI_IMAGE_RETENTION_DAYS", "30"))
 AI_MAX_IMAGE_BYTES      = int(os.getenv("AI_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "1.0.0"
 _start_time = time.time()
 ```
 
@@ -795,14 +878,16 @@ Mistral, Aleph Alpha Pharia, and more – via one API key.
 **Pydantic result model** – consumed by both `ai.py` and the route handler:
 
 ```python
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class ImageAnalysisResult(BaseModel):
-    pH:         float | None = Field(default=None, ge=0.0, le=14.0)
-    cl:         float | None = Field(default=None, ge=0.0, le=10.0)
-    time:       int   | None = None     # Unix timestamp if visible on the strip / clock
-    confidence: float        = Field(default=0.0, ge=0.0, le=1.0)
-    model:      str
+    ph:       float
+    cl:       float
+    refusal:  str | None = None   # set by AI when refusing to analyze
+    warnings: list[str] | None = None  # image quality issues
+
+# Note: ph and cl can be -1.0 if the AI cannot reliably read them.
+# The route handler checks for -1 and returns an error instead of applying values.
 ```
 
 **SDK client lifecycle** (`startup()` / `shutdown()`):
@@ -817,8 +902,6 @@ async def startup() -> None:
     _client = openrouter.OpenRouter(
         api_key=AI_API_KEY,
         timeout=AI_TIMEOUT_SECONDS,
-        http_referer=FRONTEND_URL or "https://pool-monitor.local",
-        x_open_router_title="PoolMonitor/2.0",
     )
     os.makedirs(AI_IMAGE_STORAGE_PATH, exist_ok=True)
     _prune_old_images()
@@ -828,80 +911,76 @@ async def shutdown() -> None:
     _client = None   # context manager handles close
 ```
 
-**Image sending** – the OpenRouter multimodal API accepts images as URL objects or
-as base64-encoded data URIs inline in the message content:
+**Image sending** – the OpenRouter SDK uses typed message components:
 
 ```python
-import base64, hashlib
-
-def _image_content(image_bytes: bytes, mime: str) -> list[dict]:
-    b64 = base64.b64encode(image_bytes).decode()
-    return [
-        {"type": "text", "text": SYSTEM_PROMPT},
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{b64}"},
-        },
-    ]
-
-SYSTEM_PROMPT = (
-    "You analyze a photo of a pool test strip held next to its reference color scale. "
-    "Return ONLY JSON matching the provided schema. Compare the strip's color fields "
-    "against the reference scale visible in the same image. Account for outdoor lighting "
-    "and reflections; if uncertain about a value, return null instead of guessing. "
-    "Never hallucinate values that you cannot see clearly."
+from openrouter.components import (
+    ChatContentImage,
+    ChatFormatJSONSchemaConfig,
+    ChatJSONSchemaConfig,
+    ChatSystemMessage,
+    ChatUserMessage,
 )
+
+SYSTEM_PROMPT = """You are an expert at analyzing pool test strip images. Given an image of a test strip next to a color reference scale, extract the following values:
+
+- pH (0.0-14.0, one decimal). Return -1 if the pH pad cannot be reliably matched.
+- cl (chlorine, 0.0-10.0, one decimal). Return -1 if the Cl pad cannot be reliably matched.
+
+When a pad is clearly visible and matches the reference scale, interpolate between the nearest reference colors to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+
+If lighting, blur, orientation, or other image issues make a pad unreadable, set that value to -1 instead of guessing. It is better to return -1 than to fabricate a plausible-looking number.
+
+Populate the "warnings" list ONLY for significant image-quality problems that make analysis unreliable, such as: severe blur, very poor lighting, reversed orientation, or obstructed pads. Do NOT warn about minor imperfections (e.g. slight glare, minor shadows, or standard lighting variation) – these are expected in real-world photos and do not meaningfully affect accuracy. Do NOT warn about the values themselves – extreme readings, interpolation, or values between reference points are expected and handled correctly by the numeric fields.
+
+Return ONLY the structured analysis result, no additional text."""
 ```
 
-**Structured output** – the OpenRouter SDK extends the OpenAI `response_format`
-mechanism. The schema is passed as a Pydantic model to `response_format`;
-the SDK handles serialization and the provider returns guaranteed-JSON:
+**Structured output** – uses `ChatFormatJSONSchemaConfig` to pass the Pydantic schema:
 
 ```python
-async def analyze_pool_image(image_bytes: bytes, mime: str,
-                             hint: dict | None = None) -> ImageAnalysisResult:
+async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResult:
+    client = get_client()
+    if not client.is_configured():
+        raise AIServiceError("AI client not configured")
 
-    assert _client is not None, "startup() not called"
+    data_uri = f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
 
-    content = _image_content(image_bytes, mime)
-    if hint:
-        content.insert(0, {"type": "text", "text": f"Context: {hint.get('hint','')}"})
+    schema_config = ChatFormatJSONSchemaConfig(
+        json_schema=ChatJSONSchemaConfig(
+            name="ImageAnalysisResult",
+            schema_=ImageAnalysisResult.model_json_schema(),
+        ),
+        type="json_schema",
+    )
 
-    raw = _client.chat.send(
-        messages=[{"role": "user", "content": content}],
+    response = await client._client.chat.send_async(
+        messages=[
+            ChatSystemMessage(content=SYSTEM_PROMPT, role="system"),
+            ChatUserMessage(content=[ChatContentImage(type="image_url", image_url={"url": data_uri, "detail": "high"})], role="user"),
+        ],
         model=AI_MODEL,
-        response_format=ImageAnalysisResult,   # Pydantic model → JSON schema
-        # provider: {"sort": "price"}  # optional: let OpenRouter pick cheapest suitable model
+        response_format=schema_config,
+        timeout_ms=AI_TIMEOUT_SECONDS * 1000,
     )
 
-    # raw is a full OpenAI-compatible response object
-    msg = raw.choices[0].message
-
-    # Refusal check (OpenAI-compatible)
-    if getattr(msg, "refusal", None):
-        raise AIRefusalError(msg.refusal)
-
-    parsed = msg.parsed          # typed Pydantic model when response_format is set
-    return ImageAnalysisResult(
-        pH=parsed.pH, cl=parsed.cl, time=parsed.time,
-        confidence=getattr(parsed, "confidence", 0.0),
-        model=raw.model or AI_MODEL,
-    )
+    choice = response.choices[0]
+    # Handle refusal / errors
+    ...
 ```
 
-**Error taxonomy** – the SDK raises provider/HTTP exceptions that are caught and
-re-mapped to application-level errors:
+**Error taxonomy** – caught and re-mapped to application-level errors:
 
 | Exception           | HTTP | Trigger                                                            |
 | ------------------- | ---- | ------------------------------------------------------------------ |
-| `AIRefusalError`    | 422  | `msg.refusal` is non-empty (OpenAI-compatible refusal marker)     |
-| `AISchemaError`     | 502  | `msg.parsed` raises `ValidationError` or raw is not JSON           |
-| `AIAuthError`       | 502  | SDK raises `AuthenticationError` (401/403 from provider)          |
-| `AITimeoutError`    | 503  | SDK raises `TimeoutError` or request exceeds `AI_TIMEOUT_SECONDS` |
-| `AIServiceError`    | 503  | SDK raises `RateLimitError` (429) or other 5xx from provider      |
+| `AIRefusalError`    | 422  | AI refused to analyze (safety filter or content policy)            |
+| `AISchemaError`     | 502  | Response JSON does not match ImageAnalysisResult schema            |
+| `AIAuthError`       | 502  | SDK raises `UnauthorizedResponseError` (invalid API key)           |
+| `AITimeoutError`    | 503  | SDK raises `RequestTimeoutResponseError`                           |
+| `AIServiceError`    | 503  | Other SDK errors or empty response                                 |
 
-> **SDK note:** `openrouter` is in beta; pin the package version in `requirements.txt`
-> to avoid unexpected breaking changes (e.g. `openrouter>=0.9,<1.0`).
+> **SDK note:** Uses `openrouter` Python SDK with typed components (`ChatFormatJSONSchemaConfig`,
+> `ChatContentImage`, etc.) for structured output.
 
 **Image persistence** – on every `/api/analyze-image` call:
 
@@ -1158,7 +1237,7 @@ FRONTEND_URL=https://pool.io10.org
 # OpenAI, Anthropic, Google, Mistral, Aleph Alpha and others via a single key.
 AI_PROVIDER=openrouter
 AI_API_KEY=
-AI_MODEL=openai/gpt-4o
+AI_MODEL=google/gemini-3-flash-preview
 AI_MAX_REQUESTS_PER_DAY=10
 AI_TIMEOUT_SECONDS=30
 AI_IMAGE_STORAGE_PATH=/data/ai
