@@ -57,7 +57,6 @@ export function useApi() {
     error.value = null
     const fd = new FormData()
     fd.append('image', file)
-    fd.append('data', '{}')
     try {
       const res = await fetch(`/api/analyze-image`, {
         method: 'POST',

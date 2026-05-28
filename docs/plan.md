@@ -254,7 +254,7 @@ Goal: Implement pool selection from backend list and optional notes field.
 ## Phase 16 – Feature: Automatic Image Analysis
 
 Goal: User captures a photo of test strips + reference scale, the backend forwards
-it to a multimodal AI service, extracts pH/chlorine/time and prefills the form.
+it to a multimodal AI service, extracts pH/chlorine and prefills the form.
 Hardened with per-day rate limit, image persistence for debugging, and explicit
 error mapping for refusals/timeouts/auth failures.
 
@@ -265,7 +265,7 @@ error mapping for refusals/timeouts/auth failures.
 | [x] 16.1.1 | `src/.env.example` | Add `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_MAX_REQUESTS_PER_DAY=10`, `AI_TIMEOUT_SECONDS=30`, `AI_IMAGE_STORAGE_PATH=/data/ai`, `AI_IMAGE_RETENTION_DAYS=30`, `AI_MAX_IMAGE_BYTES=10485760` |
 | [x] 16.1.2 | `src/backend/requirements.txt` | Add `python-multipart>=0.0.9`, `openrouter>=0.9,<1.0`, `pytest-asyncio>=0.23` |
 | [x] 16.1.3 | `src/backend/main.py` | Read AI env vars; `_ai_counter` UTC-day bucket; `ai_rate_check_and_increment()` |
-| [x] 16.1.4 | `src/backend/ai.py` | `ImageAnalysisResult` Pydantic model · `analyze_pool_image(image_bytes, mime, hint)` using official `openrouter` Python SDK · `response_format=ImageAnalysisResult` Pydantic → JSON schema · system prompt constant · `msg.refusal` check → `AIRefusalError` · error classes (`AIRefusalError`, `AISchemaError`, `AIAuthError`, `AITimeoutError`, `AIServiceError`) · image+result persistence to `AI_IMAGE_STORAGE_PATH/<date>/<ts>_<sha>.{jpg,json}` · `startup()` / `shutdown()` for SDK client lifecycle and retention pruning |
+| [x] 16.1.4 | `src/backend/ai.py` | `ImageAnalysisResult` Pydantic model · `analyze_pool_image(image_bytes, mime)` using official `openrouter` Python SDK · `response_format=ImageAnalysisResult` Pydantic → JSON schema · system prompt constant (includes -1 for unreliable pads, interpolation instructions) · `msg.refusal` check → `AIRefusalError` · error classes (`AIRefusalError`, `AISchemaError`, `AIAuthError`, `AITimeoutError`, `AIServiceError`) · image+result persistence to `AI_IMAGE_STORAGE_PATH/<date>/<ts>_<sha>.{jpg,json}` · `startup()` / `shutdown()` for SDK client lifecycle and retention pruning |
 | [x] 16.1.5 | `src/backend/main.py` | Lifespan: `await ai.startup()` / `await ai.shutdown()` |
 
 **Verify:** `uvicorn main:app` starts without errors when `AI_API_KEY` empty (feature degrades gracefully).
@@ -274,7 +274,7 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 16.2.1 | `src/backend/main.py` | `POST /api/analyze-image` route: `UploadFile` + `Json[AnalyzeImageHint]` form; auth dependency; MIME allow-list; byte cap; `ai_rate_check_and_increment()`; map AI exceptions → 422/502/503; return `ImageAnalysisResult` + `requestsRemainingToday` |
+| [x] 16.2.1 | `src/backend/main.py` | `POST /api/analyze-image` route: `UploadFile` form; auth dependency; MIME allow-list; byte cap; `ai_rate_check_and_increment()`; map AI exceptions → 422/502/503; return `ph`, `cl`, `warnings`, `requestsRemainingToday` |
 | [x] 16.2.2 | `src/backend/main.py` | Extend `GET /api/status` with `aiConfigured`, `imageAnalysisRequestsToday` |
 
 **Verify:** `curl -F image=@strip.jpg -H "Authorization: Bearer ..." /api/analyze-image` → 200 with extracted values (against mocked AI in tests).
@@ -294,8 +294,8 @@ error mapping for refusals/timeouts/auth failures.
 | # | File | Content |
 |---|------|---------|
 | [x] 16.4.1 | `src/frontend/src/composables/useImage.js` | `compress(file, {maxEdge, quality})` using `createImageBitmap` + `OffscreenCanvas`, returns JPEG `File` |
-| [x] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image + JSON-stringified `data`), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
-| [x] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · preview thumbnail · error display · emits `applied({pH, cl, time})` |
+| [x] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image only), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
+| [x] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · error display · checks for -1 values (shows error, does not apply) · warnings → toast alert · emits `applied({pH, cl})` |
 | [x] 16.4.4 | `src/frontend/src/components/MeasurementForm.vue` | "Analyze Photo" button between pool select and temperature; opens modal; on `applied` → merge values into form state + success toast |
 | [x] 16.4.5 | `src/frontend/src/composables/useToast.js` | (no change – reuse) |
 

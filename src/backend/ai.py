@@ -4,13 +4,13 @@ import json
 import logging
 import os
 import shutil
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import openrouter
 from openrouter.components import (
     ChatContentImage,
-    ChatContentText,
     ChatFormatJSONSchemaConfig,
     ChatJSONSchemaConfig,
     ChatSystemMessage,
@@ -52,11 +52,12 @@ class AIServiceError(Exception):
 
 SYSTEM_PROMPT = """You are an expert at analyzing pool test strip images. Given an image of a test strip next to a color reference scale, extract the following values:
 
-- pH (0.0-14.0, one decimal)
-- cl (chlorine, 0.0-10.0, one decimal)
-- time (Unix timestamp when the photo was taken, in seconds; if unknown use the current time)
+- pH (0.0-14.0, one decimal). Return -1 if the pH pad cannot be reliably matched.
+- cl (chlorine, 0.0-10.0, one decimal). Return -1 if the Cl pad cannot be reliably matched.
 
-When the color on the strip falls between two reference colors, interpolate to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+When a pad is clearly visible and matches the reference scale, interpolate between the nearest reference colors to find the best intermediate value. Do NOT round to the nearest reference value – estimate the true midpoint.
+
+If lighting, blur, orientation, or other image issues make a pad unreadable, set that value to -1 instead of guessing. It is better to return -1 than to fabricate a plausible-looking number.
 
 Populate the "warnings" list ONLY for significant image-quality problems that make analysis unreliable, such as: severe blur, very poor lighting, reversed orientation, or obstructed pads. Do NOT warn about minor imperfections (e.g. slight glare, minor shadows, or standard lighting variation) – these are expected in real-world photos and do not meaningfully affect accuracy. Do NOT warn about the values themselves – extreme readings, interpolation, or values between reference points are expected and handled correctly by the numeric fields.
 
@@ -66,7 +67,6 @@ Return ONLY the structured analysis result, no additional text."""
 class ImageAnalysisResult(BaseModel):
     ph: float
     cl: float
-    time: int
     refusal: str | None = None
     warnings: list[str] | None = None
 
@@ -85,7 +85,7 @@ def _persist_image(image_bytes: bytes, result: ImageAnalysisResult) -> None:
         date_dir = Path(AI_IMAGE_STORAGE_PATH) / datetime.now(timezone.utc).strftime("%Y-%m-%d")
         date_dir.mkdir(parents=True, exist_ok=True)
         img_hash = hashlib.sha256(image_bytes).hexdigest()[:12]
-        ts = result.time
+        ts = int(time.time())
         base = f"{ts}_{img_hash}"
         img_path = date_dir / f"{base}.jpg"
         json_path = date_dir / f"{base}.json"
@@ -144,7 +144,7 @@ def get_client() -> AIClient:
     return _client
 
 
-async def analyze_pool_image(image_bytes: bytes, mime: str, hint: str | None = None) -> ImageAnalysisResult:
+async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResult:
     if not _client.is_configured():
         raise AIServiceError("AI client not configured")
 
@@ -155,12 +155,9 @@ async def analyze_pool_image(image_bytes: bytes, mime: str, hint: str | None = N
         type="image_url",
         image_url={"url": data_uri, "detail": "high"},
     )
-    content_parts: list = [image_content]
-    if hint:
-        content_parts.append(ChatContentText(type="text", text=hint))
 
     system_msg = ChatSystemMessage(content=SYSTEM_PROMPT, role="system")
-    user_msg = ChatUserMessage(content=content_parts, role="user")
+    user_msg = ChatUserMessage(content=[image_content], role="user")
 
     schema_config = ChatFormatJSONSchemaConfig(
         json_schema=ChatJSONSchemaConfig(

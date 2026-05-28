@@ -4,6 +4,7 @@ import { FIELD_CONFIG } from '../validation.js'
 import { useSettings } from '../composables/useSettings.js'
 import { useApi } from '../composables/useApi.js'
 import { useToast } from '../composables/useToast.js'
+import { useCamera } from '../composables/useCamera.js'
 import StepperInput from './StepperInput.vue'
 import ImageCaptureModal from './ImageCaptureModal.vue'
 
@@ -12,10 +13,12 @@ const emit = defineEmits(['open-settings'])
 const { settings } = useSettings()
 const { postMeasurement, fetchPools, loading, error } = useApi()
 const { show: showToast } = useToast()
+const { hasCamera } = useCamera()
 
 const pools = ref([])
 const showStatus = ref(false)
 const showCapture = ref(false)
+const captureMode = ref('camera')
 
 const form = reactive({
   time: '',
@@ -43,6 +46,11 @@ function resetForm() {
   form.status = ''
   Object.keys(errors).forEach(k => delete errors[k])
   initDateTime()
+}
+
+function openCapture(mode) {
+  captureMode.value = mode
+  showCapture.value = true
 }
 
 function validate() {
@@ -128,17 +136,28 @@ initDateTime()
       <p v-if="errors.name" class="text-sm text-error">{{ errors.name }}</p>
     </div>
 
-    <div class="space-y-1">
+    <div :class="hasCamera ? 'grid grid-cols-2 gap-3' : 'space-y-1'">
       <button
+        v-if="hasCamera"
         type="button"
-        @click="showCapture = true"
-        class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/40 px-4 py-3 text-sm font-semibold text-primary hover:border-primary hover:bg-primary/5"
+        @click="openCapture('camera')"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-primary/30 px-4 py-3 text-sm font-semibold text-primary hover:border-primary hover:bg-primary/5"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-        Analyze Photo
+        Foto
+      </button>
+      <button
+        type="button"
+        @click="openCapture('file')"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Datei
       </button>
     </div>
 
@@ -228,6 +247,7 @@ initDateTime()
 
   <ImageCaptureModal
     v-if="showCapture"
+    :mode="captureMode"
     @applied="onCaptureApplied"
     @close="showCapture = false"
   />

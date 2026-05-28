@@ -96,10 +96,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class AnalyzeImageHint(BaseModel):
-    hint: str | None = None
-
-
 class Measurement(BaseModel):
     time: int
     name: str = Field(min_length=1, max_length=50)
@@ -181,7 +177,6 @@ async def post_measurement(m: Measurement):
 @app.post("/api/analyze-image", dependencies=[Depends(verify_token)])
 async def analyze_image(
     image: UploadFile = File(...),
-    data: str = Form("{}"),
 ):
     if image.content_type not in ALLOWED_IMAGE_MIMES:
         raise HTTPException(status_code=400, detail=f"Unsupported MIME type: {image.content_type}")
@@ -194,10 +189,8 @@ async def analyze_image(
     if not ok:
         raise HTTPException(status_code=429, detail="Daily image-analysis limit reached")
 
-    hint = AnalyzeImageHint.model_validate_json(data)
-
     try:
-        result = await ai.analyze_pool_image(image_bytes, image.content_type, hint.hint)
+        result = await ai.analyze_pool_image(image_bytes, image.content_type)
     except ai.AIRefusalError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ai.AISchemaError as e:
@@ -212,7 +205,7 @@ async def analyze_image(
     return {
         "ph": result.ph,
         "cl": result.cl,
-        "time": result.time,
+        "warnings": result.warnings,
         "requestsRemainingToday": remaining,
     }
 

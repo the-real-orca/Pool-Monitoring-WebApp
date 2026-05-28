@@ -33,7 +33,6 @@ describe('analyzeImage', () => {
 
     const body = fetch.mock.calls[0][1].body
     expect(body.get('image')).toBe(file)
-    expect(body.get('data')).toBe('{}')
     expect(result).toEqual({ ph: 7.2, cl: 1.5, requestsRemainingToday: 9 })
   })
 

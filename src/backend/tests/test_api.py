@@ -85,7 +85,6 @@ def test_analyze_image_200(client, mock_analyze_image):
     data = response.json()
     assert data["ph"] == 7.2
     assert data["cl"] == 1.5
-    assert data["time"] == 1716518400
     assert "requestsRemainingToday" in data
 
 

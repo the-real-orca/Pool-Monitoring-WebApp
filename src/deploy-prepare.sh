@@ -13,7 +13,7 @@ cp .env_production "$DEPLOY_DIR/.env"
 
 # Backend
 mkdir -p "$DEPLOY_DIR/backend"
-cp backend/main.py backend/mqtt.py backend/Dockerfile backend/requirements.txt backend/pyproject.toml "$DEPLOY_DIR/backend/"
+cp backend/main.py backend/mqtt.py backend/ai.py backend/Dockerfile backend/requirements.txt backend/pyproject.toml "$DEPLOY_DIR/backend/"
 cp backend/.dockerignore "$DEPLOY_DIR/backend/.dockerignore"
 
 # Frontend build
