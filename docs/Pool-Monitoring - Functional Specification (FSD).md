@@ -118,16 +118,18 @@ the AI result. Manual correction remains possible before submitting.
 | **Date/Time**  | datetime-local (UI) / Unix timestamp (Message) | <Current Time>  | -     | -               | Valid date format          |
 | **Pool**       | select                                         | 1st Item        | -     | -               | Must exist in backend list |
 | **Notes**      | text (textarea)                                | -               | -     | Max 500 chars   | Optional free text         |
-| **Temperature**| number                                         | 20.0            | 0.2   | 5.0 – 45.0 °C   | 1 decimal place            |
-| **pH Value**   | number                                         | 7.0             | 0.1   | 0.0 – 14.0      | 1 decimal place            |
-| **Chlorine**   | number                                         | 1.0             | 0.1   | 0.0 – 10.0 mg/l | 1 decimal place            |
+| **Temperature**| number                                         | 24.0            | 0.2   | 10.0 – 40.0 °C  | 1 decimal place            |
+| **pH Value**   | number                                         | 7.0             | 0.1   | 6.0 – 8.0       | 1 decimal place            |
+| **Chlorine**   | number                                         | 1.0             | 0.1   | 0.0 – 5.0 mg/l  | 1 decimal place            |
 
 #### 3.1.2 UI Behavior
 
 - Modern, bright design for outdoor use
-- Numeric fields: combined number input with +/- stepper buttons
+- Numeric fields: combined `[-] [Wert] [+]` Stepper mit Popover-Slider
 - Touch-optimized (buttons ≥ 44x44px)
-- Direct value entry via number input or incremental adjustment via stepper
+- Klick auf den Wert → Overlay-Slider öffnet sich über dem Feld (volle Container-Breite, Bottom-Sheet-Stil) mit Live-Vorschau
+- Slider schließt bei Klick außerhalb, nach 5s Inaktivität, oder 1s nach Loslassen
+- +/- Buttons: Gedrückthalten startet Auto-Repeat (500ms initial, dann alle 100ms)
 - Real-time validation with visual error display
 - After successful submission: toast notification, form reset
 - On error: show error message, preserve values, allow retry
@@ -179,7 +181,7 @@ the AI result. Manual correction remains possible before submitting.
 └─────────────────────────────┘
 ```
 
-Numeric fields combine a direct number input (center) with +/- stepper buttons for touch-friendly incremental adjustment.
+Numeric fields combine a stepper `[-] [24.0°C] [+]` with a popover slider on value click for touch-friendly adjustment.
 On mobile with camera: "Foto" + "Datei" buttons shown side-by-side. On desktop or no camera: only "Datei" button.
 
 ### 3.1.3 Image Analysis Flow

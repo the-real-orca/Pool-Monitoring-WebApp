@@ -111,9 +111,10 @@ Goal: all three UI components are complete, visually correct, touch-optimized.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 7.1 | `src/components/StepperInput.vue` | Props: `modelValue`, `min`, `max`, `step`, `decimals`, `unit` · `step(dir)`: `parseFloat(...toFixed(decimals))` + range check · emit `update:modelValue` · buttons ≥ 44×44px · `:disabled` at boundaries |
-| [x] 7.2 | `src/components/MeasurementForm.vue` | `reactive` form state (defaults from `FIELD_CONFIG`, name from `settings.poolName`) · `datetime-local` → Unix timestamp on submit · `StepperInput` for temp/pH/cl · inline error messages · `submit()`: `postMeasurement` → toast + `resetForm()` or error display with retry · loading state on submit button · emit `open-settings` |
-| [x] 7.3 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: token (password), pool name (text) · emit `close` · visible version string (from constant) |
+| [x] 7.1 | `src/components/StepperInput.vue` | Props: `modelValue`, `min`, `max`, `step`, `decimals`, `unit` · `step(dir)`: `parseFloat(...toFixed(decimals))` + range check · emit `update:modelValue` · buttons ≥ 44×44px · `:disabled` at boundaries *(abgelöst durch ValueSliderInput für temp/pH/cl)* |
+| [x] 7.2 | `src/components/ValueSliderInput.vue` | Stepper + Popover-Slider-Kombo: `[-] [Wert] [+]` – Klick auf Wert öffnet Overlay-Slider über dem Feld (volle Container-Breite, Bottom-Sheet-Stil) · Integer-Range intern (0..N) mapped auf Dezimal-Step · 5s Idle-Timeout, 1s Release-Timeout, Klick außerhalb schließt · Gedrückthalten der +/- Buttons startet Wiederholung nach 500ms (alle 100ms) · `v-model` kompatibel |
+| [x] 7.3 | `src/components/MeasurementForm.vue` | `reactive` form state (defaults from `FIELD_CONFIG`, name from `settings.poolName`) · `datetime-local` → Unix timestamp on submit · `ValueSliderInput` für temp/pH/cl · inline error messages · `submit()`: `postMeasurement` → toast + `resetForm()` or error display with retry · loading state on submit button · emit `open-settings` |
+| [x] 7.4 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: token (password) · emit `close` · visible version string (from constant) |
 
 **Verify:** `npm run dev` → form fully operable, settings open/close, stepper ± buttons respond correctly. ✅
 
@@ -388,6 +389,7 @@ src/
     │   ├── validation.js
     │   ├── components/
     │   │   ├── StepperInput.vue
+    │   │   ├── ValueSliderInput.vue   # Phase 7
     │   │   ├── MeasurementForm.vue
     │   │   ├── ImageCaptureModal.vue  # Phase 16
     │   │   └── SettingsPanel.vue

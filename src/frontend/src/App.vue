@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import MeasurementForm from './components/MeasurementForm.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
-import SliderShowcase from './components/SliderShowcase.vue'
 import { useToast } from './composables/useToast.js'
 
 const view = ref('form')
@@ -16,9 +15,8 @@ const { toast } = useToast()
         <h1 class="text-2xl font-bold text-white">Pool Monitor</h1>
       </div>
       <div class="p-6">
-        <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" @open-sliders="view = 'sliders'" />
-        <SettingsPanel v-else-if="view === 'settings'" @close="view = 'form'" />
-        <SliderShowcase v-else @back="view = 'form'" />
+        <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" />
+        <SettingsPanel v-else @close="view = 'form'" />
       </div>
     </div>
 

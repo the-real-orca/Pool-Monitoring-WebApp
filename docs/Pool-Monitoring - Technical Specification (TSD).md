@@ -62,7 +62,8 @@ src/
 │   │   ├── App.vue          # Root: view toggle (form|settings), toast display
 │   │   ├── validation.js    # Field constants (min, max, step, default, unit)
 │   │   ├── components/
-│   │   │   ├── StepperInput.vue       # Reusable +/- input stepper
+│   │   │   ├── StepperInput.vue       # Reusable +/- input stepper (no longer used by MeasurementForm)
+│   │   │   ├── ValueSliderInput.vue   # [+] [Wert] [+] Stepper + Popover-Slider-Kombo
 │   │   │   ├── MeasurementForm.vue    # Measurement form with submit flow + photo button
 │   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
 │   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
@@ -157,48 +158,101 @@ The app shell provides a centered card layout with a colored header bar. The for
 
 | File | Responsibility | Props | Emits |
 | ---- | -------------- | ----- | ----- |
-| `StepperInput.vue` | Number input + +/- stepper, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
+| `StepperInput.vue` | Number input +/- stepper *(ersetzt durch ValueSliderInput)* | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
+| `ValueSliderInput.vue` | `[-] [Wert] [+]` Stepper + Popover-Slider, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
 | `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-settings` |
 | `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `open` (boolean) | `close`, `applied` (payload `{pH, cl, time}`) |
 | `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
-**`StepperInput.vue`** – combined number input with +/- stepper buttons:
+**`ValueSliderInput.vue`** – kombiniert `[-] [Wert] [+]` Stepper mit Popover-Slider:
 
 ```vue
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps(['modelValue', 'min', 'max', 'step', 'decimals', 'unit'])
 const emit = defineEmits(['update:modelValue'])
 
-const inputValue = computed({
-  get: () => props.modelValue.toFixed(props.decimals),
-  set: (val) => {
-    const num = parseFloat(val)
-    if (!isNaN(num)) {
-      const clamped = Math.max(props.min, Math.min(props.max, num))
-      emit('update:modelValue', parseFloat(clamped.toFixed(props.decimals)))
-    }
-  },
+const showSlider = ref(false)
+const idleTimer = ref(null)
+const releaseTimer = ref(null)
+const isDragging = ref(false)
+const holdTimer = ref(null)
+
+const displayValue = computed(() => props.modelValue.toFixed(props.decimals))
+
+// Integer-Range intern (0..N) mapped auf Dezimal-Step
+const rangeSteps = computed(() => Math.round((props.max - props.min) / props.step))
+
+function valueToRange(val) { return Math.round((val - props.min) / props.step) }
+function rangeToValue(rangeVal) {
+  return parseFloat((props.min + rangeVal * props.step).toFixed(props.decimals))
+}
+
+function openSlider() { showSlider.value = true; resetIdleTimer() }
+function closeSlider() { showSlider.value = false; clearTimers() }
+
+// 5s Idle-Timeout
+function resetIdleTimer() { clearTimers()
+  idleTimer.value = setTimeout(() => { if (!isDragging.value) closeSlider() }, 5000) }
+
+// 1s Release-Timeout nach Loslassen
+function onDragEnd() { isDragging.value = false
+  releaseTimer.value = setTimeout(() => closeSlider(), 1000) }
+
+// Gedrückthalten der +/- Buttons: 500ms initial, dann alle 100ms
+function onHoldStart(dir) { step(dir)
+  holdTimer.value = setTimeout(() => {
+    holdTimer.value = setInterval(() => step(dir), 100) }, 500) }
+function onHoldEnd() { clearTimers() }
+
+// Klick außerhalb schließt
+function onClickOutside(event) {
+  if (showSlider.value && overlayRef.value && !overlayRef.value.contains(event.target)) closeSlider()
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onClickOutside)
+  document.addEventListener('touchstart', onClickOutside)
 })
 
-function step(dir) {
-  const next = parseFloat((props.modelValue + dir * props.step).toFixed(props.decimals))
-  if (next >= props.min && next <= props.max) emit('update:modelValue', next)
-}
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onClickOutside)
+  document.removeEventListener('touchstart', onClickOutside)
+  clearTimers()
+})
 </script>
 
 <template>
-  <div class="flex items-center gap-2">
-    <button @click="step(-1)" :disabled="modelValue <= min">−</button>
-    <input v-model.number="inputValue" type="number" :step="step" :min="min" :max="max" />
-    <span>{{ unit }}</span>
-    <button @click="step(+1)" :disabled="modelValue >= max">+</button>
+  <div class="relative w-full">
+    <div class="flex items-center justify-center gap-6">
+      <button @mousedown.prevent="onHoldStart(-1)" @mouseup="onHoldEnd"
+              @mouseleave="onHoldEnd" @touchstart.prevent="onHoldStart(-1)"
+              @touchend="onHoldEnd" @touchcancel="onHoldEnd"
+              :disabled="modelValue <= min">−</button>
+      <button @click="openSlider" class="w-24 ...">{{ displayValue }}<span>{{ unit }}</span></button>
+      <button @mousedown.prevent="onHoldStart(+1)" @mouseup="onHoldEnd" ...>+</button>
+    </div>
+
+    <!-- Popover-Slider über dem Wert (volle Container-Breite) -->
+    <Transition name="slider-popover">
+      <div v-if="showSlider" ref="overlayRef" class="slider-popover">
+        <div class="slider-value">{{ displayValue }}<span class="unit">{{ unit }}</span></div>
+        <input type="range" :min="0" :max="rangeSteps" step="1"
+               :value="sliderRangeValue" @input="onSliderInput" ... />
+        <div class="slider-labels"><span>{{ min }}</span><span>{{ max }}</span></div>
+      </div>
+    </Transition>
   </div>
 </template>
 ```
 
-The component provides both direct value entry via a number input and touch-friendly incremental adjustment via stepper buttons. The input is clamped to min/max bounds and formatted to the specified decimal places.
+Das component bietet:
+- **Normalzustand:** `[-] [Wert] [+]` mit Auto-Repeat bei Gedrückthalten
+- **Klick auf Wert:** Overlay-Slider erscheint über dem Feld (absolute Position, volle Container-Breite)
+- **Slider:** Integer-Range intern (0..N), mapped automatisch auf Dezimal-Step (z.B. 0..200 für temp 10-40°C mit step 0.2)
+- **Timeout:** 5s Inaktivität oder 1s nach Loslassen → schließt automatisch
+- **Klick außerhalb:** schließt sofort
 
 **`MeasurementForm.vue`** – contains the full submit flow:
 
@@ -430,9 +484,9 @@ Backend validation (Pydantic `Field()`) uses the same values.
 
 ```js
 export const FIELD_CONFIG = {
-  temp: { min: 5.0,  max: 45.0,  step: 0.2, default: 20.0, decimals: 1, unit: '°C'   },
-  pH:   { min: 0.0,  max: 14.0,  step: 0.1, default: 7.0,  decimals: 1, unit: ''     },
-  cl:   { min: 0.0,  max: 10.0,  step: 0.1, default: 1.0,  decimals: 1, unit: 'mg/l' },
+  temp: { min: 10.0, max: 40.0,  step: 0.2, default: 24.0, decimals: 1, unit: '°C'   },
+  pH:   { min: 6.0,  max: 8.0,   step: 0.1, default: 7.0,  decimals: 1, unit: ''     },
+  cl:   { min: 0.0,  max: 5.0,   step: 0.1, default: 1.0,  decimals: 1, unit: 'mg/l' },
 }
 
 export const NAME_CONFIG = { minLength: 1, maxLength: 50, pattern: /^[a-zA-Z0-9 ]+$/ }
