@@ -8,7 +8,7 @@ import { useCamera } from '../composables/useCamera.js'
 import StepperInput from './StepperInput.vue'
 import ImageCaptureModal from './ImageCaptureModal.vue'
 
-const emit = defineEmits(['open-settings'])
+const emit = defineEmits(['open-settings', 'open-sliders'])
 
 const { settings } = useSettings()
 const { postMeasurement, fetchPools, loading, error } = useApi()
@@ -229,6 +229,16 @@ initDateTime()
         class="w-full rounded-lg bg-primary py-3 text-lg font-semibold text-white disabled:opacity-50 active:bg-primary/80"
       >
         {{ loading ? 'Sending...' : 'SEND' }}
+      </button>
+    </div>
+
+    <div class="pt-2">
+      <button
+        type="button"
+        @click="emit('open-sliders')"
+        class="w-full rounded-lg border border-dashed border-slate-300 py-2 text-sm text-slate-400 hover:border-primary hover:text-primary"
+      >
+        Slider Varianten testen →
       </button>
     </div>
 
