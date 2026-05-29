@@ -23,5 +23,5 @@ def client():
 @pytest.fixture
 def mock_analyze_image():
     with patch("ai.analyze_pool_image", new_callable=AsyncMock) as mock:
-        mock.return_value = ImageAnalysisResult(ph=7.2, cl=1.5, time=1716518400)
+        mock.return_value = ImageAnalysisResult(ph=7.2, cl=1.5)
         yield mock

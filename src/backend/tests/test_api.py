@@ -73,6 +73,55 @@ def test_get_status_200(client):
     assert data["version"] == "1.0.0"
 
 
+def test_post_measurement_with_ai_fields(client):
+    response = client.post(
+        "/api/measurements",
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "pH": 7.0,
+            "cl": 1.0,
+            "temp": 24.6,
+            "aiPH": 7.3,
+            "aiCL": 1.5,
+            "aiImage": "2026-05-29/123456_abc.jpg",
+            "aiCorrected": True,
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+
+    publish_call = __import__("mqtt").publish.call_args
+    payload = publish_call[0][1]
+    assert payload["aiPH"] == 7.3
+    assert payload["aiCL"] == 1.5
+    assert payload["aiImage"] == "2026-05-29/123456_abc.jpg"
+    assert payload["aiCorrected"] is True
+
+
+def test_post_measurement_with_ai_fields_no_correction(client):
+    response = client.post(
+        "/api/measurements",
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "pH": 7.2,
+            "cl": 1.5,
+            "temp": 24.6,
+            "aiPH": 7.2,
+            "aiCL": 1.5,
+            "aiCorrected": False,
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+
+    publish_call = __import__("mqtt").publish.call_args
+    payload = publish_call[0][1]
+    assert payload["aiCorrected"] is False
+    assert "aiImage" not in payload
+
+
 # --- /api/analyze-image tests ---
 
 def test_analyze_image_200(client, mock_analyze_image):
@@ -85,6 +134,7 @@ def test_analyze_image_200(client, mock_analyze_image):
     data = response.json()
     assert data["ph"] == 7.2
     assert data["cl"] == 1.5
+    assert data["image"] is None
     assert "requestsRemainingToday" in data
 
 

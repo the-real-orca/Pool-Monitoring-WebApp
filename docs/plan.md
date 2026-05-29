@@ -352,6 +352,25 @@ error mapping for refusals/timeouts/auth failures.
 ---
 
 
+## Phase 17 – Feature: AI Result & Image Traceability in MQTT
+
+Goal: The app remembers AI analysis results (pH, cl) and image filenames, and sends them alongside
+the (possibly corrected) values in the MQTT message. This enables later analysis of AI accuracy
+and how often manual corrections are needed.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 17.1 | `src/backend/ai.py` | Add `image` field to `ImageAnalysisResult` model; `_persist_image()` returns relative image path; `analyze_pool_image()` sets `result.image` |
+| [x] 17.2 | `src/backend/main.py` | Add optional `aiPH`, `aiCL`, `aiImage`, `aiCorrected` fields to `Measurement` model; `build_mqtt_payload()` includes them when present; `/api/analyze-image` returns `image` field |
+| [x] 17.3 | `src/frontend/src/composables/useApi.js` | `postMeasurement()` forwards `aiPH`, `aiCL`, `aiImage`, `aiCorrected` from form to API payload |
+| [x] 17.4 | `src/frontend/src/components/ImageCaptureModal.vue` | Emit `image` filename in `applied` event |
+| [x] 17.5 | `src/frontend/src/components/MeasurementForm.vue` | Track `aiData` (ph, cl, image) on capture; compute `aiCorrected` flag on submit by comparing form vs AI values; include all AI fields in payload; reset AI data on form reset |
+| [x] 17.6 | `src/backend/tests/test_models.py` | Tests: AI fields default to None, AI fields with values, aiCorrected=False |
+| [x] 17.7 | `src/backend/tests/test_api.py` | Tests: measurement with AI fields published correctly in MQTT payload |
+
+**Verify:** `pytest -v` → all 56 tests green. `npm run test` → pre-existing validation.spec.js failures unrelated.
+
+
 ## File Overview
 
 ```

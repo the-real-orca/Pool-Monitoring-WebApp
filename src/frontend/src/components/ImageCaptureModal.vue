@@ -42,7 +42,7 @@ async function onFileChange(e) {
       if (result.warnings?.length) {
         showToast(result.warnings.join('; '), 'warning', 5000)
       }
-      emit('applied', { pH: result.ph, cl: result.cl })
+      emit('applied', { pH: result.ph, cl: result.cl, image: result.image })
     } else if (error.value === '401') {
       localError.value = 'Unauthorized – check your token'
     } else if (error.value === '422') {

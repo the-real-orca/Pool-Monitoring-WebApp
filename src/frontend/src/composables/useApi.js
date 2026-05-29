@@ -32,6 +32,18 @@ export function useApi() {
     if (form.status) {
       payload.status = form.status
     }
+    if (form.aiPH != null) {
+      payload.aiPH = form.aiPH
+    }
+    if (form.aiCL != null) {
+      payload.aiCL = form.aiCL
+    }
+    if (form.aiImage) {
+      payload.aiImage = form.aiImage
+    }
+    if (form.aiCorrected != null) {
+      payload.aiCorrected = form.aiCorrected
+    }
     try {
       const res = await fetch(`/api/measurements`, {
         method: 'POST',

@@ -20,6 +20,8 @@ const showStatus = ref(false)
 const showCapture = ref(false)
 const captureMode = ref('camera')
 
+const aiData = reactive({ ph: null, cl: null, image: null })
+
 const form = reactive({
   time: '',
   name: localStorage.getItem('lastPoolName') || '',
@@ -44,6 +46,9 @@ const errors = reactive({})
 
 function resetForm() {
   form.status = ''
+  aiData.ph = null
+  aiData.cl = null
+  aiData.image = null
   Object.keys(errors).forEach(k => delete errors[k])
   initDateTime()
 }
@@ -79,7 +84,14 @@ async function submit() {
   if (!validate()) return
 
   const timestamp = Math.floor(new Date(form.time).getTime() / 1000)
-  const ok = await postMeasurement({ ...form, time: timestamp })
+  const payload = { ...form, time: timestamp }
+  if (aiData.ph != null) {
+    payload.aiPH = aiData.ph
+    payload.aiCL = aiData.cl
+    payload.aiImage = aiData.image
+    payload.aiCorrected = (form.pH !== aiData.ph || form.cl !== aiData.cl)
+  }
+  const ok = await postMeasurement(payload)
   if (ok) {
     showToast('Measurement saved', 'success')
     resetForm()
@@ -90,7 +102,10 @@ async function submit() {
   }
 }
 
-function onCaptureApplied({ pH, cl, time }) {
+function onCaptureApplied({ pH, cl, image }) {
+  aiData.ph = pH
+  aiData.cl = cl
+  aiData.image = image
   if (pH != null) form.pH = pH
   if (cl != null) form.cl = cl
   showToast('Values extracted – please verify', 'success')

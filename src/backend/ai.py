@@ -69,6 +69,7 @@ class ImageAnalysisResult(BaseModel):
     cl: float
     refusal: str | None = None
     warnings: list[str] | None = None
+    image: str | None = None
 
 
 _ALIAS_MAP = {"pH": "ph", "PH": "ph", "Cl": "cl", "P_H": "ph", "chlorine": "cl"}
@@ -78,11 +79,12 @@ def _normalize_keys(d: dict) -> dict:
     return {_ALIAS_MAP.get(k, k): v for k, v in d.items()}
 
 
-def _persist_image(image_bytes: bytes, result: ImageAnalysisResult) -> None:
+def _persist_image(image_bytes: bytes, result: ImageAnalysisResult) -> str | None:
     if not AI_IMAGE_STORAGE_PATH:
-        return
+        return None
     try:
-        date_dir = Path(AI_IMAGE_STORAGE_PATH) / datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        date_dir = Path(AI_IMAGE_STORAGE_PATH) / date_str
         date_dir.mkdir(parents=True, exist_ok=True)
         img_hash = hashlib.sha256(image_bytes).hexdigest()[:12]
         ts = int(time.time())
@@ -93,8 +95,10 @@ def _persist_image(image_bytes: bytes, result: ImageAnalysisResult) -> None:
             f.write(image_bytes)
         with open(json_path, "w") as f:
             json.dump(result.model_dump(mode="json"), f)
+        return f"{date_str}/{base}.jpg"
     except Exception as e:
         log.warning("Failed to persist AI image: %s", e)
+        return None
 
 
 def _prune_old_images() -> None:
@@ -212,5 +216,7 @@ async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResu
     if result.refusal:
         raise AIRefusalError(f"AI refused: {result.refusal}")
 
-    _persist_image(image_bytes, result)
+    image_path = _persist_image(image_bytes, result)
+    if image_path:
+        result.image = image_path
     return result

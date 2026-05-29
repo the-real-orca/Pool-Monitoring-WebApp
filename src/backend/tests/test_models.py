@@ -130,3 +130,32 @@ def test_rounding_temp():
 def test_rounding_cl():
     m = Measurement(time=1, name="Pool", pH=7.0, cl=1.55, temp=20.0)
     assert m.cl == 1.6  # Python rounds 1.55 -> 1.6
+
+
+# --- AI fields tests ---
+
+def test_ai_fields_default():
+    m = Measurement(time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0)
+    assert m.aiPH is None
+    assert m.aiCL is None
+    assert m.aiImage is None
+    assert m.aiCorrected is None
+
+
+def test_ai_fields_with_values():
+    m = Measurement(
+        time=1, name="Pool", pH=7.2, cl=1.0, temp=20.0,
+        aiPH=7.3, aiCL=1.5, aiImage="2026-05-29/123456_abc.jpg", aiCorrected=True,
+    )
+    assert m.aiPH == 7.3
+    assert m.aiCL == 1.5
+    assert m.aiImage == "2026-05-29/123456_abc.jpg"
+    assert m.aiCorrected is True
+
+
+def test_ai_fields_ai_corrected_false():
+    m = Measurement(
+        time=1, name="Pool", pH=7.0, cl=1.0, temp=20.0,
+        aiPH=7.0, aiCL=1.0, aiCorrected=False,
+    )
+    assert m.aiCorrected is False

@@ -104,6 +104,10 @@ class Measurement(BaseModel):
     cl: float = Field(ge=0.0, le=10.0)
     temp: float = Field(ge=5.0, le=45.0)
     status: str | None = Field(default=None, max_length=100)
+    aiPH: float | None = None
+    aiCL: float | None = None
+    aiImage: str | None = Field(default=None, max_length=200)
+    aiCorrected: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -131,6 +135,14 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
     }
     if m.status:
         payload["status"] = m.status
+    if m.aiPH is not None:
+        payload["aiPH"] = m.aiPH
+    if m.aiCL is not None:
+        payload["aiCL"] = m.aiCL
+    if m.aiImage:
+        payload["aiImage"] = m.aiImage
+    if m.aiCorrected is not None:
+        payload["aiCorrected"] = m.aiCorrected
     return topic, payload
 
 
@@ -206,6 +218,7 @@ async def analyze_image(
         "ph": result.ph,
         "cl": result.cl,
         "warnings": result.warnings,
+        "image": result.image,
         "requestsRemainingToday": remaining,
     }
 
