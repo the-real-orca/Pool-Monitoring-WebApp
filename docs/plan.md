@@ -381,13 +381,13 @@ Pool-Config (`POOL_LIST`) automatisch abonnieren.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 18.1 | `src/mqtt2mail/app/mqtt2mail.py` | Topic-Resolution: `MQTT_TOPICS*` -> `POOL_LIST` -> `MQTT_TOPIC_BASE`; Fallback fuer `MQTT_USER/MQTT_PASS`; Multi-Topic Subscribe |
+| [x] 18.1 | `src/mqtt2mail/app/mqtt2mail.py` | Topic-Resolution: `MQTT_TOPICS*` -> `POOL_LIST` -> `MQTT_TOPIC_BASE`; Fallback fuer `MQTT_USER/MQTT_PASS`; Multi-Topic Subscribe; Zeitgesteuerte Reports via `REPORT_TIMES` (Fallback: `REPORT_INTERVAL_MINUTES`) |
 | [x] 18.2 | `src/mqtt2mail/Dockerfile` | Script wird ins Image kopiert (`COPY app/mqtt2mail.py`) |
-| [x] 18.3 | `src/docker-compose.yml` | Service `pool-mqtt-mailer` mit `depends_on: mosquitto`, Ressourcenlimits |
+| [x] 18.3 | `src/docker-compose.yml` | Service `mqtt2mail_pool` mit `depends_on: mosquitto`, Ressourcenlimits, `MQTT_TOPICS` env |
 | [x] 18.4 | `src/.env.example`, `src/mqtt2mail/.env.example` | Gemeinsame mqtt2mail Umgebungsvariablen dokumentiert |
 | [x] 18.5 | `src/deploy-prepare.sh` | mqtt2mail-Dateien werden ins Deploy-Paket uebernommen |
 | [x] 18.6 | `README.md`, `src/mqtt2mail/README.md` | Projektweite Nutzung und Topic-Konfiguration dokumentiert |
-| [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` Dateien | Email-Versand immer aktiv (stdout Fallback bei Fehler); Startup-Testmail |
+| [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` Dateien | Email-Versand immer aktiv (stdout Fallback bei Fehler); Startup-Testmail; Report-Zeitsteuerung via `REPORT_TIMES` oder `REPORT_INTERVAL_MINUTES` |
 
 
 ## File Overview

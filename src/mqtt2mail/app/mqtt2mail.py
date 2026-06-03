@@ -4,7 +4,7 @@ MQTT -> pool report gateway.
 
 - Subscribes to pool sensor MQTT topics.
 - Aggregates only values relevant for the next report window in RAM.
-- Prints a summary email draft every REPORT_INTERVAL_SECONDS.
+- Prints a summary email draft at fixed REPORT_TIMES (or every REPORT_INTERVAL_MINUTES as fallback).
 - Designed for Docker Compose deployment.
 """
 
@@ -162,6 +162,31 @@ def topic_matches(pattern: str, topic: str) -> bool:
             return False
         i += 1
     return i == t_len
+
+
+def parse_report_times(raw: str) -> list[int]:
+    times: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" in part:
+            h, m = part.split(":", 1)
+            try:
+                times.append(int(h) * 60 + int(m))
+            except ValueError:
+                logging.warning("Invalid report time %r, ignoring", part)
+    return sorted(times)
+
+
+def next_report_delay(times: list[int]) -> float:
+    now = now_local()
+    current_sec = now.hour * 3600 + now.minute * 60 + now.second
+    for t in times:
+        t_sec = t * 60
+        if t_sec > current_sec:
+            return t_sec - current_sec
+    return 24 * 3600 - current_sec + times[0] * 60
 
 
 def to_float(value: Any) -> Optional[float]:
@@ -609,11 +634,24 @@ def send_test_email() -> None:
 
 
 def reporter_loop(aggregator: PoolAggregator, stop_event: threading.Event) -> None:
-    interval = env_int("REPORT_INTERVAL_SECONDS", 900)
+    interval = env_int("REPORT_INTERVAL_MINUTES", 15) * 60
     send_empty = env_bool("SEND_EMPTY_REPORT", False)
     subject = env_str("MAIL_SUBJECT", "Pool Übersicht")
+    report_times = parse_report_times(env_str("REPORT_TIMES", ""))
 
-    while not stop_event.wait(interval):
+    if report_times:
+        log_times = ", ".join(f"{t // 60:02d}:{t % 60:02d}" for t in report_times)
+        logging.info("Report times configured: %s", log_times)
+
+    while True:
+        if report_times:
+            delay = next_report_delay(report_times)
+            if stop_event.wait(delay):
+                return
+        else:
+            if stop_event.wait(interval):
+                return
+
         snapshot = aggregator.snapshot_and_reset()
         if snapshot["message_count"] == 0 and not send_empty:
             logging.info("Skipping empty report window")

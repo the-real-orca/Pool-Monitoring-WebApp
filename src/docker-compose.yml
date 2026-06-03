@@ -40,9 +40,8 @@ services:
           cpus: '0.25'
           memory: 64M
 
-  mqtt2mail:
+  mqtt2mail_pool:
     build: ./mqtt2mail/
-    container_name: mqtt2mail
     restart: unless-stopped
     env_file:
       - .env
@@ -51,6 +50,7 @@ services:
     # Optional: set timezone inside the container for local timestamps
     environment:
       TZ: ${TZ:-Europe/Vienna}
+      MQTT_TOPICS: "home/H32/pool/+"
     deploy:
       resources:
         limits:
