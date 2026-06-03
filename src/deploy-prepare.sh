@@ -16,6 +16,11 @@ mkdir -p "$DEPLOY_DIR/backend"
 cp backend/main.py backend/mqtt.py backend/ai.py backend/Dockerfile backend/requirements.txt backend/pyproject.toml "$DEPLOY_DIR/backend/"
 cp backend/.dockerignore "$DEPLOY_DIR/backend/.dockerignore"
 
+# mqtt2mail
+mkdir -p "$DEPLOY_DIR/mqtt2mail/app"
+cp mqtt2mail/Dockerfile mqtt2mail/requirements.txt mqtt2mail/.env.example "$DEPLOY_DIR/mqtt2mail/"
+cp mqtt2mail/app/mqtt2mail.py "$DEPLOY_DIR/mqtt2mail/app/"
+
 # Frontend build
 echo "Building frontend..."
 cd frontend

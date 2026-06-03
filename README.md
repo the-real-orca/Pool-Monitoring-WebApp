@@ -7,6 +7,7 @@ Progressive Web App for manual pool measurement entry (pH, chlorine, temperature
 - Manual measurement entry via smartphone PWA
 - Touch-optimized UI with +/- stepper buttons
 - Data transmission via REST API to MQTT broker
+- Optional `mqtt2mail` report service (MQTT -> periodic mail/stdout report)
 - Bearer token authentication
 - PWA with offline support (service worker)
 - Pool selection from backend-defined list
@@ -17,7 +18,7 @@ Progressive Web App for manual pool measurement entry (pH, chlorine, temperature
 |-----------|------------|
 | Frontend | Vue.js 3 (Composition API), Tailwind CSS v4, Vite |
 | Backend | Python FastAPI, paho-mqtt |
-| Infrastructure | Docker Compose, Caddy (HTTPS), Mosquitto |
+| Infrastructure | Docker Compose, Caddy (HTTPS), Mosquitto, mqtt2mail |
 | Testing | pytest (backend), vitest (frontend) |
 
 ## Quick Start (Development)
@@ -45,6 +46,8 @@ cd src && docker compose up -d
 | `MQTT_PASS` | MQTT password (optional) |
 | `POOL_LIST` | JSON array of pool names and MQTT topics |
 | `FRONTEND_URL` | Production frontend URL for CORS |
+| `REPORT_INTERVAL_SECONDS` | mqtt2mail report interval (seconds) |
+| `MAIL_TO` | Recipient(s) for mqtt2mail SMTP report |
 
 ## API Endpoints
 

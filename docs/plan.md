@@ -371,6 +371,25 @@ and how often manual corrections are needed.
 **Verify:** `pytest -v` → all 56 tests green. `npm run test` → pre-existing validation.spec.js failures unrelated.
 
 
+---
+
+
+## Phase 18 – Integration: mqtt2mail Service
+
+Goal: mqtt2mail laeuft als integrierter Docker-Service und kann Topics aus der
+Pool-Config (`POOL_LIST`) automatisch abonnieren.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 18.1 | `src/mqtt2mail/app/mqtt2mail.py` | Topic-Resolution: `MQTT_TOPICS*` -> `POOL_LIST` -> `MQTT_TOPIC_BASE`; Fallback fuer `MQTT_USER/MQTT_PASS`; Multi-Topic Subscribe |
+| [x] 18.2 | `src/mqtt2mail/Dockerfile` | Script wird ins Image kopiert (`COPY app/mqtt2mail.py`) |
+| [x] 18.3 | `src/docker-compose.yml` | Service `pool-mqtt-mailer` mit `depends_on: mosquitto`, Ressourcenlimits |
+| [x] 18.4 | `src/.env.example`, `src/mqtt2mail/.env.example` | Gemeinsame mqtt2mail Umgebungsvariablen dokumentiert |
+| [x] 18.5 | `src/deploy-prepare.sh` | mqtt2mail-Dateien werden ins Deploy-Paket uebernommen |
+| [x] 18.6 | `README.md`, `src/mqtt2mail/README.md` | Projektweite Nutzung und Topic-Konfiguration dokumentiert |
+| [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` Dateien | Email-Versand immer aktiv (stdout Fallback bei Fehler); Startup-Testmail |
+
+
 ## File Overview
 
 ```
@@ -392,6 +411,13 @@ src/
 │       ├── test_api.py
 │       ├── test_auth.py
 │       └── test_ai.py                 # Phase 16
+├── mqtt2mail/                         # Phase 18
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── README.md
+│   └── app/
+│       └── mqtt2mail.py
 └── frontend/
     ├── Dockerfile
     ├── nginx.conf

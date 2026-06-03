@@ -40,6 +40,23 @@ services:
           cpus: '0.25'
           memory: 64M
 
+  mqtt2mail:
+    build: ./mqtt2mail/
+    container_name: mqtt2mail
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - mosquitto
+    # Optional: set timezone inside the container for local timestamps
+    environment:
+      TZ: ${TZ:-Europe/Vienna}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+
 # for testing purposes only!
 # expose the MQTT broker on a non-standard port to avoid conflicts with any local installations
   mosquitto:
