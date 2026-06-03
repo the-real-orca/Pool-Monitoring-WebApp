@@ -2,15 +2,15 @@
 
 Kleiner MQTT-Report-Gateway fuer Pool-Messwerte und Alarme.
 
-Aktueller Testmodus: Der Report wird alle `REPORT_INTERVAL_SECONDS` nach stdout geschrieben. SMTP/Gmail-Versand ist im Code bewusst deaktiviert.
+Der Report wird zu den konfigurierten `REPORT_TIMES` (oder im `REPORT_INTERVAL_MINUTES`-Intervall) per SMTP versendet. Bei SMTP-Fehler erfolgt ein stdout-Fallback. Beim Start wird eine Testmail verschickt.
 
 ## Architektur
 
 ```text
-MQTT Broker -> Python Docker Container -> RAM Aggregation -> stdout Report alle 15 Minuten
+MQTT Broker -> Python Docker Container -> RAM Aggregation -> SMTP Report (stdout Fallback)
 ```
 
-Im Pool-Monitoring-Projekt laeuft der Container als Service `pool-mqtt-mailer` in
+Im Pool-Monitoring-Projekt laeuft der Container als Service `mqtt2mail_pool` in
 `src/docker-compose.yml` und nutzt dieselbe `src/.env` wie das Backend.
 
 Das Skript speichert nur die fuer das naechste Report-Fenster relevanten Werte im RAM:
@@ -132,5 +132,5 @@ mosquitto_pub -h mqtt.example.com -t /esp32/sensor/ble-yc01/alert -m '{"alert":f
 Fuer schnelle Tests kann das Intervall temporaer reduziert werden:
 
 ```env
-REPORT_INTERVAL_SECONDS=60
+REPORT_INTERVAL_MINUTES=1
 ```

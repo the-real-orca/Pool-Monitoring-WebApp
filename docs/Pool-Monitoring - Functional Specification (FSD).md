@@ -96,8 +96,8 @@ sequenceDiagram
 
 | Component     | Technology                                             |
 | ------------- | ------------------------------------------------------ |
-| Frontend      | Vue.js 3 (Composition API), Tailwind CSS, Vite, Chart.js |
-| Backend       | Python FastAPI, paho-mqtt, httpx (AI client)           |
+| Frontend      | Vue.js 3 (Composition API), Tailwind CSS, Vite |
+| Backend       | Python FastAPI, paho-mqtt, httpx (test client) + openrouter SDK (AI analysis)           |
 | AI Service    | Multimodal LLM (OpenAI / Anthropic / Gemini) – pluggable via env |
 | Infrastructure| Docker Compose, Caddy (SSL), Mosquitto, Nginx          |
 
@@ -117,7 +117,7 @@ the AI result. Manual correction remains possible before submitting.
 | -------------- | ---------------------------------------------- | --------------- | ----- | --------------- | -------------------------- |
 | **Date/Time**  | datetime-local (UI) / Unix timestamp (Message) | <Current Time>  | -     | -               | Valid date format          |
 | **Pool**       | select                                         | 1st Item        | -     | -               | Must exist in backend list |
-| **Notes**      | text (textarea)                                | -               | -     | Max 500 chars   | Optional free text         |
+| **Status**     | text (textarea)                                | -               | -     | Max 100 chars   | Optional free text         |
 | **Temperature**| number                                         | 24.0            | 0.2   | 10.0 – 40.0 °C  | 1 decimal place            |
 | **pH Value**   | number                                         | 7.0             | 0.1   | 6.0 – 8.0       | 1 decimal place            |
 | **Chlorine**   | number                                         | 1.0             | 0.1   | 0.0 – 5.0 mg/l  | 1 decimal place            |
@@ -174,7 +174,7 @@ the AI result. Manual correction remains possible before submitting.
 │  [  -  ] [7.0 ] [  +  ]     │
 │  🧪 Chlorine (mg/l)         │
 │  [  -  ] [1.0 ] [  +  ] mg/l│
-│  ▼ Notes / Status (collapsible)
+│  ▼ Status (collapsible)
 │  ┌─────────────────────┐    │
 │  │     SEND            │    │
 │  └─────────────────────┘    │
@@ -294,14 +294,14 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 {
   "ph": 7.2,
   "cl": 1.0,
-  "refusal": null,
   "warnings": null,
+  "image": null,
   "requestsRemainingToday": 7
 }
 ```
 
 `ph` and `cl` may be `-1.0` if the AI could not reliably read them.
-`refusal` is non-null when the AI refused to analyze (safety filter).
+`image` is a path to the persisted image file (or null if storage is not configured).
 `warnings` is a list of image quality issues when significant problems are detected.
 
 **Errors:**
@@ -310,9 +310,9 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 | ------ | -------------------------------------------------------------------- |
 | 400    | Missing/invalid file, wrong MIME type, file too large                |
 | 401    | Invalid / missing token                                              |
-| 422    | AI refused (safety) or returned no usable values (-1 for both)       |
+| 422    | AI refused (safety), AI schema mismatch, or returned no usable values (-1 for both) |
 | 429    | Per-IP / global daily rate limit reached                             |
-| 502    | AI service returned an unrecoverable error (auth, schema mismatch)   |
+| 502    | AI service returned an unrecoverable error (auth)                    |
 | 503    | AI service unreachable / timeout                                     |
 
 #### GET /api/status
@@ -326,11 +326,11 @@ Settings are set via environment variables.
 | Setting                      | Type     | Default          | Description                                                       |
 | ---------------------------- | -------- | ---------------- | ----------------------------------------------------------------- |
 | API Token                    | password | -                | Bearer token for backend                                          |
-| MQTT Server                  | text     | mqtt://localhost | MQTT server URL                                                   |
+| MQTT Server                  | text     | localhost        | MQTT server hostname                                               |
 | MQTT User                    | text     | -                | MQTT username                                                     |
 | MQTT Password                | password | -                | MQTT password                                                     |
 | POOL_LIST                    | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics    |
-| AI_PROVIDER                  | text     | `openrouter`     | One of `openrouter`, `openai`, `anthropic`, `gemini`               |
+| AI_PROVIDER                  | text     | `""`             | One of `openrouter`, `openai`, `anthropic`, `gemini` (empty = disabled) |
 | AI_API_KEY                   | password | -                | API key for the chosen provider (kept server-side only)           |
 | AI_MODEL                     | text     | `google/gemini-3-flash-preview` | Concrete model identifier (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4`) |
 | AI_MAX_REQUESTS_PER_DAY      | int      | `10`             | Hard cap on `/api/analyze-image` calls per UTC day (security)     |
@@ -338,6 +338,20 @@ Settings are set via environment variables.
 | AI_IMAGE_STORAGE_PATH        | path     | `/data/ai`       | Directory for persisted images + AI responses (logging / debug)   |
 | AI_IMAGE_RETENTION_DAYS      | int      | `30`             | Auto-cleanup age for stored images                                |
 | AI_MAX_IMAGE_BYTES           | int      | `10485760`       | Upload size limit in bytes (10 MB default)                        |
+| REPORT_TIMES                 | text     | `09:00,12:00,16:00` | Fixed report times for mqtt2mail (comma-separated)             |
+| REPORT_INTERVAL_MINUTES      | int      | `15`             | Fallback report interval when REPORT_TIMES is empty                |
+| SEND_EMPTY_REPORT            | bool     | `false`          | Send report email even when no data was received in the window     |
+| MAIL_SUBJECT                 | text     | `Pool Overview`  | Email subject line for mqtt2mail reports                           |
+| MAIL_TO                      | text     | -                | Recipient email address(es) for mqtt2mail                         |
+| MAIL_FROM                    | text     | -                | Sender email address for mqtt2mail                                |
+| SMTP_HOST                    | text     | `smtp.gmail.com` | SMTP server hostname for mqtt2mail                                |
+| SMTP_PORT                    | int      | `587`            | SMTP server port for mqtt2mail                                    |
+| SMTP_USER                    | text     | -                | SMTP username for mqtt2mail                                       |
+| SMTP_PASS                    | password | -                | SMTP password for mqtt2mail                                       |
+| MQTT_TOPICS                  | text     | -                | Override MQTT data topics for mqtt2mail (comma-separated)         |
+| MQTT_TOPIC_BASE              | text     | -                | Base topic for mqtt2mail fallback topic resolution                 |
+| MQTT_ALERT_TOPICS            | text     | -                | MQTT alert topics for mqtt2mail (comma-separated)                 |
+| MQTT_AVAILABILITY_TOPICS     | text     | -                | MQTT availability topics for mqtt2mail (comma-separated)          |
 
 ### 4.3 MQTT Integration
 
@@ -359,7 +373,6 @@ The MQTT topic is dynamically selected based on the submitted pool `name` mappin
 | Image analysis (p95)     | < 15s (incl. AI round-trip)  |
 | Image upload payload     | < 2 MB after client compression |
 | Availability             | 90% (hobby)                  |
-| Database                 | Up to 100,000 measurements   |
 
 ---
 
@@ -391,7 +404,6 @@ Via Docker Compose.
 | MQTT lost                   | Reconnect (exponential backoff, max 5 min)                |
 | MQTT down                   | HTTP 503, client informed                                 |
 | Invalid token               | HTTP 401, logging                                         |
-| DB error                    | HTTP 500, health check = unhealthy                        |
 | AI rate limit reached       | HTTP 429, no upstream call, log event                     |
 | AI authentication / 4xx     | HTTP 502, no retry, log redacted error                    |
 | AI timeout / network        | HTTP 503, no retry, log event                             |

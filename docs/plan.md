@@ -26,10 +26,10 @@ Goal: all container and proxy configurations complete and syntactically correct.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 2.1 | `src/docker-compose.yml` | Services `frontend`, `backend`, `caddy`; volume `caddy_data`; `env_file: .env` for backend; `depends_on` |
+| [x] 2.1 | `src/docker-compose.yml` | Services `frontend`, `backend`, `caddy`, `mosquitto`, `mqtt2mail_pool`; volumes `caddy_data`, `ai_data`; `env_file: .env` for backend; `depends_on` |
 | [x] 2.2 | `src/Caddyfile` | `handle /api/*` → `reverse_proxy backend:8000`; `handle` → `reverse_proxy frontend:80` |
 | [x] 2.3 | `src/backend/Dockerfile` | `FROM python:3.12-slim`; `pip install -r requirements.txt`; `CMD uvicorn main:app --host 0.0.0.0 --port 8000` |
-| [x] 2.4 | `src/frontend/Dockerfile` | Multi-stage: `node:22-alpine` build → `nginx:alpine` serve |
+| [x] 2.4 | `src/frontend/Dockerfile`, `src/frontend/Dockerfile_production` | Dev: multi-stage `node:22-alpine` build → `nginx:alpine` serve; Production: uses pre-built `dist/` |
 | [x] 2.5 | `src/frontend/nginx.conf` | SPA routing `try_files $uri /index.html`; static assets `expires 1y; Cache-Control immutable` |
 | [x] 2.6 | `src/mosquitto/config/mosquitto.conf` | `listener 2883` · `allow_anonymous true` |
 | [x] 2.7 | `src/docker-compose.yml` | Mosquitto: folder bind mount `./mosquitto/config:/mosquitto/config:ro`, Port `2883:2883` |
@@ -47,7 +47,7 @@ Goal: fully functional backend, startable locally with `uvicorn`.
 |---|------|---------|
 | [x] 3.1 | `backend/requirements.txt` | `fastapi>=0.115`, `uvicorn[standard]>=0.30`, `paho-mqtt>=2.0`, `python-dotenv>=1.0` |
 | [x] 3.2 | `backend/pyproject.toml` | Ruff: `line-length=100`, `select=["E","F","I"]`; Black-compatible format |
-| [x] 3.3 | `backend/mqtt.py` | `connect(host, port, user, password)` · `publish(topic, payload) → bool` · `disconnect()` · `is_connected() → bool`; paho `loop_start()` + `reconnect_delay_set(min=1, max=300)` |
+| [x] 3.3 | `backend/mqtt.py` | `connect(host, port, user, password, tls=False)` · `publish(topic, payload) → bool` · `disconnect()` · `is_connected() → bool`; paho `loop_start()` + `reconnect_delay_set(min=1, max=300)`; TLS with `check_hostname=False`, `CERT_NONE` for self-signed certs |
 | [x] 3.4 | `backend/main.py` | Config block `os.getenv` (6 lines) · `Measurement` Pydantic model (field boundaries, `name_alphanumeric`, `one_decimal`) · `build_mqtt_payload()` · `verify_token()` with `secrets.compare_digest` · `CORSMiddleware` · FastAPI lifespan (MQTT connect/disconnect) · `POST /api/measurements` (201/400/401/503) · `GET /api/status` |
 
 **Verify:** `uvicorn main:app` starts. `GET /api/status` → `200 {"status":"healthy",...}`.
@@ -97,7 +97,7 @@ Goal: all reusable logic blocks are isolated and independently testable.
 |---|------|---------|
 | [x] 6.1 | `src/validation.js` | `FIELD_CONFIG`: `temp`, `pH`, `cl` each with `{ min, max, step, default, decimals, unit }` · `NAME_CONFIG`: `{ minLength:1, maxLength:50, pattern:/^[a-zA-Z0-9 ]+$/ }` |
 | [x] 6.2 | `src/composables/useSettings.js` | Module-level `reactive(load())` · `watch(settings, save, {deep:true})` · token `btoa`/`atob` · `export function useSettings() { return { settings } }` |
-| [x] 6.3 | `src/composables/useApi.js` | `postMeasurement(form)`: build payload (Unix timestamp, fixed fields) · `fetch` with `Authorization: Bearer` · differentiate 401 / 5xx / network error · returns `{ loading, error, postMeasurement }` |
+| [x] 6.3 | `src/composables/useApi.js` | `postMeasurement(form)`: build payload (Unix timestamp, fixed fields, AI traceability fields) · `fetchPools()`: fetch pool list from backend · `analyzeImage(file)`: POST image to AI endpoint · `fetch` with `Authorization: Bearer` · differentiate 401 / 5xx / network error · returns `{ loading, error, postMeasurement, fetchPools, analyzeImage }` |
 | [x] 6.4 | `src/composables/useToast.js` | Module-level `reactive` toast state (`message`, `type`, `visible`) · `show(message, type='success', duration=3000)` with `clearTimeout` + auto-hide |
 
 **Verify:** `npm run dev` starts (no import errors). ✅
@@ -111,9 +111,9 @@ Goal: all three UI components are complete, visually correct, touch-optimized.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 7.1 | `src/components/StepperInput.vue` | Props: `modelValue`, `min`, `max`, `step`, `decimals`, `unit` · `step(dir)`: `parseFloat(...toFixed(decimals))` + range check · emit `update:modelValue` · buttons ≥ 44×44px · `:disabled` at boundaries *(abgelöst durch ValueSliderInput für temp/pH/cl)* |
-| [x] 7.2 | `src/components/ValueSliderInput.vue` | Stepper + Popover-Slider-Kombo: `[-] [Wert] [+]` – Klick auf Wert öffnet Overlay-Slider über dem Feld (volle Container-Breite, Bottom-Sheet-Stil) · Integer-Range intern (0..N) mapped auf Dezimal-Step · 5s Idle-Timeout, 1s Release-Timeout, Klick außerhalb schließt · Gedrückthalten der +/- Buttons startet Wiederholung nach 500ms (alle 100ms) · `v-model` kompatibel |
-| [x] 7.3 | `src/components/MeasurementForm.vue` | `reactive` form state (defaults from `FIELD_CONFIG`, name from `settings.poolName`) · `datetime-local` → Unix timestamp on submit · `ValueSliderInput` für temp/pH/cl · inline error messages · `submit()`: `postMeasurement` → toast + `resetForm()` or error display with retry · loading state on submit button · emit `open-settings` |
+| [x] 7.1 | `src/components/StepperInput.vue` | Props: `modelValue`, `min`, `max`, `step`, `decimals`, `unit` · `step(dir)`: `parseFloat(...toFixed(decimals))` + range check · emit `update:modelValue` · buttons ≥ 44×44px · `:disabled` at boundaries *(replaced by ValueSliderInput for temp/pH/cl)* |
+| [x] 7.2 | `src/components/ValueSliderInput.vue` | Stepper + Popover-Slider combo: `[-] [Value] [+]` – clicking the value opens an overlay slider spanning full container width (bottom-sheet style) · internal integer range (0..N) mapped to decimal step · 5s idle timeout, 1s release timeout, click outside to close · holding +/- buttons starts repetition after 500ms (every 100ms) · `v-model` compatible |
+| [x] 7.3 | `src/components/MeasurementForm.vue` | `reactive` form state (defaults from `FIELD_CONFIG`, name from `settings.poolName`) · `datetime-local` → Unix timestamp on submit · `ValueSliderInput` for temp/pH/cl · inline error messages · `submit()`: `postMeasurement` → toast + `resetForm()` or error display with retry · loading state on submit button · emit `open-settings` |
 | [x] 7.4 | `src/components/SettingsPanel.vue` | `v-model` directly on `settings` · fields: token (password) · emit `close` · visible version string (from constant) |
 
 **Verify:** `npm run dev` → form fully operable, settings open/close, stepper ± buttons respond correctly. ✅
@@ -156,8 +156,8 @@ Goal: all services run together in Docker, end-to-end fully verified.
 | # | Step | Expected result |
 |---|------|-----------------|
 | [x] 10.1 | Create `.env` from `.env.example` | Token set, MQTT connection data configured |
-| [x] 10.2 | `docker compose build` | All 3 images built, 0 errors |
-| [x] 10.3 | `docker compose up -d` | All 3 containers running |
+| [x] 10.2 | `docker compose build` | All 5 images built, 0 errors |
+| [x] 10.3 | `docker compose up -d` | All 5 containers running |
 | [x] 10.4 | `curl http://localhost:2080/api/status` | `200 {"status":"healthy","mqttConnected":...}` |
 | [x] 10.5 | `curl -X POST http://localhost:2080/api/measurements` with token + JSON | `201 {"status":"success",...}` |
 | [x] 10.6 | MQTT broker: check topic `/pool/manual` | Message in msg-sample.json format received |
@@ -188,7 +188,7 @@ Goal: CORS locked down, HTTPS production-ready, deployed to `pool.io10.org`.
 | [x] 12.2 | `backend/main.py` | CORS: `allow_origins` reads `FRONTEND_URL` env var, no `*` fallback · log warning if `FRONTEND_URL` is empty |
 | [x] 12.3 | `Caddyfile` | Production: `pool.io10.org { … }` with automatic HTTPS (Let's Encrypt) · Dev: keep `:80` for local testing |
 | [x] 12.4 | `docker-compose.yml` | Add `FRONTEND_URL` env var to backend service |
-| [x] 12.5 | `backend/mqtt.py` | TLS support for external MQTT with self-signed certificates (ssl.create_default_context) |
+| [x] 12.5 | `backend/mqtt.py` | TLS support for external MQTT: `ssl.create_default_context()` with `check_hostname=False`, `verify_mode=CERT_NONE` for self-signed certificates |
 | [x] 12.6 | `backend/main.py` | `MQTT_TLS` env var: default based on port (8883), can be overridden |
 | [x] 12.7 | `Caddyfile` / `docker-compose.yml` | HTTPS test: `curl https://pool.io10.org/api/status` → 200 with valid cert |
 
@@ -204,7 +204,7 @@ Goal: deployment package ready for vServer.
 | # | File | Content |
 |---|------|---------|
 | [x] 13.1 | `deploy-prepare.sh` | Script copies all necessary files to `deployment/` directory |
-| [x] 13.2 | `frontend/Dockerfile` | Simplified: uses pre-built `dist/` instead of building on server |
+| [x] 13.2 | `frontend/Dockerfile_production` | Production Dockerfile: uses pre-built `dist/` instead of building on server; copied as `Dockerfile` during deployment |
 | [x] 13.3 | `.gitignore` | Updated for deployment |
 | [x] 13.4 | `src/.gitignore` | Added Python caches, node_modules, dist |
 
@@ -215,19 +215,19 @@ Goal: deployment package ready for vServer.
 
 ## Phase 14 – Security Fixes
 
-Goal: Alle identifizierten Security Issues behoben.
+Goal: All identified security issues fixed.
 
 | # | Issue | File | Fix |
 |---|-------|------|-----|
 | [x] 14.1 | Docker Root User → non-root | `src/backend/Dockerfile` | `USER appuser` |
 | [x] 14.2 | Docker Root User → non-root | `src/frontend/Dockerfile` | `USER appuser`, nginx cache dirs |
-| [x] 14.3 | Rate Limiting | `src/backend/main.py` | Eigenes Middleware: 20 req/60s auf `/api/*` |
+| [x] 14.3 | Rate Limiting | `src/backend/main.py` | Custom middleware: 20 req/60s on `/api/*` |
 | [x] 14.4 | Rate Limiter IP detection | `src/backend/main.py` | `X-Forwarded-For` header support |
-| [x] 14.5 | CORS einschränken | `src/backend/main.py` | `allow_methods=["POST","GET"]`, `allow_headers=["Authorization","Content-Type"]` |
+| [x] 14.5 | Restrict CORS | `src/backend/main.py` | `allow_methods=["POST","GET"]`, `allow_headers=["Authorization","Content-Type"]` |
 | [x] 14.6 | Security Header | `src/Caddyfile` | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| [x] 14.7 | Base Image taggen | `src/backend/Dockerfile` | `FROM python:3.12.13-slim` |
-| [x] 14.8 | Exposed credentials | `src/.gitignore` | `.env_production` ignoriert, Credentials rotiert |
-| [x] 14.9 | Deploy script | `src/deploy-prepare.sh` | Frontend build, .gitignore kopieren |
+| [x] 14.7 | Pin base image tag | `src/backend/Dockerfile` | `FROM python:3.12.13-slim` |
+| [x] 14.8 | Exposed credentials | `src/.gitignore` | `.env_production` ignored, credentials rotated |
+| [x] 14.9 | Deploy script | `src/deploy-prepare.sh` | Frontend build, copy .gitignore |
 
 **Verify:** `pytest -v` → all tests green. ✅
 
@@ -236,14 +236,14 @@ Goal: Alle identifizierten Security Issues behoben.
 
 ## Phase 15 – Feature: Pool List & Notes
 
-Goal: Implement pool selection from backend list and optional notes field.
+Goal: Implement pool selection from backend list and optional status field.
 
 | # | File | Content |
 |---|------|---------|
 | [x] 15.1 | `backend/main.py` | Add `POOL_LIST` parsing from env, `GET /api/pools`, update `POST /api/measurements` |
-| [x] 15.2 | `backend/models` | Update `Measurement` schema: `name` validator, add optional `notes` field |
+| [x] 15.2 | `backend/models` | Update `Measurement` schema: `name` validator, add optional `status` field (max_length=100) |
 | [x] 15.3 | `frontend/useApi.js` | Add `fetchPools()` function |
-| [x] 15.4 | `frontend/MeasurementForm.vue`| Update UI to include pool select dropdown and notes textarea |
+| [x] 15.4 | `frontend/MeasurementForm.vue`| Update UI to include pool select dropdown and status textarea |
 | [x] 15.5 | `frontend/SettingsPanel.vue` | Remove `poolName` setting |
 | [x] 15.6 | Tests | Update and run all tests for frontend and backend |
 
@@ -266,7 +266,7 @@ error mapping for refusals/timeouts/auth failures.
 | [x] 16.1.1 | `src/.env.example` | Add `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`, `AI_MAX_REQUESTS_PER_DAY=10`, `AI_TIMEOUT_SECONDS=30`, `AI_IMAGE_STORAGE_PATH=/data/ai`, `AI_IMAGE_RETENTION_DAYS=30`, `AI_MAX_IMAGE_BYTES=10485760` |
 | [x] 16.1.2 | `src/backend/requirements.txt` | Add `python-multipart>=0.0.9`, `openrouter>=0.9,<1.0`, `pytest-asyncio>=0.23` |
 | [x] 16.1.3 | `src/backend/main.py` | Read AI env vars; `_ai_counter` UTC-day bucket; `ai_rate_check_and_increment()` |
-| [x] 16.1.4 | `src/backend/ai.py` | `ImageAnalysisResult` Pydantic model · `analyze_pool_image(image_bytes, mime)` using official `openrouter` Python SDK · `response_format=ImageAnalysisResult` Pydantic → JSON schema · system prompt constant (includes -1 for unreliable pads, interpolation instructions) · `msg.refusal` check → `AIRefusalError` · error classes (`AIRefusalError`, `AISchemaError`, `AIAuthError`, `AITimeoutError`, `AIServiceError`) · image+result persistence to `AI_IMAGE_STORAGE_PATH/<date>/<ts>_<sha>.{jpg,json}` · `startup()` / `shutdown()` for SDK client lifecycle and retention pruning |
+| [x] 16.1.4 | `src/backend/ai.py` | `ImageAnalysisResult` Pydantic model (fields: `ph`, `cl`, `refusal`, `warnings`, `image`) · `analyze_pool_image(image_bytes, mime)` using official `openrouter` Python SDK · `response_format=ImageAnalysisResult` Pydantic → JSON schema · system prompt constant (includes -1 for unreliable pads, interpolation instructions) · `msg.refusal` check → `AIRefusalError` · error classes (`AIRefusalError`, `AISchemaError`, `AIAuthError`, `AITimeoutError`, `AIServiceError`) · image+result persistence to `AI_IMAGE_STORAGE_PATH/<date>/<ts>_<sha>.{jpg,json}` · `startup()` / `shutdown()` for SDK client lifecycle and retention pruning |
 | [x] 16.1.5 | `src/backend/main.py` | Lifespan: `await ai.startup()` / `await ai.shutdown()` |
 
 **Verify:** `uvicorn main:app` starts without errors when `AI_API_KEY` empty (feature degrades gracefully).
@@ -275,7 +275,7 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 16.2.1 | `src/backend/main.py` | `POST /api/analyze-image` route: `UploadFile` form; auth dependency; MIME allow-list; byte cap; `ai_rate_check_and_increment()`; map AI exceptions → 422/502/503; return `ph`, `cl`, `warnings`, `requestsRemainingToday` |
+| [x] 16.2.1 | `src/backend/main.py` | `POST /api/analyze-image` route: `UploadFile` form; auth dependency; MIME allow-list (jpeg, png, webp); byte cap; `ai_rate_check_and_increment()`; map AI exceptions → `AIRefusalError`/`AISchemaError`→422, `AIAuthError`→502, `AITimeoutError`/`AIServiceError`→503; return `ph`, `cl`, `warnings`, `image`, `requestsRemainingToday` |
 | [x] 16.2.2 | `src/backend/main.py` | Extend `GET /api/status` with `aiConfigured`, `imageAnalysisRequestsToday` |
 
 **Verify:** `curl -F image=@strip.jpg -H "Authorization: Bearer ..." /api/analyze-image` → 200 with extracted values (against mocked AI in tests).
@@ -296,7 +296,7 @@ error mapping for refusals/timeouts/auth failures.
 |---|------|---------|
 | [x] 16.4.1 | `src/frontend/src/composables/useImage.js` | `compress(file, {maxEdge, quality})` using `createImageBitmap` + `OffscreenCanvas`, returns JPEG `File` |
 | [x] 16.4.2 | `src/frontend/src/composables/useApi.js` | `analyzeImage(file)`: builds `FormData` (image only), POST `/api/analyze-image`, no manual `Content-Type`, distinguishes 401/422/429/5xx |
-| [x] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · error display · checks for -1 values (shows error, does not apply) · warnings → toast alert · emits `applied({pH, cl})` |
+| [x] 16.4.3 | `src/frontend/src/components/ImageCaptureModal.vue` | `<input type="file" accept="image/*" capture="environment">` (rear camera on mobile) · loading overlay · error display · checks for -1 values (shows error, does not apply) · warnings → toast alert · emits `applied({pH, cl, image})` |
 | [x] 16.4.4 | `src/frontend/src/components/MeasurementForm.vue` | "Analyze Photo" button between pool select and temperature; opens modal; on `applied` → merge values into form state + success toast |
 | [x] 16.4.5 | `src/frontend/src/composables/useToast.js` | (no change – reuse) |
 
@@ -315,7 +315,7 @@ error mapping for refusals/timeouts/auth failures.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 16.6.1 | `src/docker-compose.yml` | Add named volume `ai_data` mounted at `/data/ai` on the backend service |
+| [x] 16.6.1 | `src/docker-compose.yml` | Add bind mount `./data/ai:/data/ai` on the backend service |
 | [x] 16.6.2 | `src/docker-compose.yml` | Pass new AI env vars to the backend service (`env_file: .env` already covers them) |
 | [x] 16.6.3 | `src/Caddyfile` | Increase `request_body max_size 12MB` for `/api/analyze-image` route only |
 
@@ -360,7 +360,7 @@ and how often manual corrections are needed.
 
 | # | File | Content |
 |---|------|---------|
-| [x] 17.1 | `src/backend/ai.py` | Add `image` field to `ImageAnalysisResult` model; `_persist_image()` returns relative image path; `analyze_pool_image()` sets `result.image` |
+| [x] 17.1 | `src/backend/ai.py` | `_persist_image()` returns relative image path; `analyze_pool_image()` sets `result.image` for traceability |
 | [x] 17.2 | `src/backend/main.py` | Add optional `aiPH`, `aiCL`, `aiImage`, `aiCorrected` fields to `Measurement` model; `build_mqtt_payload()` includes them when present; `/api/analyze-image` returns `image` field |
 | [x] 17.3 | `src/frontend/src/composables/useApi.js` | `postMeasurement()` forwards `aiPH`, `aiCL`, `aiImage`, `aiCorrected` from form to API payload |
 | [x] 17.4 | `src/frontend/src/components/ImageCaptureModal.vue` | Emit `image` filename in `applied` event |
@@ -376,18 +376,18 @@ and how often manual corrections are needed.
 
 ## Phase 18 – Integration: mqtt2mail Service
 
-Goal: mqtt2mail laeuft als integrierter Docker-Service und kann Topics aus der
-Pool-Config (`POOL_LIST`) automatisch abonnieren.
+Goal: mqtt2mail runs as an integrated Docker service and can automatically subscribe
+to topics from the pool config (`POOL_LIST`).
 
 | # | File | Content |
 |---|------|---------|
-| [x] 18.1 | `src/mqtt2mail/app/mqtt2mail.py` | Topic-Resolution: `MQTT_TOPICS*` -> `POOL_LIST` -> `MQTT_TOPIC_BASE`; Fallback fuer `MQTT_USER/MQTT_PASS`; Multi-Topic Subscribe; Zeitgesteuerte Reports via `REPORT_TIMES` (Fallback: `REPORT_INTERVAL_MINUTES`) |
-| [x] 18.2 | `src/mqtt2mail/Dockerfile` | Script wird ins Image kopiert (`COPY app/mqtt2mail.py`) |
-| [x] 18.3 | `src/docker-compose.yml` | Service `mqtt2mail_pool` mit `depends_on: mosquitto`, Ressourcenlimits, `MQTT_TOPICS` env |
-| [x] 18.4 | `src/.env.example`, `src/mqtt2mail/.env.example` | Gemeinsame mqtt2mail Umgebungsvariablen dokumentiert |
-| [x] 18.5 | `src/deploy-prepare.sh` | mqtt2mail-Dateien werden ins Deploy-Paket uebernommen |
-| [x] 18.6 | `README.md`, `src/mqtt2mail/README.md` | Projektweite Nutzung und Topic-Konfiguration dokumentiert |
-| [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` Dateien | Email-Versand immer aktiv (stdout Fallback bei Fehler); Startup-Testmail; Report-Zeitsteuerung via `REPORT_TIMES` oder `REPORT_INTERVAL_MINUTES` |
+| [x] 18.1 | `src/mqtt2mail/app/mqtt2mail.py` | Topic resolution: `MQTT_TOPICS*` -> `POOL_LIST` -> `MQTT_TOPIC_BASE`; fallback for `MQTT_USER/MQTT_PASS`; multi-topic subscribe; time-based reports via `REPORT_TIMES` (fallback: `REPORT_INTERVAL_MINUTES`) |
+| [x] 18.2 | `src/mqtt2mail/Dockerfile` | Script copied into image (`COPY app/mqtt2mail.py`) |
+| [x] 18.3 | `src/docker-compose.yml` | Service `mqtt2mail_pool` with `depends_on: mosquitto`, resource limits, `MQTT_TOPICS` env |
+| [x] 18.4 | `src/.env.example`, `src/mqtt2mail/.env.example` | Shared mqtt2mail environment variables documented |
+| [x] 18.5 | `src/deploy-prepare.sh` | mqtt2mail files included in deployment package |
+| [x] 18.6 | `README.md`, `src/mqtt2mail/README.md` | Project-wide usage and topic configuration documented |
+| [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` files | Email sending always active (stdout fallback on error); startup test mail; report timing via `REPORT_TIMES` or `REPORT_INTERVAL_MINUTES` |
 
 
 ## File Overview
@@ -398,6 +398,7 @@ src/
 ├── .env.example
 ├── docker-compose.yml
 ├── Caddyfile
+├── deploy-prepare.sh
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -420,6 +421,7 @@ src/
 │       └── mqtt2mail.py
 └── frontend/
     ├── Dockerfile
+    ├── Dockerfile_production
     ├── nginx.conf
     ├── package.json
     ├── vite.config.js
@@ -441,6 +443,7 @@ src/
     │   └── composables/
     │       ├── useSettings.js
     │       ├── useApi.js
+    │       ├── useCamera.js           # Phase 16
     │       ├── useImage.js            # Phase 16
     │       └── useToast.js
     └── tests/

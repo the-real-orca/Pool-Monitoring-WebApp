@@ -80,9 +80,18 @@ src/
 │   ├── index.html
 │   ├── vite.config.js       # Vite + Vue + Tailwind + PWA
 │   ├── nginx.conf           # SPA routing for Nginx
-│   └── Dockerfile
+│   ├── Dockerfile
+│   └── Dockerfile_production
+├── mqtt2mail/
+│   ├── .env.example
+│   ├── app/
+│   │   └── mqtt2mail.py
+│   ├── Dockerfile
+│   ├── README.md
+│   └── requirements.txt
 ├── docker-compose.yml
 ├── Caddyfile
+├── deploy-prepare.sh
 ├── .env.example
 └── .gitignore
 ```
@@ -100,6 +109,7 @@ frontend/tests/
 ├── validation.spec.js
 ├── useSettings.spec.js
 ├── StepperInput.spec.js
+├── useApi.spec.js         # API calls: success, 401, network error
 └── useImage.spec.js      # Image compression: dimensions, MIME, size cap
 ```
 
@@ -138,7 +148,7 @@ const { toast } = useToast()
 
     <!-- Global Toast overlay -->
     <Transition name="toast">
-      <div v-if="toast.visible" class="fixed bottom-6 left-1/2 ..."
+      <div v-if="toast.visible" class="fixed top-6 left-1/2 -translate-x-1/2 rounded-lg px-5 py-3 text-sm font-medium text-white shadow-lg"
            :class="{ 'bg-success': toast.type === 'success', 'bg-error': toast.type === 'error', 'bg-warning': toast.type === 'warning' }">
         {{ toast.message }}
       </div>
@@ -161,7 +171,7 @@ The app shell provides a centered card layout with a colored header bar. The for
 | `StepperInput.vue` | Number input +/- stepper *(ersetzt durch ValueSliderInput)* | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
 | `ValueSliderInput.vue` | `[-] [Wert] [+]` Stepper + Popover-Slider, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
 | `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-settings` |
-| `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `open` (boolean) | `close`, `applied` (payload `{pH, cl, time}`) |
+| `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `mode` (String, default `'camera'`) | `close`, `applied` (payload `{pH, cl, image}`) |
 | `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
 **`ValueSliderInput.vue`** – kombiniert `[-] [Wert] [+]` Stepper mit Popover-Slider:
@@ -269,7 +279,7 @@ const form = reactive({
   temp: FIELD_CONFIG.temp.default,
   pH:   FIELD_CONFIG.pH.default,
   cl:   FIELD_CONFIG.cl.default,
-  notes: '',        // optional text
+  status: '',       // optional status text
 })
 
 const errors = reactive({})   // inline validation errors
@@ -296,21 +306,61 @@ async function submit() {
 
 The form title ("Measurements") is rendered inside `MeasurementForm.vue` (matching the FSD wireframe), not in `App.vue`.
 
-**`SettingsPanel.vue`** – no own state, all fields bound directly to `settings`:
+**`SettingsPanel.vue`** – Cancel/Save pattern with token visibility toggle:
 
 ```vue
 <script setup>
+import { reactive, ref } from 'vue'
 import { useSettings } from '../composables/useSettings.js'
-const { settings } = useSettings()
+import { useToast } from '../composables/useToast.js'
+
 const emit = defineEmits(['close'])
+
+const { settings } = useSettings()
+const { show: showToast } = useToast()
 const APP_VERSION = '1.0.0'
+
+const original = reactive({ ...settings })
+const tokenVisible = ref(false)
+
+const cancel = () => {
+  Object.assign(settings, original)
+  emit('close')
+}
+
+const save = () => {
+  showToast('Einstellungen gespeichert', 'success')
+  Object.assign(original, settings)
+  emit('close')
+}
 </script>
 
 <template>
   <div class="relative space-y-5">
-    <button @click="emit('close')" class="...">✕</button>
-    <h1 class="text-center text-2xl font-bold">Settings</h1>
-    <input v-model="settings.token" type="password" placeholder="Bearer token" />
+    <h1 class="text-center text-2xl font-bold text-slate-800">Settings</h1>
+
+    <div class="space-y-4">
+      <div class="space-y-1">
+        <label class="block text-sm font-medium text-slate-600">API Token</label>
+        <div class="relative">
+          <input v-model="settings.token" :type="tokenVisible ? 'text' : 'password'"
+                 placeholder="Bearer token"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+          <button type="button" @click="tokenVisible = !tokenVisible"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            <!-- eye / eye-off SVG icons -->
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 pt-2">
+      <button type="button" @click="cancel"
+              class="flex-1 rounded-lg border border-slate-300 py-2.5 text-slate-600 hover:bg-slate-100 font-medium">Abbrechen</button>
+      <button type="button" @click="save"
+              class="flex-1 rounded-lg bg-primary py-2.5 text-white font-medium hover:bg-primary/90">Speichern</button>
+    </div>
+
     <p class="text-center text-xs text-slate-400">Version {{ APP_VERSION }}</p>
   </div>
 </template>
@@ -366,14 +416,22 @@ export function useApi() {
   const error = ref(null)
 
   async function fetchPools() {
-    // GET /api/pools and return the array, handle errors
+    try {
+      const res = await fetch(`/api/pools`, {
+        headers: { 'Authorization': `Bearer ${settings.token}` }
+      })
+      if (!res.ok) return []
+      return await res.json()
+    } catch {
+      return []
+    }
   }
 
   async function postMeasurement(form) {
     loading.value = true
     error.value = null
     const payload = {
-      time:       Math.floor(Date.now() / 1000),
+      time:       form.time,
       name:       form.name,
       sensorType: 'manual',
       pH:         form.pH,
@@ -382,6 +440,18 @@ export function useApi() {
     }
     if (form.status) {
       payload.status = form.status
+    }
+    if (form.aiPH != null) {
+      payload.aiPH = form.aiPH
+    }
+    if (form.aiCL != null) {
+      payload.aiCL = form.aiCL
+    }
+    if (form.aiImage) {
+      payload.aiImage = form.aiImage
+    }
+    if (form.aiCorrected != null) {
+      payload.aiCorrected = form.aiCorrected
     }
     try {
       const res = await fetch(`/api/measurements`, {
@@ -637,7 +707,7 @@ async function onFileChange(e) {
       if (result.warnings?.length) {
         showToast(result.warnings.join('; '), 'warning', 5000)
       }
-      emit('applied', { pH: result.ph, cl: result.cl })
+      emit('applied', { pH: result.ph, cl: result.cl, image: result.image })
     } else if (error.value === '401') {
       localError.value = 'Unauthorized – check your token'
     } else if (error.value === '422') {
@@ -697,18 +767,22 @@ Key points:
 ### 4.8 `useImage.js` – Compression Helper
 
 ```js
-export function useImage() {
-  async function compress(file, { maxEdge = 1600, quality = 0.85 } = {}) {
-    const bmp = await createImageBitmap(file)
-    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))
-    const w = Math.round(bmp.width * scale)
-    const h = Math.round(bmp.height * scale)
-    const canvas = new OffscreenCanvas(w, h)
-    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h)
-    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality })
-    return new File([blob], 'capture.jpg', { type: 'image/jpeg' })
+export async function compress(file, { maxEdge = 1920, quality = 0.8 } = {}) {
+  const img = await createImageBitmap(file)
+  let { width, height } = img
+  if (width > height && width > maxEdge) {
+    height = Math.round((height * maxEdge) / width)
+    width = maxEdge
+  } else if (height > maxEdge) {
+    width = Math.round((width * maxEdge) / height)
+    height = maxEdge
   }
-  return { compress }
+  const canvas = new OffscreenCanvas(width, height)
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(img, 0, 0, width, height)
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality })
+  img.close()
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
 }
 ```
 
@@ -752,13 +826,22 @@ import json
 
 API_TOKEN   = os.getenv("API_TOKEN", "")
 MQTT_HOST   = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT   = int(os.getenv("MQTT_PORT", "2883"))
+MQTT_PORT   = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER   = os.getenv("MQTT_USER", "")
 MQTT_PASS   = os.getenv("MQTT_PASS", "")
 POOL_LIST   = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+_mqtt_tls_env = os.getenv("MQTT_TLS", "")
+if _mqtt_tls_env:
+    MQTT_TLS = _mqtt_tls_env.lower() == "true"
+else:
+    MQTT_TLS = MQTT_PORT == 8883
+
+ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
 
 # AI image analysis
-AI_PROVIDER             = os.getenv("AI_PROVIDER", "openai")
+AI_PROVIDER             = os.getenv("AI_PROVIDER", "")
 AI_API_KEY              = os.getenv("AI_API_KEY", "")
 AI_MODEL                = os.getenv("AI_MODEL", "google/gemini-3-flash-preview")
 AI_MAX_REQUESTS_PER_DAY = int(os.getenv("AI_MAX_REQUESTS_PER_DAY", "10"))
@@ -782,12 +865,16 @@ import re
 
 class Measurement(BaseModel):
     time:       int
-    name:       str  = Field(min_length=1, max_length=50)
-    sensorType: str  = "manual"
+    name:       str = Field(min_length=1, max_length=50)
+    sensorType: str = "manual"
     pH:         float = Field(ge=0.0, le=14.0)
     cl:         float = Field(ge=0.0, le=10.0)
     temp:       float = Field(ge=5.0, le=45.0)
-    notes:      str | None = Field(default=None, max_length=500)
+    status:     str | None = Field(default=None, max_length=100)
+    aiPH:       float | None = None
+    aiCL:       float | None = None
+    aiImage:    str | None = Field(default=None, max_length=200)
+    aiCorrected: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -816,8 +903,16 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
         "pH":         m.pH,
         "cl":         m.cl,
     }
-    if m.notes:
-        payload["notes"] = m.notes
+    if m.status:
+        payload["status"] = m.status
+    if m.aiPH is not None:
+        payload["aiPH"] = m.aiPH
+    if m.aiCL is not None:
+        payload["aiCL"] = m.aiCL
+    if m.aiImage:
+        payload["aiImage"] = m.aiImage
+    if m.aiCorrected is not None:
+        payload["aiCorrected"] = m.aiCorrected
     return topic, payload
 ```
 
@@ -840,22 +935,61 @@ Bound directly on the route via `dependencies=[Depends(verify_token)]`.
 ### 5.5 Routes & Lifespan
 
 ```python
-from fastapi import FastAPI, HTTPException, Depends
-import mqtt  # mqtt.py
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+import ai
+import mqtt
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, times: int = 20, seconds: int = 60):
+        super().__init__(app)
+        self.times = times
+        self.seconds = seconds
+        self.requests = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown").split(",")[0].strip()
+            now = datetime.now()
+            cutoff = now - timedelta(seconds=self.seconds)
+            self.requests[client_ip] = [t for t in self.requests[client_ip] if t > cutoff]
+            if len(self.requests[client_ip]) >= self.times:
+                return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+            self.requests[client_ip].append(now)
+        return await call_next(request)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS)
-    await ai.startup()       # creates AI_IMAGE_STORAGE_PATH, opens OpenRouter SDK client
+    mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS)
+    await ai.get_client().startup()
     yield
-    await ai.shutdown()
+    await ai.get_client().shutdown()
     mqtt.disconnect()
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_URL] if FRONTEND_URL else [],
+    allow_methods=["POST", "GET"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+app.add_middleware(RateLimitMiddleware, times=20, seconds=60)
+
+
 @app.get("/api/pools", dependencies=[Depends(verify_token)])
 async def get_pools():
     return [{"name": pool["name"]} for pool in POOL_LIST]
+
 
 @app.post("/api/measurements", status_code=201,
           dependencies=[Depends(verify_token)])
@@ -865,13 +999,15 @@ async def post_measurement(m: Measurement):
         raise HTTPException(status_code=503, detail="MQTT unavailable")
     return {"status": "success", "message": "Measurement published to MQTT"}
 
+
 @app.get("/api/status")
 async def get_status():
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return {
         "status":                     "healthy",
         "mqttConnected":              mqtt.is_connected(),
-        "aiConfigured":               bool(AI_API_KEY),
-        "imageAnalysisRequestsToday": _ai_counter["count"],
+        "aiConfigured":               ai.get_client().is_configured(),
+        "imageAnalysisRequestsToday": _ai_counter.get(today, 0),
         "uptime":                     int(time.time() - _start_time),
         "version":                    APP_VERSION,
     }
@@ -885,15 +1021,22 @@ Own file due to own threading state (`loop_start()`).
 ```python
 import json
 import logging
+import ssl
+
 import paho.mqtt.client as mqtt_lib
 
 _client: mqtt_lib.Client | None = None
 
-def connect(host: str, port: int, user: str, password: str) -> None:
+def connect(host: str, port: int, user: str, password: str, tls: bool = False) -> None:
     global _client
     _client = mqtt_lib.Client(mqtt_lib.CallbackAPIVersion.VERSION2)
     if user:
         _client.username_pw_set(user, password)
+    if tls:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        _client.tls_set_context(ctx)
     _client.reconnect_delay_set(min_delay=1, max_delay=300)
     _client.on_connect = lambda c, u, d, rc, p: (
         logging.info("MQTT connected (rc=%s)", rc) if rc == 0 else logging.error("MQTT connection failed (rc=%s)", rc)
@@ -939,30 +1082,41 @@ class ImageAnalysisResult(BaseModel):
     cl:       float
     refusal:  str | None = None   # set by AI when refusing to analyze
     warnings: list[str] | None = None  # image quality issues
+    image:    str | None = None    # persisted image path
 
 # Note: ph and cl can be -1.0 if the AI cannot reliably read them.
 # The route handler checks for -1 and returns an error instead of applying values.
 ```
 
-**SDK client lifecycle** (`startup()` / `shutdown()`):
+**SDK client lifecycle** – `AIClient` class with `startup()` / `shutdown()`:
 
 ```python
 import openrouter
 
-_client: openrouter.OpenRouter | None = None
+class AIClient:
+    def __init__(self) -> None:
+        self._client: openrouter.OpenRouter | None = None
+        self._started = False
 
-async def startup() -> None:
-    global _client
-    _client = openrouter.OpenRouter(
-        api_key=AI_API_KEY,
-        timeout=AI_TIMEOUT_SECONDS,
-    )
-    os.makedirs(AI_IMAGE_STORAGE_PATH, exist_ok=True)
-    _prune_old_images()
+    async def startup(self) -> None:
+        if not AI_API_KEY:
+            return
+        self._client = openrouter.OpenRouter(api_key=AI_API_KEY)
+        self._started = True
+        os.makedirs(AI_IMAGE_STORAGE_PATH, exist_ok=True)
+        _prune_old_images()
 
-async def shutdown() -> None:
-    global _client
-    _client = None   # context manager handles close
+    async def shutdown(self) -> None:
+        self._client = None
+        self._started = False
+
+    def is_configured(self) -> bool:
+        return self._started and self._client is not None
+
+_client = AIClient()
+
+def get_client() -> AIClient:
+    return _client
 ```
 
 **Image sending** – the OpenRouter SDK uses typed message components:
@@ -993,34 +1147,86 @@ Return ONLY the structured analysis result, no additional text."""
 **Structured output** – uses `ChatFormatJSONSchemaConfig` to pass the Pydantic schema:
 
 ```python
+from openrouter.errors import UnauthorizedResponseError, RequestTimeoutResponseError
+from pydantic import ValidationError
+
+_ALIAS_MAP = {"pH": "ph", "PH": "ph", "Cl": "cl", "P_H": "ph", "chlorine": "cl"}
+
+def _normalize_keys(d: dict) -> dict:
+    return {_ALIAS_MAP.get(k, k): v for k, v in d.items()}
+
 async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResult:
-    client = get_client()
-    if not client.is_configured():
+    if not _client.is_configured():
         raise AIServiceError("AI client not configured")
 
-    data_uri = f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
+    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+    data_uri = f"data:{mime};base64,{base64_image}"
+
+    image_content = ChatContentImage(
+        type="image_url",
+        image_url={"url": data_uri, "detail": "high"},
+    )
+
+    system_msg = ChatSystemMessage(content=SYSTEM_PROMPT, role="system")
+    user_msg = ChatUserMessage(content=[image_content], role="user")
 
     schema_config = ChatFormatJSONSchemaConfig(
         json_schema=ChatJSONSchemaConfig(
             name="ImageAnalysisResult",
+            description="Pool test strip analysis result",
             schema_=ImageAnalysisResult.model_json_schema(),
         ),
         type="json_schema",
     )
 
-    response = await client._client.chat.send_async(
-        messages=[
-            ChatSystemMessage(content=SYSTEM_PROMPT, role="system"),
-            ChatUserMessage(content=[ChatContentImage(type="image_url", image_url={"url": data_uri, "detail": "high"})], role="user"),
-        ],
-        model=AI_MODEL,
-        response_format=schema_config,
-        timeout_ms=AI_TIMEOUT_SECONDS * 1000,
-    )
+    try:
+        response = await _client._client.chat.send_async(
+            messages=[system_msg, user_msg],
+            model=AI_MODEL,
+            response_format=schema_config,
+            timeout_ms=AI_TIMEOUT_SECONDS * 1000,
+        )
+    except UnauthorizedResponseError as e:
+        raise AIAuthError(f"AI authentication failed: {e}") from e
+    except RequestTimeoutResponseError as e:
+        raise AITimeoutError(f"AI request timed out after {AI_TIMEOUT_SECONDS}s") from e
+    except Exception as e:
+        raise AIServiceError(f"AI service error: {e}") from e
+
+    if not response.choices:
+        raise AIServiceError("Empty response from AI service")
 
     choice = response.choices[0]
-    # Handle refusal / errors
-    ...
+    finish_reason = getattr(choice, "finish_reason", None)
+    if finish_reason == "refuse":
+        raise AIRefusalError("AI refused to analyze the image")
+
+    content = choice.message.content
+    refusal = choice.message.refusal
+
+    if refusal:
+        raise AIRefusalError(f"AI refused: {refusal}")
+
+    if not content:
+        raise AISchemaError("AI returned empty response")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise AISchemaError(f"AI returned unparseable response: {e}") from e
+
+    try:
+        result = ImageAnalysisResult.model_validate(_normalize_keys(parsed))
+    except ValidationError as e:
+        raise AISchemaError(f"AI returned invalid schema: {e}") from e
+
+    if result.refusal:
+        raise AIRefusalError(f"AI refused: {result.refusal}")
+
+    image_path = _persist_image(image_bytes, result)
+    if image_path:
+        result.image = image_path
+    return result
 ```
 
 **Error taxonomy** – caught and re-mapped to application-level errors:
@@ -1028,7 +1234,7 @@ async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResu
 | Exception           | HTTP | Trigger                                                            |
 | ------------------- | ---- | ------------------------------------------------------------------ |
 | `AIRefusalError`    | 422  | AI refused to analyze (safety filter or content policy)            |
-| `AISchemaError`     | 502  | Response JSON does not match ImageAnalysisResult schema            |
+| `AISchemaError`     | 422  | Response JSON does not match ImageAnalysisResult schema            |
 | `AIAuthError`       | 502  | SDK raises `UnauthorizedResponseError` (invalid API key)           |
 | `AITimeoutError`    | 503  | SDK raises `RequestTimeoutResponseError`                           |
 | `AIServiceError`    | 503  | Other SDK errors or empty response                                 |
@@ -1051,11 +1257,13 @@ SHA256 prefix in the filename allows cheap deduplication without a database.
 **Public API of `ai.py`:**
 
 ```python
-async def analyze_pool_image(image_bytes: bytes, mime: str,
-                             hint: dict | None = None) -> ImageAnalysisResult: ...
+async def analyze_pool_image(image_bytes: bytes, mime: str) -> ImageAnalysisResult: ...
 
-async def startup() -> None: ...   # creates AI_IMAGE_STORAGE_PATH, starts OpenRouter client
-async def shutdown() -> None: ...  # closes client (context manager)
+def get_client() -> AIClient: ...               # returns module-level singleton
+# AIClient methods:
+async def startup() -> None: ...                # creates AI_IMAGE_STORAGE_PATH, starts OpenRouter client
+async def shutdown() -> None: ...               # closes client
+def is_configured() -> bool: ...                # checks if client is started and key is set
 
 ### 5.8 Rate Limiting for `/api/analyze-image`
 
@@ -1066,16 +1274,20 @@ simple in-process counter keyed by the current UTC date – no Redis, no DB:
 ```python
 from datetime import datetime, timezone
 
-_ai_counter = {"date": "", "count": 0}
+_ai_counter: dict[str, int] = {}
+_ai_counter_date: str = ""
 
-def ai_rate_check_and_increment() -> int:
+def ai_rate_check_and_increment() -> tuple[bool, int]:
+    global _ai_counter, _ai_counter_date
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if _ai_counter["date"] != today:
-        _ai_counter.update(date=today, count=0)
-    if _ai_counter["count"] >= AI_MAX_REQUESTS_PER_DAY:
-        raise HTTPException(status_code=429, detail="Daily image-analysis limit reached")
-    _ai_counter["count"] += 1
-    return AI_MAX_REQUESTS_PER_DAY - _ai_counter["count"]
+    if today != _ai_counter_date:
+        _ai_counter = {}
+        _ai_counter_date = today
+    remaining = AI_MAX_REQUESTS_PER_DAY - _ai_counter.get(today, 0)
+    if remaining <= 0:
+        return False, 0
+    _ai_counter[today] = _ai_counter.get(today, 0) + 1
+    return True, AI_MAX_REQUESTS_PER_DAY - _ai_counter[today]
 ```
 
 Limitations (acceptable for a single-instance hobby deployment):
@@ -1087,44 +1299,48 @@ Limitations (acceptable for a single-instance hobby deployment):
 ### 5.9 `POST /api/analyze-image` Route
 
 ```python
-from fastapi import File, Form, UploadFile
-from pydantic import Json, BaseModel
-
-class AnalyzeImageHint(BaseModel):
-    hint: str | None = None
+from fastapi import File, UploadFile
 
 @app.post("/api/analyze-image",
-          dependencies=[Depends(verify_token)],
-          response_model=ImageAnalysisResult)
-async def analyze_image_endpoint(
+          dependencies=[Depends(verify_token)])
+async def analyze_image(
     image: UploadFile = File(...),
-    data:  Json[AnalyzeImageHint] = Form(default=AnalyzeImageHint()),
 ):
-    if image.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(400, "Only JPEG or PNG accepted")
-    raw = await image.read()
-    if len(raw) > AI_MAX_IMAGE_BYTES:
-        raise HTTPException(400, "Image too large")
+    if image.content_type not in ALLOWED_IMAGE_MIMES:
+        raise HTTPException(status_code=400, detail=f"Unsupported MIME type: {image.content_type}")
 
-    remaining = ai_rate_check_and_increment()
+    image_bytes = await image.read()
+    if len(image_bytes) > AI_MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail=f"Image too large: {len(image_bytes)} > {AI_MAX_IMAGE_BYTES} bytes")
+
+    ok, remaining = ai_rate_check_and_increment()
+    if not ok:
+        raise HTTPException(status_code=429, detail="Daily image-analysis limit reached")
 
     try:
-        result = await ai.analyze_pool_image(raw, image.content_type, data.model_dump())
-    except ai.AIRefusalError:    raise HTTPException(422, "AI refused to analyze")
-    except ai.AISchemaError:     raise HTTPException(502, "AI returned invalid schema")
-    except ai.AIAuthError:       raise HTTPException(502, "AI authentication failed")
-    except ai.AITimeoutError:    raise HTTPException(503, "AI service timeout")
-    except ai.AIServiceError:    raise HTTPException(503, "AI service unavailable")
+        result = await ai.analyze_pool_image(image_bytes, image.content_type)
+    except ai.AIRefusalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ai.AISchemaError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ai.AIAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except ai.AITimeoutError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ai.AIServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    response = result.model_dump()
-    response["requestsRemainingToday"] = remaining
-    return response
+    return {
+        "ph": result.ph,
+        "cl": result.cl,
+        "warnings": result.warnings,
+        "image": result.image,
+        "requestsRemainingToday": remaining,
+    }
 ```
 
 Notes:
 
-- `pydantic.Json[AnalyzeImageHint]` parses the `data` form field as JSON
-  (see `Integration multimodaler KI-Agenten.md` §2 – this is the "magic link").
 - `image.content_type` and explicit byte-size check defend against oversized uploads
   before any AI cost is incurred.
 - The token check (`verify_token`) is applied **before** the file is read, so
@@ -1155,7 +1371,7 @@ testing the async AI client without a real provider.
 
 ### 6.1 Docker Compose
 
-Four services: `frontend`, `backend`, `caddy`, `mosquitto`.
+Five services: `frontend`, `backend`, `mqtt2mail_pool`, `caddy`, `mosquitto`.
 Mosquitto is included as a **dev-only** service for local testing. In production, an existing external Mosquitto instance is used – set `MQTT_HOST` in `.env` accordingly and remove the `mosquitto` service.
 
 The Mosquitto container uses port **2883** (host) → **2883** (container) to avoid collisions with any Mosquitto instance that may already run on the host system.
@@ -1165,13 +1381,41 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
 
   backend:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - ./data/ai:/data/ai
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+#    depends_on:
+#      - mosquitto
+
+  mqtt2mail_pool:
+    build: ./mqtt2mail/
+    restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       - mosquitto
+    environment:
+      TZ: ${TZ:-Europe/Vienna}
+      MQTT_TOPICS: "home/H32/pool/+"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -1191,6 +1435,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     depends_on: [frontend, backend]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
 
 volumes:
   caddy_data:
@@ -1201,11 +1450,19 @@ volumes:
 **Backend** – slim image, no build stage needed:
 
 ```dockerfile
-FROM python:3.12-slim
+FROM python:3.12.13-slim
+
+RUN useradd --create-home appuser
+
 WORKDIR /app
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
+
+USER appuser
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
@@ -1220,8 +1477,13 @@ COPY . .
 RUN npm run build
 
 FROM nginx:alpine
+RUN adduser -D -g '' appuser && \
+    mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp /var/cache/nginx/fastcgi_temp /var/cache/nginx/uwsgi_temp /var/cache/nginx/scgi_temp /run && \
+    chown -R appuser:appuser /var/cache/nginx /run
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+USER appuser
 ```
 
 `nginx.conf` – SPA routing + static asset caching:
@@ -1251,6 +1513,14 @@ Production (`pool.io10.org`):
 
 ```
 pool.io10.org {
+    header X-Frame-Options "DENY"
+    header X-Content-Type-Options "nosniff"
+    header Referrer-Policy "strict-origin-when-cross-origin"
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    handle /api/analyze-image {
+        request_body max_size 12MB
+        reverse_proxy backend:8000
+    }
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -1258,12 +1528,14 @@ pool.io10.org {
         reverse_proxy frontend:80
     }
 }
-```
 
 Dev (local testing, `:80`):
 
-```
 :80 {
+    handle /api/analyze-image {
+        request_body max_size 12MB
+        reverse_proxy backend:8000
+    }
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -1271,7 +1543,6 @@ Dev (local testing, `:80`):
         reverse_proxy frontend:80
     }
 }
-```
 
 Caddy automatically obtains and renews a Let's Encrypt certificate for `pool.io10.org`. The dev config uses `:80` without TLS for local testing.
 
@@ -1279,16 +1550,17 @@ Caddy automatically obtains and renews a Let's Encrypt certificate for `pool.io1
 
 ```env
 API_TOKEN=change-me-to-a-secure-random-token
+
 MQTT_HOST=mosquitto
-MQTT_PORT=2883
+MQTT_PORT=1883
+MQTT_TLS=false
 MQTT_USER=
 MQTT_PASS=
-MQTT_TOPIC=pool/manual
-FRONTEND_URL=https://pool.io10.org
 
-# AI image analysis (optional – feature is disabled when AI_API_KEY is empty)
-# openrouter is the preferred default; it provides a unified API to models from
-# OpenAI, Anthropic, Google, Mistral, Aleph Alpha and others via a single key.
+POOL_LIST=[{"name":"Pool 1","topic":"pool1/manual"}, {"name":"Pool 2","topic":"pool2/manual"}]
+
+FRONTEND_URL=https://pool.example.org
+
 AI_PROVIDER=openrouter
 AI_API_KEY=
 AI_MODEL=google/gemini-3-flash-preview
@@ -1297,9 +1569,29 @@ AI_TIMEOUT_SECONDS=30
 AI_IMAGE_STORAGE_PATH=/data/ai
 AI_IMAGE_RETENTION_DAYS=30
 AI_MAX_IMAGE_BYTES=10485760
+
+# mqtt2mail (optional report service)
+# Entweder REPORT_TIMES (fixe Uhrzeiten) oder REPORT_INTERVAL_MINUTES (Intervall):
+REPORT_TIMES=09:00,12:00,16:00
+# REPORT_INTERVAL_MINUTES=15  # nur als Fallback wenn REPORT_TIMES leer
+SEND_EMPTY_REPORT=false
+MAIL_SUBJECT=Pool Overview
+MAIL_TO=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_STARTTLS=true
+SMTP_USERNAME=
+SMTP_PASSWORD=
+MAIL_FROM=
+
+# Optional MQTT overrides for mqtt2mail.
+# If MQTT_TOPICS is empty, mqtt2mail derives topics from POOL_LIST.
+MQTT_TOPICS=
+MQTT_ALERT_TOPICS=
+MQTT_AVAILABILITY_TOPICS=
 ```
 
-**Note:** `MQTT_PORT=2883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
+**Note:** `MQTT_PORT=1883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
 `FRONTEND_URL` is used by the backend CORS middleware – set to the production domain.
 
 ---
@@ -1313,6 +1605,7 @@ AI_MAX_IMAGE_BYTES=10485760
 | Input sanitization | Pydantic validation; backend builds new payload (no passthrough) |
 | Token frontend | Base64 in localStorage (obfuscation, not cryptographic protection) |
 | CORS | FastAPI `CORSMiddleware`, own domain only, `allow_origins=[FRONTEND_URL]` |
+| Rate limiting | Custom `RateLimitMiddleware`: 20 req / 60 s sliding window on `/api/*` per IP |
 | MQTT auth | Username/password, backend-internal, never exposed to frontend |
 | MQTT QoS | QoS 1 (at least once) for publish |
 | AI API key | Server-side env var only, **never** sent to or referenced from the frontend |
@@ -1369,6 +1662,7 @@ frontend/tests/
 ├── validation.spec.js      # FIELD_CONFIG boundaries and NAME_CONFIG pattern
 ├── useSettings.spec.js     # localStorage read/write, defaults, token encoding
 ├── StepperInput.spec.js    # Stepper logic: steps, min/max boundaries, emit
+├── useApi.spec.js          # API calls: success, 401, network error
 └── useImage.spec.js        # Compression: max edge clamp, JPEG output, byte cap
 ```
 
