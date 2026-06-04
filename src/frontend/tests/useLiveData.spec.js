@@ -124,4 +124,21 @@ describe('useLiveData', () => {
     expect(fetch).toHaveBeenCalledWith('/api/live?pool=PoolB', expect.any(Object))
     stop()
   })
+
+  it('start() recovers and remains functional after a network-level rejection (M3)', async () => {
+    // M3 regression: an exception escaping _tick used to leave _running=true
+    // and no interval, wedging the polling loop. The fix wraps _tick in
+    // try/catch so start() can be called again.
+    fetch.mockRejectedValueOnce(new Error('network down'))
+    fetch.mockResolvedValue({ status: 200, ok: true, json: () => Promise.resolve(mockSnapshot()) })
+
+    const { useLiveData } = await import('../src/composables/useLiveData.js')
+    const { start, stop } = useLiveData()
+    await start('Pool')
+    // After the rejected fetch, start() must be callable again to re-arm
+    // polling instead of being stuck.
+    await start('Pool')
+    expect(fetch).toHaveBeenCalledTimes(2)
+    stop()
+  })
 })

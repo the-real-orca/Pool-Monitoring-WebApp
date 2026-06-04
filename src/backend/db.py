@@ -168,7 +168,7 @@ def close() -> None:
         if _conn is not None:
             try:
                 _conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("db.close() failed: %s", e)
             _conn = None
             _db_path = None

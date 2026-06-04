@@ -123,3 +123,32 @@ def test_unknown_metric_silently_ignored():
     assert snap["temp"] is None
     assert snap["pH"] is None
     assert snap["cl"] is None
+
+
+def test_iter_samples_returns_window():
+    s = live_state.LiveState(ring_size=10)
+    s.push_sample("H32", "temp", 10.0, 100)
+    s.push_sample("H32", "temp", 20.0, 200)
+    s.push_sample("H32", "temp", 30.0, 300)
+    samples = s.iter_samples("H32", "temp", 150, 300)
+    assert samples == [(20.0, 200)]
+
+
+def test_iter_samples_inclusive_lower_exclusive_upper():
+    s = live_state.LiveState(ring_size=10)
+    s.push_sample("H32", "temp", 10.0, 100)
+    s.push_sample("H32", "temp", 20.0, 200)
+    s.push_sample("H32", "temp", 30.0, 300)
+    samples = s.iter_samples("H32", "temp", 100, 301)
+    assert samples == [(10.0, 100), (20.0, 200), (30.0, 300)]
+
+
+def test_iter_samples_unknown_pool_returns_empty():
+    s = live_state.LiveState()
+    assert s.iter_samples("Nope", "temp", 0, 1000) == []
+
+
+def test_iter_samples_unknown_metric_returns_empty():
+    s = live_state.LiveState()
+    s.push_sample("H32", "temp", 10.0, 100)
+    assert s.iter_samples("H32", "humidity", 0, 1000) == []

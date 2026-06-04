@@ -48,12 +48,22 @@ export function useLiveData() {
       state.usingCached = false
       state.pool = pool
     }
-    if (_running) {
+    if (_running && _interval) {
       // Already polling; just switch the pool and reset the timer.
       clearInterval(_interval)
+      _interval = null
+    }
+    try {
+      await _tick(pool)
+    } catch (e) {
+      // _tick swallows errors internally, but a defensive catch keeps the
+      // polling loop from getting wedged if that ever changes.
+      _running = false
+      _interval = null
+      state.error = e?.message || 'poll failed'
+      return
     }
     _running = true
-    await _tick(pool)
     _interval = setInterval(() => {
       if (state.pool) _tick(state.pool)
     }, intervalMs)

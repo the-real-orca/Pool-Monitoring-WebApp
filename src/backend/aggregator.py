@@ -31,27 +31,6 @@ def _hour_start(ts: int) -> int:
     return ts - (ts % 3600)
 
 
-def _collect_samples(state: live_state.LiveState, pool: str, metric: str, since_ts: int, until_ts: int) -> list[tuple[float, int]]:
-    """Return samples for *pool*/*metric* in [since_ts, until_ts).
-
-    The live state keeps the most-recent samples in a ring; we therefore
-    return whatever lies in the requested window, in order. The ring is
-    small (default 5), so the per-hour mean is computed from at most that
-    many points.
-    """
-    out: list[tuple[float, int]] = []
-    with state._lock:  # noqa: SLF001 - internal access for read-only iteration
-        metrics = state._metrics.get(pool, {})
-        ring = metrics.get(metric)
-        if ring is None:
-            return out
-        for v, ts in ring.ring:
-            if since_ts <= ts < until_ts:
-                out.append((v, ts))
-    out.sort(key=lambda x: x[1])
-    return out
-
-
 class Aggregator:
     """Per-hour aggregator with daily retention cleanup."""
 
@@ -62,15 +41,21 @@ class Aggregator:
         retention_days: int = 90,
         cleanup_hour_utc: int = 3,
         clock: Callable[[], float] = time.time,
+        min_cleanup_interval_seconds: int = 20 * 3600,
     ):
         self._state = state
         self._tick = max(1, int(tick_seconds))
         self._retention_days = max(1, int(retention_days))
         self._cleanup_hour_utc = cleanup_hour_utc % 24
         self._clock = clock
+        self._min_cleanup_interval = max(1, int(min_cleanup_interval_seconds))
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._last_cleanup_ymd: str | None = None
+        # I3: track the wall-clock of the last cleanup so NTP jumps
+        # (forward or backward) cannot cause duplicate runs on the same
+        # date or silently skip a day.
+        self._last_cleanup_ts: int | None = None
 
     def start(self) -> asyncio.Task:
         if self._task is not None:
@@ -114,7 +99,7 @@ class Aggregator:
             return
         for pool in self._state.get_known_pools():
             for metric in METRICS:
-                samples = _collect_samples(self._state, pool, metric, since_ts, until_ts)
+                samples = self._state.iter_samples(pool, metric, since_ts, until_ts)
                 if not samples:
                     continue
                 values = [v for v, _ in samples]
@@ -125,6 +110,10 @@ class Aggregator:
                     log.warning("insert_aggregate(%s, %s) failed: %s", pool, metric, e)
 
     def _maybe_daily_cleanup(self, now_ts: int) -> None:
+        # I3: rate-limit by wall-clock seconds since last cleanup, not by
+        # UTC date. Survives NTP jumps and clock drift.
+        if self._last_cleanup_ts is not None and now_ts - self._last_cleanup_ts < self._min_cleanup_interval:
+            return
         ymd = datetime.fromtimestamp(now_ts, tz=timezone.utc).strftime("%Y-%m-%d")
         hour = datetime.fromtimestamp(now_ts, tz=timezone.utc).hour
         if ymd == self._last_cleanup_ymd:
@@ -132,6 +121,7 @@ class Aggregator:
         if hour != self._cleanup_hour_utc:
             return
         self._last_cleanup_ymd = ymd
+        self._last_cleanup_ts = now_ts
         if not db.is_configured():
             return
         try:

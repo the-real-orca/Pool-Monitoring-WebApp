@@ -136,6 +136,18 @@ class LiveState:
             metrics = self._metrics.get(pool, {})
             return any(r.has_data for r in metrics.values())
 
+    def iter_samples(
+        self, pool: str, metric: str, since_ts: int, until_ts: int
+    ) -> list[tuple[float, int]]:
+        """Return ``(value, timestamp)`` samples for *pool*/*metric* in
+        ``[since_ts, until_ts)``, ordered by timestamp. Public alternative
+        to reaching into the private ring buffer."""
+        with self._lock:
+            ring = self._metrics.get(pool, {}).get(metric)
+            if ring is None:
+                return []
+            return [(v, ts) for v, ts in ring.ring if since_ts <= ts < until_ts]
+
     def stale_after(self) -> int:
         return self._stale_after
 

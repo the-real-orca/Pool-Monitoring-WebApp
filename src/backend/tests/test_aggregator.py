@@ -137,3 +137,92 @@ def test_start_stop_runs_task():
         assert a._task is None
 
     asyncio.run(runner())
+
+
+def test_cleanup_skipped_within_min_interval(monkeypatch, tmp_path):
+    """I3: cleanup must not run more than once per min_cleanup_interval."""
+    _setup_db(tmp_path)
+    state = live_state.LiveState()
+    a = aggregator.Aggregator(
+        state, retention_days=90, cleanup_hour_utc=3,
+        min_cleanup_interval_seconds=20 * 3600,
+    )
+    calls = {"n": 0}
+    real_cleanup = db.cleanup_old_rows
+
+    def counting(retention_days):
+        calls["n"] += 1
+        return real_cleanup(retention_days)
+
+    monkeypatch.setattr(aggregator.db, "cleanup_old_rows", counting)
+
+    t0 = int(time.mktime((2026, 6, 4, 3, 0, 0, 0, 0, 0)))
+    a._maybe_daily_cleanup(t0)
+    # Same day, even 1 hour later, must be blocked by min interval
+    a._maybe_daily_cleanup(t0 + 3600)
+    a._maybe_daily_cleanup(t0 + 2 * 3600)
+    assert calls["n"] == 1
+
+
+def test_cleanup_runs_again_after_min_interval(monkeypatch, tmp_path):
+    """I3: when the wall-clock interval has elapsed, a new cleanup is allowed."""
+    _setup_db(tmp_path)
+    state = live_state.LiveState()
+    a = aggregator.Aggregator(
+        state, retention_days=90, cleanup_hour_utc=3,
+        min_cleanup_interval_seconds=20 * 3600,
+    )
+    calls = {"n": 0}
+    real_cleanup = db.cleanup_old_rows
+
+    def counting(retention_days):
+        calls["n"] += 1
+        return real_cleanup(retention_days)
+
+    monkeypatch.setattr(aggregator.db, "cleanup_old_rows", counting)
+
+    t0 = int(time.mktime((2026, 6, 4, 3, 0, 0, 0, 0, 0)))
+    a._maybe_daily_cleanup(t0)
+    assert calls["n"] == 1
+    # 21 hours later, hour=00 -> not the cleanup hour, no run
+    a._maybe_daily_cleanup(t0 + 21 * 3600)
+    assert calls["n"] == 1
+    # 24h later: new day, hour=3, min_interval passed -> cleanup runs
+    a._maybe_daily_cleanup(t0 + 24 * 3600)
+    assert calls["n"] == 2
+    # 27h later: hour=6, no cleanup
+    a._maybe_daily_cleanup(t0 + 27 * 3600)
+    assert calls["n"] == 2
+    # 2026-06-06 03:00 UTC: cleanup runs again
+    t_next = int(time.mktime((2026, 6, 6, 3, 0, 0, 0, 0, 0)))
+    a._maybe_daily_cleanup(t_next)
+    assert calls["n"] == 3
+
+
+def test_cleanup_survives_clock_jump_backward(monkeypatch, tmp_path):
+    """I3: an NTP jump backwards must not produce a duplicate cleanup on
+    the same UTC date."""
+    _setup_db(tmp_path)
+    state = live_state.LiveState()
+    a = aggregator.Aggregator(
+        state, retention_days=90, cleanup_hour_utc=3,
+        min_cleanup_interval_seconds=20 * 3600,
+    )
+    calls = {"n": 0}
+    real_cleanup = db.cleanup_old_rows
+
+    def counting(retention_days):
+        calls["n"] += 1
+        return real_cleanup(retention_days)
+
+    monkeypatch.setattr(aggregator.db, "cleanup_old_rows", counting)
+
+    t0 = int(time.mktime((2026, 6, 4, 3, 0, 0, 0, 0, 0)))
+    a._maybe_daily_cleanup(t0)
+    # 12 hours later, hour=15 -> no cleanup
+    a._maybe_daily_cleanup(t0 + 12 * 3600)
+    assert calls["n"] == 1
+    # NTP jumps back 9 hours, so clock reads 06:00 same day. Same date,
+    # same 03:00 already done, min_interval not elapsed from t0 -> no cleanup.
+    a._maybe_daily_cleanup(t0 + 3 * 3600)
+    assert calls["n"] == 1

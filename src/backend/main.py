@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import re
 import secrets as _secrets
+import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -56,9 +58,23 @@ LIVE_STALE_AFTER_SECONDS = int(os.getenv("LIVE_STALE_AFTER_SECONDS", "600"))
 LIVE_PUMP_FIELD_MAIN = os.getenv("LIVE_PUMP_FIELD_MAIN", "mainPump")
 LIVE_PUMP_FIELD_SOLAR = os.getenv("LIVE_PUMP_FIELD_SOLAR", "solarPump")
 LIVE_PUMP_FIELD_TIME = os.getenv("LIVE_PUMP_FIELD_TIME", "time")
+# Minimum seconds between two persisted pump events for the same pool.
+# State still updates in memory so the UI stays current, but we throttle
+# DB writes to keep the pump_events table from being flooded by a
+# compromised broker (M2).
+LIVE_PUMP_MIN_EVENT_INTERVAL = int(os.getenv("LIVE_PUMP_MIN_EVENT_INTERVAL", "5"))
+_pump_event_throttle: dict[str, int] = {}
 
 VALID_METRICS = ("temp", "pH", "cl")
 METRIC_UNITS = {"temp": "°C", "pH": "", "cl": "mg/l"}
+# Pool names must not contain MQTT wildcards (+, #, $) because they are
+# substituted into subscribe topics. Anything outside this allow-list would
+# let a misconfigured POOL_LIST match foreign pools.
+_POOL_NAME_RE = re.compile(r"^[A-Za-z0-9 _\-]{1,32}$")
+
+
+def _is_valid_pool_name(name: str) -> bool:
+    return bool(_POOL_NAME_RE.match(name))
 
 
 def ai_rate_check_and_increment() -> tuple[bool, int]:
@@ -96,38 +112,74 @@ _topic_to_pool_map: dict[str, str] = {}
 
 def _handle_ble_message(topic: str, payload: dict) -> None:
     pool = _topic_to_pool_map.get(topic)
-    if pool is None:
+    if pool is None or pool not in POOL_NAMES:
         return
-    ts = int(payload.get("time") or time.time())
+    ts_raw = payload.get("time")
+    ts = int(ts_raw) if ts_raw is not None else int(time.time())
     state = _get_state()
     for metric in VALID_METRICS:
         if metric in payload and payload[metric] is not None:
             try:
                 state.push_sample(pool, metric, float(payload[metric]), ts)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as e:
+                log.warning("MQTT BLE payload on %s: bad %s value: %s", topic, metric, e)
+
+
+_TRUTHY = {"1", "true", "on", "yes"}
+_FALSY = {"0", "false", "off", "no", ""}
+
+
+def _strict_bool(value: Any, field: str) -> bool:
+    """Strict bool coercion for MQTT pump payloads.
+
+    Rejects truthy strings such as ``"false"`` (non-empty strings would
+    otherwise coerce to ``True`` under plain ``bool()``) and silently drops
+    unparseable values so a single bad publisher cannot poison state.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value in (0, 1):
+            return bool(value)
+        raise ValueError(f"{field}: numeric value must be 0 or 1, got {value}")
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in _TRUTHY:
+            return True
+        if s in _FALSY:
+            return False
+    raise ValueError(f"{field}: cannot coerce {value!r} to bool")
+
+
+def _should_persist_pump_event(pool: str, now: int) -> bool:
+    """M2 throttle: persist at most one pump event per pool per
+    LIVE_PUMP_MIN_EVENT_INTERVAL seconds. State in ``LiveState`` is still
+    updated on every publish; this only gates the DB write."""
+    last = _pump_event_throttle.get(pool, 0)
+    if now - last < LIVE_PUMP_MIN_EVENT_INTERVAL:
+        return False
+    _pump_event_throttle[pool] = now
+    return True
 
 
 def _handle_pump_message(topic: str, payload: dict) -> None:
     pool = _topic_to_pool_map.get(topic)
-    if pool is None:
+    if pool is None or pool not in POOL_NAMES:
         return
-    ts = int(payload.get(LIVE_PUMP_FIELD_TIME) or time.time())
+    ts_raw = payload.get(LIVE_PUMP_FIELD_TIME)
+    ts = int(ts_raw) if ts_raw is not None else int(time.time())
     state = _get_state()
-    if LIVE_PUMP_FIELD_MAIN in payload:
+    for pump_name, field in (("main", LIVE_PUMP_FIELD_MAIN), ("solar", LIVE_PUMP_FIELD_SOLAR)):
+        if field not in payload:
+            continue
         try:
-            new_state = bool(payload[LIVE_PUMP_FIELD_MAIN])
-        except (TypeError, ValueError):
-            return
-        if state.set_pump(pool, "main", new_state, ts) and db.is_configured():
-            db.insert_pump_event(pool, "main", new_state, ts, int(time.time()))
-    if LIVE_PUMP_FIELD_SOLAR in payload:
-        try:
-            new_state = bool(payload[LIVE_PUMP_FIELD_SOLAR])
-        except (TypeError, ValueError):
-            return
-        if state.set_pump(pool, "solar", new_state, ts) and db.is_configured():
-            db.insert_pump_event(pool, "solar", new_state, ts, int(time.time()))
+            new_state = _strict_bool(payload[field], field)
+        except ValueError as e:
+            log.warning("MQTT pump payload on %s: %s", topic, e)
+            continue
+        if state.set_pump(pool, pump_name, new_state, ts) and db.is_configured():
+            if _should_persist_pump_event(pool, int(time.time())):
+                db.insert_pump_event(pool, pump_name, new_state, ts, int(time.time()))
 
 
 if not FRONTEND_URL:
@@ -146,25 +198,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.times = times
         self.seconds = seconds
-        self.requests = defaultdict(list)
+        self.requests: dict[str, list[datetime]] = {}
+        self._lock = threading.Lock()
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith("/api/"):
             client_ip = get_client_ip(request)
             now = datetime.now()
             cutoff = now - timedelta(seconds=self.seconds)
-
-            self.requests[client_ip] = [
-                t for t in self.requests[client_ip] if t > cutoff
-            ]
-
-            if len(self.requests[client_ip]) >= self.times:
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": "Too many requests"}
-                )
-
-            self.requests[client_ip].append(now)
+            with self._lock:
+                bucket = [t for t in self.requests.get(client_ip, []) if t > cutoff]
+                if len(bucket) >= self.times:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many requests"}
+                    )
+                bucket.append(now)
+                self.requests[client_ip] = bucket
+                # Drop empty buckets to keep the dict small (I1 memory).
+                if not self.requests[client_ip]:
+                    self.requests.pop(client_ip, None)
 
         response = await call_next(request)
         return response
@@ -299,11 +352,18 @@ async def lifespan(app: FastAPI):
     _topic_to_pool_map = {}
     for pool in POOL_LIST:
         name = pool["name"]
+        if not _is_valid_pool_name(name):
+            log.error("Pool name %r rejected: only A-Z a-z 0-9 _ - space allowed, max 32 chars (would inject MQTT wildcards)", name)
+            continue
         try:
             ble_topic = LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)
             pump_topic = LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)
         except KeyError as e:
             log.error("LIVE topic template missing placeholder %s for pool %s", e, name)
+            continue
+        if "+" in ble_topic or "#" in ble_topic or "$" in ble_topic or \
+           "+" in pump_topic or "#" in pump_topic or "$" in pump_topic:
+            log.error("LIVE topic for pool %s contains MQTT wildcard after substitution, skipping", name)
             continue
         _topic_to_pool_map[ble_topic] = name
         _topic_to_pool_map[pump_topic] = name

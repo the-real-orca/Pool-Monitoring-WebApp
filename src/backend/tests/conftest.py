@@ -17,6 +17,21 @@ def tmp_db_path(tmp_path):
     return str(tmp_path / "live.db")
 
 
+@pytest.fixture(autouse=True)
+def _reset_module_state():
+    """L6: autouse fixture that resets module-global state before every
+    test so individual tests don't leak database connections or MQTT
+    subscriptions into each other."""
+    import db
+    import mqtt
+
+    db.close()
+    mqtt.clear_subscriptions()
+    yield
+    db.close()
+    mqtt.clear_subscriptions()
+
+
 @pytest.fixture
 def client(tmp_path):
     """Yield a TestClient with the lifespan heavy-lifters patched:
