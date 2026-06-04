@@ -6,11 +6,25 @@ export function useApi() {
   const loading = ref(false)
   const error = ref(null)
 
+  function authHeaders(extra = {}) {
+    return { 'Authorization': `Bearer ${settings.token}`, ...extra }
+  }
+
+  async function getJson(path) {
+    const res = await fetch(path, { headers: authHeaders() })
+    if (!res.ok) {
+      const code = String(res.status)
+      if (res.status === 401) error.value = '401'
+      else if (res.status === 422) error.value = '422'
+      else error.value = code
+      return { __status: res.status, __data: null }
+    }
+    return { __status: res.status, __data: await res.json() }
+  }
+
   async function fetchPools() {
     try {
-      const res = await fetch(`/api/pools`, {
-        headers: { 'Authorization': `Bearer ${settings.token}` }
-      })
+      const res = await fetch(`/api/pools`, { headers: authHeaders() })
       if (!res.ok) return []
       return await res.json()
     } catch {
@@ -29,28 +43,15 @@ export function useApi() {
       cl:         form.cl,
       temp:       form.temp,
     }
-    if (form.status) {
-      payload.status = form.status
-    }
-    if (form.aiPH != null) {
-      payload.aiPH = form.aiPH
-    }
-    if (form.aiCL != null) {
-      payload.aiCL = form.aiCL
-    }
-    if (form.aiImage) {
-      payload.aiImage = form.aiImage
-    }
-    if (form.aiCorrected != null) {
-      payload.aiCorrected = form.aiCorrected
-    }
+    if (form.status) payload.status = form.status
+    if (form.aiPH != null) payload.aiPH = form.aiPH
+    if (form.aiCL != null) payload.aiCL = form.aiCL
+    if (form.aiImage) payload.aiImage = form.aiImage
+    if (form.aiCorrected != null) payload.aiCorrected = form.aiCorrected
     try {
       const res = await fetch(`/api/measurements`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.token}`,
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       })
       if (res.status === 401) { error.value = '401'; return false }
@@ -72,19 +73,12 @@ export function useApi() {
       name: form.name,
       chemicalType: form.chemicalType,
     }
-    if (form.amount != null) {
-      payload.amount = form.amount
-    }
-    if (form.unit) {
-      payload.unit = form.unit
-    }
+    if (form.amount != null) payload.amount = form.amount
+    if (form.unit) payload.unit = form.unit
     try {
       const res = await fetch(`/api/chem`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.token}`,
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       })
       if (res.status === 401) { error.value = '401'; return false }
@@ -106,7 +100,7 @@ export function useApi() {
     try {
       const res = await fetch(`/api/analyze-image`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${settings.token}` },
+        headers: authHeaders(),
         body: fd,
       })
       if (res.status === 401) { error.value = '401'; return null }
@@ -122,5 +116,67 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement, postChemicalUpdate, fetchPools, analyzeImage }
+  // --- Live Data (Phase 20) -----------------------------------------------
+
+  async function fetchPoolsLive() {
+    error.value = null
+    try {
+      const { __status, __data } = await getJson('/api/pools/live')
+      if (__status === 401) error.value = '401'
+      if (__status === 422) error.value = '422'
+      return __status === 200 ? __data : null
+    } catch {
+      error.value = 'network'
+      return null
+    }
+  }
+
+  async function fetchLive(pool) {
+    error.value = null
+    try {
+      const { __status, __data } = await getJson(`/api/live?pool=${encodeURIComponent(pool)}`)
+      if (__status === 401) error.value = '401'
+      if (__status === 422) error.value = '422'
+      return __status === 200 ? __data : null
+    } catch {
+      error.value = 'network'
+      return null
+    }
+  }
+
+  async function fetchHistory(pool, metric, days = 7) {
+    error.value = null
+    try {
+      const { __status, __data } = await getJson(
+        `/api/history?pool=${encodeURIComponent(pool)}&metric=${encodeURIComponent(metric)}&days=${days}`
+      )
+      if (__status === 401) error.value = '401'
+      if (__status === 422) error.value = '422'
+      return __status === 200 ? __data : null
+    } catch {
+      error.value = 'network'
+      return null
+    }
+  }
+
+  async function fetchPumpEvents(pool, days = 7) {
+    error.value = null
+    try {
+      const { __status, __data } = await getJson(
+        `/api/pump-events?pool=${encodeURIComponent(pool)}&days=${days}`
+      )
+      if (__status === 401) error.value = '401'
+      if (__status === 422) error.value = '422'
+      return __status === 200 ? __data : null
+    } catch {
+      error.value = 'network'
+      return null
+    }
+  }
+
+  return {
+    loading, error,
+    postMeasurement, postChemicalUpdate, fetchPools, analyzeImage,
+    fetchPoolsLive, fetchLive, fetchHistory, fetchPumpEvents,
+  }
 }

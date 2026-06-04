@@ -241,3 +241,136 @@ describe('postChemicalUpdate', () => {
     expect(error.value).toBe('401')
   })
 })
+
+// --- Live Data API (Phase 20) ----------------------------------------------
+
+describe('fetchPoolsLive', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('returns pool list on 200', async () => {
+    fetch.mockResolvedValue({
+      status: 200, ok: true, json: () => Promise.resolve([{ name: 'Pool', hasData: true }])
+    })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchPoolsLive } = useApi()
+    const out = await fetchPoolsLive()
+    expect(out).toEqual([{ name: 'Pool', hasData: true }])
+    expect(fetch).toHaveBeenCalledWith('/api/pools/live', expect.objectContaining({
+      headers: { 'Authorization': 'Bearer test-token' }
+    }))
+  })
+
+  it('returns null and sets error on 401', async () => {
+    fetch.mockResolvedValue({ status: 401, ok: false, json: () => Promise.resolve({}) })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchPoolsLive, error } = useApi()
+    const out = await fetchPoolsLive()
+    expect(out).toBeNull()
+    expect(error.value).toBe('401')
+  })
+
+  it('returns null on network error', async () => {
+    fetch.mockRejectedValue(new Error('boom'))
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchPoolsLive, error } = useApi()
+    const out = await fetchPoolsLive()
+    expect(out).toBeNull()
+    expect(error.value).toBe('network')
+  })
+})
+
+describe('fetchLive', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('returns snapshot on 200', async () => {
+    fetch.mockResolvedValue({
+      status: 200, ok: true,
+      json: () => Promise.resolve({ ts: 1, temp: 24.5, pH: 7.2, cl: 0.7, stale: false, staleSeconds: 5, pump: { main: { running: true, since: 1 }, solar: { running: null, since: null } } })
+    })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchLive } = useApi()
+    const out = await fetchLive('Pool')
+    expect(out.temp).toBe(24.5)
+    expect(out.pump.main.running).toBe(true)
+    expect(fetch.mock.calls[0][0]).toBe('/api/live?pool=Pool')
+  })
+
+  it('encodes special characters in pool name', async () => {
+    fetch.mockResolvedValue({ status: 200, ok: true, json: () => Promise.resolve({}) })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchLive } = useApi()
+    await fetchLive('My Pool')
+    expect(fetch.mock.calls[0][0]).toBe('/api/live?pool=My%20Pool')
+  })
+
+  it('returns null and sets error on 422', async () => {
+    fetch.mockResolvedValue({ status: 422, ok: false, json: () => Promise.resolve({}) })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchLive, error } = useApi()
+    const out = await fetchLive('Unknown')
+    expect(out).toBeNull()
+    expect(error.value).toBe('422')
+  })
+})
+
+describe('fetchHistory', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('returns points on 200', async () => {
+    fetch.mockResolvedValue({
+      status: 200, ok: true,
+      json: () => Promise.resolve({ pool: 'Pool', metric: 'temp', unit: '°C', points: [{ t: 1, v: 24.5 }] })
+    })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchHistory } = useApi()
+    const out = await fetchHistory('Pool', 'temp', 7)
+    expect(out.points).toEqual([{ t: 1, v: 24.5 }])
+    expect(fetch.mock.calls[0][0]).toBe('/api/history?pool=Pool&metric=temp&days=7')
+  })
+
+  it('handles 422 on bad metric', async () => {
+    fetch.mockResolvedValue({ status: 422, ok: false, json: () => Promise.resolve({}) })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchHistory, error } = useApi()
+    const out = await fetchHistory('Pool', 'humidity')
+    expect(out).toBeNull()
+    expect(error.value).toBe('422')
+  })
+})
+
+describe('fetchPumpEvents', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('returns events on 200', async () => {
+    fetch.mockResolvedValue({
+      status: 200, ok: true,
+      json: () => Promise.resolve({ pool: 'Pool', events: [{ id: 1, pump: 'main', state: true, time: 1, receivedAt: 1 }] })
+    })
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { fetchPumpEvents } = useApi()
+    const out = await fetchPumpEvents('Pool', 7)
+    expect(out.events).toHaveLength(1)
+    expect(fetch.mock.calls[0][0]).toBe('/api/pump-events?pool=Pool&days=7')
+  })
+})
+
