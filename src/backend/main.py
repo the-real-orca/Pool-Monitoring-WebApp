@@ -7,14 +7,18 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import ai
+import aggregator
+import db
+import live_state
 import mqtt
 
 log = logging.getLogger(__name__)
@@ -25,6 +29,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PASS = os.getenv("MQTT_PASS", "")
 POOL_LIST = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
+POOL_NAMES = {pool["name"] for pool in POOL_LIST}
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
 _mqtt_tls_env = os.getenv("MQTT_TLS", "")
@@ -39,6 +44,21 @@ AI_MAX_IMAGE_BYTES = int(os.getenv("AI_MAX_IMAGE_BYTES", "10485760"))
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
 _ai_counter: dict[str, int] = {}
 _ai_counter_date: str = ""
+
+# Live-Data configuration (Phase 20)
+LIVE_TOPIC_BLE_TEMPLATE = os.getenv("LIVE_TOPIC_BLE_TEMPLATE", "home/{pool}/pool/ble-yc01")
+LIVE_TOPIC_PUMP_TEMPLATE = os.getenv("LIVE_TOPIC_PUMP_TEMPLATE", "home/{pool}/pool/pump")
+LIVE_AGGREGATION_WINDOW_MINUTES = int(os.getenv("LIVE_AGGREGATION_WINDOW_MINUTES", "60"))
+LIVE_RETENTION_DAYS = int(os.getenv("LIVE_RETENTION_DAYS", "90"))
+LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "/data/live/live.db")
+LIVE_SAMPLE_RING_SIZE = int(os.getenv("LIVE_SAMPLE_RING_SIZE", "5"))
+LIVE_STALE_AFTER_SECONDS = int(os.getenv("LIVE_STALE_AFTER_SECONDS", "600"))
+LIVE_PUMP_FIELD_MAIN = os.getenv("LIVE_PUMP_FIELD_MAIN", "mainPump")
+LIVE_PUMP_FIELD_SOLAR = os.getenv("LIVE_PUMP_FIELD_SOLAR", "solarPump")
+LIVE_PUMP_FIELD_TIME = os.getenv("LIVE_PUMP_FIELD_TIME", "time")
+
+VALID_METRICS = ("temp", "pH", "cl")
+METRIC_UNITS = {"temp": "°C", "pH": "", "cl": "mg/l"}
 
 
 def ai_rate_check_and_increment() -> tuple[bool, int]:
@@ -56,6 +76,59 @@ def ai_rate_check_and_increment() -> tuple[bool, int]:
 
 APP_VERSION = "1.0.0"
 _start_time = time.time()
+
+# Module-level live state (initialised in lifespan)
+_state: live_state.LiveState | None = None
+_aggregator: aggregator.Aggregator | None = None
+
+
+def _get_state() -> live_state.LiveState:
+    assert _state is not None, "LiveState not initialised"
+    return _state
+
+
+def _topic_to_pool() -> dict[str, str]:
+    return _topic_to_pool_map
+
+
+_topic_to_pool_map: dict[str, str] = {}
+
+
+def _handle_ble_message(topic: str, payload: dict) -> None:
+    pool = _topic_to_pool_map.get(topic)
+    if pool is None:
+        return
+    ts = int(payload.get("time") or time.time())
+    state = _get_state()
+    for metric in VALID_METRICS:
+        if metric in payload and payload[metric] is not None:
+            try:
+                state.push_sample(pool, metric, float(payload[metric]), ts)
+            except (TypeError, ValueError):
+                pass
+
+
+def _handle_pump_message(topic: str, payload: dict) -> None:
+    pool = _topic_to_pool_map.get(topic)
+    if pool is None:
+        return
+    ts = int(payload.get(LIVE_PUMP_FIELD_TIME) or time.time())
+    state = _get_state()
+    if LIVE_PUMP_FIELD_MAIN in payload:
+        try:
+            new_state = bool(payload[LIVE_PUMP_FIELD_MAIN])
+        except (TypeError, ValueError):
+            return
+        if state.set_pump(pool, "main", new_state, ts) and db.is_configured():
+            db.insert_pump_event(pool, "main", new_state, ts, int(time.time()))
+    if LIVE_PUMP_FIELD_SOLAR in payload:
+        try:
+            new_state = bool(payload[LIVE_PUMP_FIELD_SOLAR])
+        except (TypeError, ValueError):
+            return
+        if state.set_pump(pool, "solar", new_state, ts) and db.is_configured():
+            db.insert_pump_event(pool, "solar", new_state, ts, int(time.time()))
+
 
 if not FRONTEND_URL:
     log.warning("FRONTEND_URL not set – CORS will block cross-origin requests in production")
@@ -113,8 +186,7 @@ class Measurement(BaseModel):
     @field_validator("name")
     @classmethod
     def valid_pool_name(cls, v: str) -> str:
-        valid_names = [pool["name"] for pool in POOL_LIST]
-        if v not in valid_names:
+        if v not in POOL_NAMES:
             raise ValueError(f"Unknown pool name: {v}")
         return v
 
@@ -147,8 +219,7 @@ class ChemicalUpdate(BaseModel):
     @field_validator("name")
     @classmethod
     def valid_pool_name(cls, v: str) -> str:
-        valid_names = [pool["name"] for pool in POOL_LIST]
-        if v not in valid_names:
+        if v not in POOL_NAMES:
             raise ValueError(f"Unknown pool name: {v}")
         return v
 
@@ -211,11 +282,45 @@ async def verify_token(authorization: str = Header(alias="Authorization")):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _state, _aggregator, _topic_to_pool_map
+
+    db.init_db(LIVE_DB_PATH)
+    _state = live_state.LiveState(
+        ring_size=LIVE_SAMPLE_RING_SIZE,
+        stale_after_seconds=LIVE_STALE_AFTER_SECONDS,
+    )
+    _aggregator = aggregator.Aggregator(
+        _state,
+        tick_seconds=60,
+        retention_days=LIVE_RETENTION_DAYS,
+    )
+
+    # Build the topic→pool map from POOL_LIST using the configured templates
+    _topic_to_pool_map = {}
+    for pool in POOL_LIST:
+        name = pool["name"]
+        try:
+            ble_topic = LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)
+            pump_topic = LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)
+        except KeyError as e:
+            log.error("LIVE topic template missing placeholder %s for pool %s", e, name)
+            continue
+        _topic_to_pool_map[ble_topic] = name
+        _topic_to_pool_map[pump_topic] = name
+        mqtt.subscribe(ble_topic, _handle_ble_message)
+        mqtt.subscribe(pump_topic, _handle_pump_message)
+        log.info("Subscribed to live topics for %s: %s, %s", name, ble_topic, pump_topic)
+
     mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS)
     await ai.get_client().startup()
-    yield
-    await ai.get_client().shutdown()
-    mqtt.disconnect()
+    _aggregator.start()
+    try:
+        yield
+    finally:
+        if _aggregator is not None:
+            await _aggregator.stop()
+        await ai.get_client().shutdown()
+        mqtt.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -288,6 +393,73 @@ async def analyze_image(
     }
 
 
+# --- Live Data endpoints (Phase 20) ---
+
+def _resolve_pool(pool: str) -> str:
+    if pool not in POOL_NAMES:
+        raise HTTPException(status_code=422, detail=f"Unknown pool: {pool}")
+    return pool
+
+
+@app.get("/api/pools/live", dependencies=[Depends(verify_token)])
+async def get_pools_live():
+    state = _get_state()
+    names = [pool["name"] for pool in POOL_LIST]
+    return [{"name": n, "hasData": state.has_data(n)} for n in names]
+
+
+@app.get("/api/live", dependencies=[Depends(verify_token)])
+async def get_live(pool: str = Query(...)):
+    pool = _resolve_pool(pool)
+    return _get_state().get_snapshot(pool)
+
+
+@app.get("/api/history", dependencies=[Depends(verify_token)])
+async def get_history(
+    pool: str = Query(...),
+    metric: str = Query(...),
+    days: int = Query(7, ge=1, le=30),
+):
+    pool = _resolve_pool(pool)
+    if metric not in VALID_METRICS:
+        raise HTTPException(status_code=422, detail=f"Unknown metric: {metric}")
+    if not db.is_configured():
+        return {"pool": pool, "metric": metric, "unit": METRIC_UNITS[metric], "points": []}
+    since_ts = int(time.time()) - days * 86400
+    rows = db.get_aggregates(pool, metric, since_ts)
+    return {
+        "pool": pool,
+        "metric": metric,
+        "unit": METRIC_UNITS[metric],
+        "points": [{"t": r["t"], "v": r["v"]} for r in rows],
+    }
+
+
+@app.get("/api/pump-events", dependencies=[Depends(verify_token)])
+async def get_pump_events(
+    pool: str = Query(...),
+    days: int = Query(7, ge=1, le=30),
+):
+    pool = _resolve_pool(pool)
+    if not db.is_configured():
+        return {"pool": pool, "events": []}
+    since_ts = int(time.time()) - days * 86400
+    events = db.get_pump_events(pool, since_ts)
+    return {
+        "pool": pool,
+        "events": [
+            {
+                "id": e["id"],
+                "pump": e["pump"],
+                "state": e["state"],
+                "time": e["time"],
+                "receivedAt": e["received_at"],
+            }
+            for e in events
+        ],
+    }
+
+
 @app.get("/api/status")
 async def get_status():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -298,4 +470,5 @@ async def get_status():
         "version": APP_VERSION,
         "aiConfigured": ai.get_client().is_configured(),
         "imageAnalysisRequestsToday": _ai_counter.get(today, 0),
+        "liveDataConfigured": db.is_configured(),
     }

@@ -31,3 +31,7 @@ Thumbs.db
 *.tmp
 tmp/
 temp/
+
+# Live Data: local SQLite database (Phase 20)
+data/live/
+

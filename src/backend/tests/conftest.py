@@ -1,6 +1,7 @@
 import os
 import sys
-from unittest.mock import AsyncMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,13 +12,43 @@ os.environ["API_TOKEN"] = "test-token"
 
 
 @pytest.fixture
-def client():
+def tmp_db_path(tmp_path):
+    """Return a path inside tmp_path for the live-data SQLite DB."""
+    return str(tmp_path / "live.db")
+
+
+@pytest.fixture
+def client(tmp_path):
+    """Yield a TestClient with the lifespan heavy-lifters patched:
+    - ``db.init_db`` is redirected to a per-test tmp SQLite file
+    - ``mqtt.connect``/``disconnect`` are no-ops
+    - ``mqtt.publish``/``mqtt.is_connected`` always report success
+    - the aggregator is started and stopped without scheduling a real task
+    """
     if "main" in sys.modules:
         del sys.modules["main"]
+    db_path = str(tmp_path / "live.db")
+
+    # We need the un-patched init_db so we don't recurse into the patch.
+    import db as _dbmod
+    _orig_init_db = _dbmod.init_db
+
+    def fake_init_db(path):
+        _dbmod.close()
+        return _orig_init_db(db_path)
+
     with patch("mqtt.publish", return_value=True), \
-         patch("mqtt.is_connected", return_value=True):
+         patch("mqtt.is_connected", return_value=True), \
+         patch("mqtt.connect"), \
+         patch("mqtt.disconnect"), \
+         patch("mqtt.subscribe") as mock_subscribe, \
+         patch("aggregator.Aggregator.start", return_value=None), \
+         patch("aggregator.Aggregator.stop", new_callable=AsyncMock), \
+         patch("db.init_db", side_effect=fake_init_db):
         from main import app
-        yield TestClient(app)
+        # Make the lifespan short: start the TestClient, yield, done.
+        with TestClient(app) as tc:
+            yield tc
 
 
 @pytest.fixture
