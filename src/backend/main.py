@@ -6,11 +6,12 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import ai
@@ -123,6 +124,48 @@ class Measurement(BaseModel):
         return round(v, 1)
 
 
+class ChemicalType(str, Enum):
+    CHLORINE = "chlorine"
+    PH = "ph"
+    FLOCCULANT = "flocculant"
+
+
+class ChemicalUnit(str, Enum):
+    ML = "ml"
+    G = "g"
+    TABS = "tabs"
+    L = "l"
+
+
+class ChemicalUpdate(BaseModel):
+    time: int
+    name: str = Field(min_length=1, max_length=50)
+    chemicalType: ChemicalType
+    amount: float | None = Field(default=None, gt=0)
+    unit: ChemicalUnit | None = None
+
+    @field_validator("name")
+    @classmethod
+    def valid_pool_name(cls, v: str) -> str:
+        valid_names = [pool["name"] for pool in POOL_LIST]
+        if v not in valid_names:
+            raise ValueError(f"Unknown pool name: {v}")
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def one_decimal(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        return round(v, 1)
+
+    @model_validator(mode="after")
+    def validate_amount_unit_pair(self) -> "ChemicalUpdate":
+        if (self.amount is None) != (self.unit is None):
+            raise ValueError("amount and unit must be set together")
+        return self
+
+
 def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
     topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == m.name), "pool/manual")
     payload = {
@@ -143,6 +186,20 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
         payload["aiImage"] = m.aiImage
     if m.aiCorrected is not None:
         payload["aiCorrected"] = m.aiCorrected
+    return topic, payload
+
+
+def build_chemical_payload(c: ChemicalUpdate) -> tuple[str, dict]:
+    base_topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == c.name), "pool/manual")
+    topic = f"{base_topic}/chem"
+    payload = {
+        "time": c.time,
+        "name": c.name,
+        "chemicalType": c.chemicalType.value,
+    }
+    if c.amount is not None:
+        payload["amount"] = c.amount
+        payload["unit"] = c.unit.value
     return topic, payload
 
 
@@ -184,6 +241,14 @@ async def post_measurement(m: Measurement):
     if not mqtt.publish(topic, payload):
         raise HTTPException(status_code=503, detail="MQTT unavailable")
     return {"status": "success", "message": "Measurement published to MQTT"}
+
+
+@app.post("/api/chem", status_code=201, dependencies=[Depends(verify_token)])
+async def post_chemical_update(c: ChemicalUpdate):
+    topic, payload = build_chemical_payload(c)
+    if not mqtt.publish(topic, payload):
+        raise HTTPException(status_code=503, detail="MQTT unavailable")
+    return {"status": "success", "message": "Chemical update published to MQTT"}
 
 
 @app.post("/api/analyze-image", dependencies=[Depends(verify_token)])

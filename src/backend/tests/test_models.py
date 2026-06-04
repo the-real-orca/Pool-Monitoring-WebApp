@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from main import Measurement
+from main import ChemicalUpdate, Measurement
 
 
 def test_valid_measurement():
@@ -159,3 +159,75 @@ def test_ai_fields_ai_corrected_false():
         aiPH=7.0, aiCL=1.0, aiCorrected=False,
     )
     assert m.aiCorrected is False
+
+
+# --- ChemicalUpdate tests ---
+
+def test_valid_chemical_update_with_amount_and_unit():
+    update = ChemicalUpdate(
+        time=1755724982,
+        name="Pool",
+        chemicalType="chlorine",
+        amount=250.0,
+        unit="ml",
+    )
+    assert update.time == 1755724982
+    assert update.name == "Pool"
+    assert update.chemicalType == "chlorine"
+    assert update.amount == 250.0
+    assert update.unit == "ml"
+
+
+def test_valid_chemical_update_without_amount_and_unit():
+    update = ChemicalUpdate(
+        time=1755724982,
+        name="Pool",
+        chemicalType="ph",
+    )
+    assert update.amount is None
+    assert update.unit is None
+
+
+def test_chemical_update_rounds_amount_to_one_decimal():
+    update = ChemicalUpdate(
+        time=1755724982,
+        name="Pool",
+        chemicalType="flocculant",
+        amount=123.45,
+        unit="g",
+    )
+    assert update.amount == 123.5
+
+
+def test_chemical_update_rejects_unknown_name():
+    with pytest.raises(ValidationError) as exc:
+        ChemicalUpdate(
+            time=1755724982,
+            name="Unknown Pool",
+            chemicalType="chlorine",
+            amount=250.0,
+            unit="ml",
+        )
+    assert "Unknown pool name: Unknown Pool" in str(exc.value)
+
+
+def test_chemical_update_requires_unit_when_amount_is_set():
+    with pytest.raises(ValidationError) as exc:
+        ChemicalUpdate(
+            time=1755724982,
+            name="Pool",
+            chemicalType="chlorine",
+            amount=250.0,
+        )
+    assert "amount and unit must be set together" in str(exc.value)
+
+
+def test_chemical_update_requires_amount_when_unit_is_set():
+    with pytest.raises(ValidationError) as exc:
+        ChemicalUpdate(
+            time=1755724982,
+            name="Pool",
+            chemicalType="chlorine",
+            unit="ml",
+        )
+    assert "amount and unit must be set together" in str(exc.value)

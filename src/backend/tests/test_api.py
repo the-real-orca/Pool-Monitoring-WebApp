@@ -122,6 +122,88 @@ def test_post_measurement_with_ai_fields_no_correction(client):
     assert "aiImage" not in payload
 
 
+def test_post_chemical_update_201(client):
+    response = client.post(
+        "/api/chem",
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "chemicalType": "chlorine",
+            "amount": 250.0,
+            "unit": "ml",
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == "success"
+
+    publish_call = __import__("mqtt").publish.call_args
+    topic = publish_call[0][0]
+    payload = publish_call[0][1]
+    assert topic == "pool/manual/chem"
+    assert payload == {
+        "time": 1755724982,
+        "name": "Pool",
+        "chemicalType": "chlorine",
+        "amount": 250.0,
+        "unit": "ml",
+    }
+    assert "sensorType" not in payload
+
+
+def test_post_chemical_update_without_amount_and_unit(client):
+    response = client.post(
+        "/api/chem",
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "chemicalType": "ph",
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+
+    publish_call = __import__("mqtt").publish.call_args
+    payload = publish_call[0][1]
+    assert payload == {
+        "time": 1755724982,
+        "name": "Pool",
+        "chemicalType": "ph",
+    }
+
+
+def test_post_chemical_update_422_invalid_pair(client):
+    response = client.post(
+        "/api/chem",
+        json={
+            "time": 1755724982,
+            "name": "Pool",
+            "chemicalType": "chlorine",
+            "amount": 250.0,
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 422
+    assert "amount and unit must be set together" in response.text
+
+
+def test_post_chemical_update_503_mqtt_down(client):
+    with patch("mqtt.publish", return_value=False):
+        response = client.post(
+            "/api/chem",
+            json={
+                "time": 1755724982,
+                "name": "Pool",
+                "chemicalType": "chlorine",
+                "amount": 250.0,
+                "unit": "ml",
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert response.status_code == 503
+    assert "MQTT unavailable" in response.json()["detail"]
+
+
 # --- /api/analyze-image tests ---
 
 def test_analyze_image_200(client, mock_analyze_image):
@@ -240,4 +322,3 @@ def test_analyze_image_midnight_rollover(client):
             headers={"Authorization": "Bearer test-token"},
         )
     assert resp.status_code == 200
-
