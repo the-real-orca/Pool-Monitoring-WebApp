@@ -16,9 +16,9 @@ mkdir -p "$DEPLOY_DIR/backend"
 cp backend/main.py backend/mqtt.py backend/ai.py backend/db.py backend/live_state.py backend/aggregator.py backend/Dockerfile backend/requirements.txt backend/pyproject.toml "$DEPLOY_DIR/backend/"
 cp backend/.dockerignore "$DEPLOY_DIR/backend/.dockerignore"
 
-# Live-data volume (Phase 20) - mount point must exist on first deploy
-mkdir -p "$DEPLOY_DIR/data/live"
-touch "$DEPLOY_DIR/data/live/.gitkeep"
+# History-data volume (Phase 20) - mount point must exist on first deploy
+mkdir -p "$DEPLOY_DIR/data/history"
+touch "$DEPLOY_DIR/data/history/.gitkeep"
 
 # mqtt2mail
 mkdir -p "$DEPLOY_DIR/mqtt2mail/app"

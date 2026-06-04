@@ -14,7 +14,7 @@ os.environ["API_TOKEN"] = "test-token"
 @pytest.fixture
 def tmp_db_path(tmp_path):
     """Return a path inside tmp_path for the live-data SQLite DB."""
-    return str(tmp_path / "live.db")
+    return str(tmp_path / "data.db")
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def client(tmp_path):
     """
     if "main" in sys.modules:
         del sys.modules["main"]
-    db_path = str(tmp_path / "live.db")
+    db_path = str(tmp_path / "data.db")
 
     # We need the un-patched init_db so we don't recurse into the patch.
     import db as _dbmod

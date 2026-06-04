@@ -8,13 +8,13 @@ import db
 def _fresh_db(tmp_path):
     """Reset module state and re-init the DB at a fresh tmp path."""
     db.close()
-    assert db.init_db(str(tmp_path / "live.db"))
-    return str(tmp_path / "live.db")
+    assert db.init_db(str(tmp_path / "data.db"))
+    return str(tmp_path / "data.db")
 
 
 def test_init_creates_schema(tmp_path):
     _fresh_db(tmp_path)
-    conn = sqlite3.connect(str(tmp_path / "live.db"))
+    conn = sqlite3.connect(str(tmp_path / "data.db"))
     try:
         rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type IN ('table','index') ORDER BY name"
@@ -32,7 +32,7 @@ def test_init_creates_schema(tmp_path):
 def test_init_is_idempotent(tmp_path):
     _fresh_db(tmp_path)
     # Calling init_db again must not raise and must leave schema intact.
-    assert db.init_db(str(tmp_path / "live.db"))
+    assert db.init_db(str(tmp_path / "data.db"))
     assert db.is_configured()
 
 
@@ -115,7 +115,7 @@ def test_cleanup_old_rows_deletes_by_retention(tmp_path):
 def test_is_configured_and_db_path(tmp_path):
     db.close()
     assert not db.is_configured()
-    p = str(tmp_path / "live.db")
+    p = str(tmp_path / "data.db")
     assert db.init_db(p)
     assert db.is_configured()
     assert db.db_path() == p
@@ -123,7 +123,7 @@ def test_is_configured_and_db_path(tmp_path):
 
 def test_wal_mode_is_set(tmp_path):
     _fresh_db(tmp_path)
-    conn = sqlite3.connect(str(tmp_path / "live.db"))
+    conn = sqlite3.connect(str(tmp_path / "data.db"))
     try:
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
         assert mode.lower() == "wal"

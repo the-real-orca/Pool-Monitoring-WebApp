@@ -12,7 +12,7 @@ def _setup_live(tmp_path, monkeypatch):
     import main
 
     db.close()
-    assert db.init_db(str(tmp_path / "live.db"))
+    assert db.init_db(str(tmp_path / "data.db"))
 
     state = live_state.LiveState(ring_size=5, stale_after_seconds=600)
     monkeypatch.setattr(main, "_state", state, raising=False)

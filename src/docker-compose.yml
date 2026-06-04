@@ -14,7 +14,7 @@ services:
     env_file: .env
     volumes:
       - ./data/ai:/data/ai
-      - ./data/live:/data/live
+      - ./data/history:/data/history
     deploy:
       resources:
         limits:
@@ -57,6 +57,35 @@ services:
         limits:
           cpus: '0.25'
           memory: 64M
+
+  # Debug / dev helper: publishes synthetic sensor + pump payloads to MQTT
+  # every 5 seconds. Not started by default — opt in with
+  #   docker compose --profile debug up mqtt-publisher
+  mqtt-publisher:
+    build: ./dev/mqtt-publisher
+    profiles: ["debug"]
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+#      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+#      MQTT_PORT: ${MQTT_PORT:-1883}
+#      MQTT_USER: ${MQTT_USER:-}
+#      MQTT_PASS: ${MQTT_PASS:-}
+#      MQTT_TLS: ${MQTT_TLS:-false}
+#      MQTT_TLS_INSECURE: ${MQTT_TLS_INSECURE:-false}
+      BLE_TOPIC_TEMPLATE: ${LIVE_TOPIC_BLE_TEMPLATE:-home/{pool}/pool/ble-yc01}
+      PUMP_TOPIC_TEMPLATE: ${LIVE_TOPIC_PUMP_TEMPLATE:-home/{pool}/pool/pump}
+      POOLS: ${DEBUG_PUBLISHER_POOLS:-["Pool 1", "Pool 2"]}
+      INTERVAL_SECONDS: ${DEBUG_PUBLISHER_INTERVAL:-5}
+      PUMP_TOGGLE_EVERY: ${DEBUG_PUBLISHER_PUMP_TOGGLE_EVERY:-12}
+      RANDOM_SEED: ${DEBUG_PUBLISHER_SEED:-}
+      LOG_LEVEL: ${DEBUG_PUBLISHER_LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 32M
 
 # for testing purposes only!
 # expose the MQTT broker on a non-standard port to avoid conflicts with any local installations

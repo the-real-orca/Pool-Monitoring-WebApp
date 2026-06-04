@@ -430,8 +430,8 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 
 | # | File | Content |
 |---|------|---------|
-| [x] 20.1.1 | `src/.env.example` | New env block `LIVE_*`: `LIVE_TOPIC_BLE_TEMPLATE=home/{pool}/pool/ble-yc01`, `LIVE_TOPIC_PUMP_TEMPLATE=home/{pool}/pool/pump`, `LIVE_AGGREGATION_WINDOW_MINUTES=60`, `LIVE_RETENTION_DAYS=90`, `LIVE_DB_PATH=/data/live/live.db`, `LIVE_SAMPLE_RING_SIZE=5`, `LIVE_STALE_AFTER_SECONDS=600`, `LIVE_PUMP_FIELD_MAIN=mainPump`, `LIVE_PUMP_FIELD_SOLAR=solarPump`, `LIVE_PUMP_FIELD_TIME=time` |
-| [x] 20.1.2 | `src/.gitignore` | Ignore `data/live/` local dev DB |
+| [x] 20.1.1 | `src/.env.example` | New env block `LIVE_*`: `LIVE_TOPIC_BLE_TEMPLATE=home/{pool}/pool/ble-yc01`, `LIVE_TOPIC_PUMP_TEMPLATE=home/{pool}/pool/pump`, `LIVE_AGGREGATION_WINDOW_MINUTES=60`, `LIVE_RETENTION_DAYS=90`, `LIVE_DB_PATH=/data/history/data.db`, `LIVE_SAMPLE_RING_SIZE=5`, `LIVE_STALE_AFTER_SECONDS=600`, `LIVE_PUMP_FIELD_MAIN=mainPump`, `LIVE_PUMP_FIELD_SOLAR=solarPump`, `LIVE_PUMP_FIELD_TIME=time` |
+| [x] 20.1.2 | `src/.gitignore` | Ignore `data/history/` local dev DB |
 
 **Verify:** `.env.example` contains the new block; restart picks up defaults.
 
@@ -487,7 +487,7 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 | # | File | Content |
 |---|------|---------|
 | [x] 20.7.1 | `src/docker-compose.yml` | Add `volumes: - ./data/live:/data/live` to `backend` service. |
-| [x] 20.7.2 | `src/deploy-prepare.sh` | Ensure `data/` placeholder is created in the deployment package; add `data/live/.gitkeep` so the volume mount exists on first deploy. |
+| [x] 20.7.2 | `src/deploy-prepare.sh` | Ensure `data/` placeholder is created in the deployment package; add `data/history/.gitkeep` so the volume mount exists on first deploy. |
 
 **Verify:** `docker compose config` clean; container starts with writable `/data/live`.
 
@@ -558,7 +558,7 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 | # | Step | Expected result |
 |---|-------|-----------------|
 | [x] 20.15.1 | Start stack (`docker compose up -d`) | All services healthy |
-| [x] 20.15.2 | `mosquitto_pub -h localhost -p 2883 -t home/H32/pool/ble-yc01 -m '{"temp":28.4,"pH":7.2,"cl":0.7}'` | Backend log shows message received; `sqlite3 data/live/live.db "SELECT * FROM live_aggregates"` (after 1h) shows row |
+| [x] 20.15.2 | `mosquitto_pub -h localhost -p 2883 -t home/H32/pool/ble-yc01 -m '{"temp":28.4,"pH":7.2,"cl":0.7}'` | Backend log shows message received; `sqlite3 data/history/data.db "SELECT * FROM live_aggregates"` (after 1h) shows row |
 | [x] 20.15.3 | `mosquitto_pub -h localhost -p 2883 -t home/H32/pool/pump -m '{"mainPump":true,"solarPump":false,"time":1755724982}'` | `SELECT * FROM pump_events` shows one event |
 | [x] 20.15.4 | Open `https://<host>/` in browser | Live view loads; temperature shows 28.4; pH 7.2; cl 0.7; main pump = LÄUFT; chart empty (no aggregates yet) |
 | [x] 20.15.5 | Wait 30 s | Live view auto-refreshes (timestamp updates) |

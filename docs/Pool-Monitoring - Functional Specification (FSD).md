@@ -691,7 +691,7 @@ Settings are set via environment variables.
 | LIVE_TOPIC_PUMP_TEMPLATE     | text     | `home/{pool}/pool/pump` | MQTT topic template for pump state messages                |
 | LIVE_AGGREGATION_WINDOW_MINUTES | int  | `60`             | Window in minutes for per-hour mean aggregation into SQLite     |
 | LIVE_RETENTION_DAYS          | int      | `90`             | Auto-cleanup age for `live_aggregates` and `pump_events` rows    |
-| LIVE_DB_PATH                 | path     | `/data/live/live.db` | SQLite database file location                              |
+| LIVE_DB_PATH                 | path     | `/data/history/data.db` | SQLite database file location                              |
 | LIVE_SAMPLE_RING_SIZE        | int      | `5`              | Number of most recent raw samples kept in RAM per metric        |
 | LIVE_STALE_AFTER_SECONDS     | int      | `600`            | After this many seconds without a new sample, the snapshot is marked `stale` |
 | LIVE_PUMP_FIELD_MAIN         | text     | `mainPump`       | Field name for the main-pump boolean in the pump topic payload  |

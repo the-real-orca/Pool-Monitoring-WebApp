@@ -32,6 +32,6 @@ Thumbs.db
 tmp/
 temp/
 
-# Live Data: local SQLite database (Phase 20)
-data/live/
+# History Data: local SQLite database (Phase 20)
+data/history/
 

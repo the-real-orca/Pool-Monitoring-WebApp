@@ -10,7 +10,7 @@ import live_state
 
 def _setup_db(tmp_path):
     db.close()
-    db.init_db(str(tmp_path / "live.db"))
+    db.init_db(str(tmp_path / "data.db"))
 
 
 def test_hour_start_alignment():
