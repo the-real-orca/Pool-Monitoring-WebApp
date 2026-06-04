@@ -12,6 +12,11 @@ Every file, abstraction, and dependency must justify its place.
 
 **v1 scope:** Measurement form + chemistry update form -> MQTT publish. No database access, no dashboard.
 
+**Phase 20 scope (Live Data):** Backend additionally subscribes to BLE sensor + pump
+MQTT topics for every pool in `POOL_LIST`, aggregates per-hour means into SQLite, and
+serves a Live dashboard (current temperature, 5-sample mean of pH/Cl, pump status,
+7-day trend chart) via new REST endpoints.
+
 ---
 
 ## 2. Technology Stack & Design Decisions
@@ -26,6 +31,8 @@ Every file, abstraction, and dependency must justify its place.
 | MQTT     | `paho-mqtt ≥ 2.0` | FSD requirement; built-in exponential backoff via `reconnect_delay_set` |
 | AI client | `openrouter` (Python SDK) | Official OpenRouter Python SDK – single key, 300+ models, type-safe |
 | Multipart | `python-multipart` | Required by FastAPI for `UploadFile` / `Form` parsing |
+| DB       | `sqlite3` (Python stdlib) + WAL | Phase 20; no ORM, no async driver, no migrations framework |
+| Charts   | `chart.js@^4.4` + `chartjs-plugin-zoom@^2.0` | Phase 20; small bundle, touch-friendly, zoom/pan out-of-the-box |
 | Linting  | Ruff + ESLint | Fast, minimal configuration |
 
 **Deliberately excluded:**
@@ -37,7 +44,6 @@ Every file, abstraction, and dependency must justify its place.
 | DB / ORM | v1 is stateless; extension prepared in Future Enhancements |
 | Separate `config.py` | `os.getenv()` directly in `main.py` – 6 lines instead of a module |
 | Axios | Native `fetch()` is sufficient; one less dependency |
-| Chart.js | Future Enhancement |
 | Separate `middleware/` | FastAPI `Depends()` inline on the route – 5 lines instead of a module |
 | Other provider SDKs (`openai`, `anthropic`, `google-genai`) | OpenRouter SDK provides unified access to all of them; no need for per-provider SDKs |
 | LangChain / LlamaIndex | Heavy abstractions for a single structured-output call – pure overkill |
@@ -51,15 +57,18 @@ Every file, abstraction, and dependency must justify its place.
 src/
 ├── backend/
 │   ├── main.py              # FastAPI app, all routes, Pydantic models, auth, rate-limit
-│   ├── mqtt.py              # MQTT client (connect, publish, reconnect)
+│   ├── mqtt.py              # MQTT client (connect, publish, subscribe, reconnect)
 │   ├── ai.py                # AI client (provider-agnostic, structured output, image storage)
+│   ├── db.py                # SQLite layer (Phase 20): schema, WAL, insert, query, retention
+│   ├── live_state.py        # In-memory ring buffer + pump state change (Phase 20)
+│   ├── aggregator.py        # Hourly rollup + retention cleanup (Phase 20, asyncio)
 │   ├── requirements.txt
 │   ├── pyproject.toml       # Ruff/Black configuration
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── main.js          # App mount, PWA registration
-│   │   ├── App.vue          # Root: view toggle (form|chemistry|settings), toast display
+│   │   ├── main.js          # App mount, PWA registration, Chart.js plugin registration
+│   │   ├── App.vue          # Root: view toggle (live|form|chemistry|settings), toast display
 │   │   ├── validation.js    # Field constants (min, max, step, default, unit)
 │   │   ├── components/
 │   │   │   ├── StepperInput.vue       # Reusable +/- input stepper (no longer used by MeasurementForm)
@@ -67,13 +76,17 @@ src/
 │   │   │   ├── MeasurementForm.vue    # Measurement form with submit flow + photo button
 │   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
 │   │   │   ├── ChemicalUpdateForm.vue # Chemistry update form (Phase 19)
+│   │   │   ├── LiveView.vue           # Live dashboard (Phase 20): default landing
+│   │   │   ├── TrendChart.vue         # Chart.js line chart, 7d, zoom/pan (Phase 20)
+│   │   │   ├── PumpStatusCard.vue     # Pump status card with icon (Phase 20)
 │   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
 │   │   └── composables/
-│   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. analyzeImage)
+│   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. live + history)
 │   │       ├── useSettings.js # localStorage read/write (reactive)
 │   │       ├── useImage.js    # Canvas-based image compression utility
 │   │       ├── useToast.js    # Toast state (module-level singleton)
-│   │       └── useCamera.js   # Camera detection via enumerateDevices
+│   │       ├── useCamera.js   # Camera detection via enumerateDevices
+│   │       └── useLiveData.js # 30s polling for /api/live (Phase 20)
 │   ├── public/
 │   │   └── icons/
 │   │       ├── icon-192.png
@@ -104,14 +117,22 @@ backend/tests/
 ├── test_models.py
 ├── test_api.py
 ├── test_auth.py
-└── test_ai.py            # AI client: structured output, refusal, timeout, rate limit
+├── test_ai.py            # AI client: structured output, refusal, timeout, rate limit
+├── test_db.py            # SQLite: schema, insert, query, retention (Phase 20)
+├── test_live_state.py    # Ring buffer, pump state change detection (Phase 20)
+├── test_mqtt.py          # Subscribe + reconnect re-subscribe (Phase 20)
+├── test_aggregator.py    # Hourly rollup, retention cleanup (Phase 20)
+└── test_api_live.py      # /api/live, /api/history, /api/pump-events, /api/pools/live (Phase 20)
 
 frontend/tests/
 ├── validation.spec.js
 ├── useSettings.spec.js
 ├── StepperInput.spec.js
-├── useApi.spec.js         # API calls: success, 401, network error
-└── useImage.spec.js      # Image compression: dimensions, MIME, size cap
+├── useApi.spec.js         # API calls: success, 401, network error (incl. live/history)
+├── useImage.spec.js      # Image compression: dimensions, MIME, size cap
+├── useLiveData.spec.js   # 30s polling, stale detection, cleanup (Phase 20)
+├── LiveView.spec.js      # Dashboard render, pool selector (Phase 20)
+└── TrendChart.spec.js    # Chart.js datasets, empty state, destroy on unmount (Phase 20)
 ```
 
 ---
@@ -185,6 +206,9 @@ The app shell provides a centered card layout with a colored header bar. Primary
 | `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-chemistry`, `open-settings` |
 | `ChemicalUpdateForm.vue` | Form for one chemical event with optional amount + unit | – | `open-form`, `open-settings` |
 | `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `mode` (String, default `'camera'`) | `close`, `applied` (payload `{pH, cl, image}`) |
+| `LiveView.vue` | Live dashboard: pool selector, temperature main card, pH/Cl side cards (5-sample mean), pump status cards, 7-day trend chart (Phase 20) | – | – |
+| `TrendChart.vue` | Chart.js line chart with 3 Y-axes (temp/pH/cl), zoom + pan via `chartjs-plugin-zoom` (Phase 20) | `pool` (String) | – |
+| `PumpStatusCard.vue` | Pump status card: large icon, label, state, "läuft seit X min" (Phase 20) | `pump` ('main'\|'solar'), `state` (Boolean), `runningSince` (Number\|null) | – |
 | `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
 **`ValueSliderInput.vue`** – kombiniert `[-] [Wert] [+]` Stepper mit Popover-Slider:
@@ -1395,6 +1419,7 @@ python-dotenv>=1.0
 python-multipart>=0.0.9
 openrouter>=0.9,<1.0    # Official OpenRouter Python SDK (beta – pin major version)
 httpx>=0.27             # Test transport (TestClient) + SDK internals; not used directly in app code
+Pillow>=11.0            # test/benchmark image resizing
 pytest>=8.0
 pytest-asyncio>=0.23
 ```
@@ -1403,6 +1428,333 @@ pytest-asyncio>=0.23
 pinned to `>=0.9,<1.0` because it is in beta – this prevents unexpected breaking changes
 after a minor version bump. `httpx` remains for the test transport (`TestClient`). `pytest-asyncio` enables
 testing the async AI client without a real provider.
+
+No new production dependency is needed for Phase 20: `sqlite3` is part of the Python
+standard library, so the live-data storage layer is dependency-free.
+
+### 5.11 `db.py` – SQLite Storage Layer (Phase 20)
+
+Own file because it owns the DB connection lifecycle and a `threading.Lock` that
+serialises writes between the paho callback thread and the FastAPI request thread.
+
+```python
+import sqlite3
+import threading
+from pathlib import Path
+
+_lock = threading.Lock()
+_conn: sqlite3.Connection | None = None
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS live_aggregates (
+    pool         TEXT NOT NULL,
+    metric       TEXT NOT NULL,
+    hour_start   INTEGER NOT NULL,
+    value        REAL NOT NULL,
+    sample_count INTEGER NOT NULL,
+    PRIMARY KEY (pool, metric, hour_start)
+);
+CREATE INDEX IF NOT EXISTS idx_live_agg_time ON live_aggregates(hour_start);
+
+CREATE TABLE IF NOT EXISTS pump_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool        TEXT NOT NULL,
+    pump        TEXT NOT NULL,
+    state       INTEGER NOT NULL,
+    time        INTEGER NOT NULL,
+    received_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pump_events_time ON pump_events(time);
+"""
+
+def init_db(path: str) -> None:
+    global _conn
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    _conn = sqlite3.connect(path, check_same_thread=False)
+    _conn.execute("PRAGMA journal_mode=WAL")
+    _conn.execute("PRAGMA synchronous=NORMAL")
+    _conn.executescript(SCHEMA)
+    _conn.commit()
+
+def insert_aggregate(pool, metric, hour_start, value, sample_count) -> None: ...
+def insert_pump_event(pool, pump, state, time, received_at) -> None: ...
+def get_aggregates(pool, metric, since_ts) -> list[dict]: ...
+def get_pump_events(pool, since_ts) -> list[dict]: ...
+def cleanup_old_rows(retention_days: int) -> int: ...
+```
+
+The `INSERT OR REPLACE` upsert on the composite primary key `(pool, metric, hour_start)`
+makes the hourly rollup idempotent – a re-run of an already-aggregated hour overwrites
+the previous row.
+
+### 5.12 `live_state.py` – In-Memory State (Phase 20)
+
+Thread-safe in-memory state shared between the paho callback thread and the FastAPI
+request handler. One struct per pool; per-metric ring buffer of the last N samples;
+pump state is the last known boolean per pump name.
+
+```python
+class LiveState:
+    def __init__(self, ring_size: int, stale_after_seconds: int): ...
+    def push_sample(self, pool: str, metric: str, value: float, ts: int) -> None: ...
+    def set_pump(self, pool: str, name: str, state: bool, ts: int) -> bool:  # True on change
+        ...
+    def get_snapshot(self, pool: str) -> dict: ...  # {ts, temp, pH, cl, pump, stale}
+    def get_known_pools(self) -> list[str]: ...
+```
+
+All public methods acquire a single `threading.Lock` – the lock is held only for the
+duration of an in-memory update, never across `await` points. No `asyncio` types
+inside `LiveState`: it is pure synchronous data manipulation.
+
+The pump `set_pump` returns `True` *only* on a real boolean change. The MQTT dispatcher
+uses this return value to decide whether to write a `pump_events` row.
+
+### 5.13 `aggregator.py` – Hourly Rollup & Retention (Phase 20)
+
+A single `asyncio.Task` started in the FastAPI lifespan. On each 60-second tick it
+determines the previous full hour bucket and, for every (pool, metric) with at least
+one sample in that hour, calls `db.insert_aggregate(...)` with the mean value. The
+task is fault-tolerant: a single failed insert is logged and the loop continues.
+
+A second daily job (at 03:00 UTC) calls `db.cleanup_old_rows(LIVE_RETENTION_DAYS)` to
+enforce the retention cap (default 90 days). Old aggregates and pump events are
+deleted in a single transaction.
+
+```python
+class Aggregator:
+    def __init__(self, live_state, db_module, retention_days: int): ...
+    def start(self) -> asyncio.Task: ...
+    async def stop(self) -> None: ...
+    async def _run(self) -> None:  # never raises
+        while not self._stop_event.is_set():
+            await asyncio.sleep(60)
+            try:
+                self._rollup_previous_hour()
+            except Exception:
+                log.exception("aggregator tick failed")
+            if self._is_daily_cleanup_window():
+                try:
+                    db.cleanup_old_rows(self.retention_days)
+                except Exception:
+                    log.exception("retention cleanup failed")
+```
+
+### 5.14 `mqtt.py` – Subscription API Extension (Phase 20)
+
+The Phase 3 `mqtt.py` is extended with subscription support while keeping the publish
+API unchanged.
+
+```python
+_subscriptions: list[tuple[str, Callable[[str, dict], None]]] = []
+
+def subscribe(topic: str, on_message: Callable[[str, dict], None]) -> None:
+    _subscriptions.append((topic, on_message))
+    if is_connected():
+        _client.subscribe(topic, qos=1)
+
+def connect(host, port, user, password, tls=False) -> None:
+    # ... existing setup ...
+    _client.on_connect = _on_connect  # re-subscribes after reconnect
+    _client.on_message = _on_message  # dispatches to registered handlers
+    # ...
+
+def _on_connect(client, userdata, flags, rc, properties=None) -> None:
+    if rc == 0:
+        for topic, _ in _subscriptions:
+            client.subscribe(topic, qos=1)
+        log.info("MQTT connected, re-subscribed to %d topics", len(_subscriptions))
+```
+
+Topic strings are constructed once at startup via
+`LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)` and
+`LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)` for every name in `POOL_LIST`. No wildcards
+are used – explicit subscriptions keep broker-side diagnostics simple and prevent
+unintended cross-traffic.
+
+### 5.15 New Live-Data Endpoints (Phase 20)
+
+All endpoints are `Depends(verify_token)` – consistent with the rest of the API. The
+`pool` query parameter is validated against `POOL_LIST` (422 on unknown).
+
+#### `GET /api/pools/live`
+
+Returns the subset of pools that have at least one sample in the in-memory state.
+Used by `LiveView` to populate the pool selector dropdown on startup.
+
+```json
+[{"name": "H32", "hasData": true}]
+```
+
+#### `GET /api/live?pool=H32`
+
+Returns the current snapshot of one pool.
+
+```json
+{
+  "pool": "H32",
+  "ts": 1755724982,
+  "stale": false,
+  "staleSeconds": 12,
+  "temp": 28.4,
+  "pH":  7.18,
+  "cl":  0.72,
+  "pump": { "main": true, "solar": false, "ts": 1755724500 }
+}
+```
+
+`pH` and `cl` are the arithmetic mean of the last 5 raw samples (configurable via
+`LIVE_SAMPLE_RING_SIZE`). `stale` is `true` when `staleSeconds > LIVE_STALE_AFTER_SECONDS`.
+
+#### `GET /api/history?pool=H32&metric=temp&days=7`
+
+Returns the per-hour aggregate series for one metric.
+
+```json
+{
+  "pool": "H32",
+  "metric": "temp",
+  "unit": "°C",
+  "points": [{"t": 1755723600, "v": 27.8}, ...]
+}
+```
+
+Days is clamped to `1..30`. For 7 days the response contains ≤ 168 points
+(one per hour, gaps possible if no samples were received).
+
+#### `GET /api/pump-events?pool=H32&days=7`
+
+Returns the persisted pump state changes.
+
+```json
+{
+  "pool": "H32",
+  "events": [{"pump": "main", "state": 1, "time": 1755724500, "received_at": 1755724501}, ...]
+}
+```
+
+#### Updated `GET /api/status`
+
+Adds `liveDataConfigured: bool` (true when `db.init_db` succeeded during lifespan).
+
+---
+
+## 4.9 Frontend Live-View Component Contract (Phase 20)
+
+`LiveView.vue` is the new default landing page. It owns the pool selector and the
+polling composable lifecycle.
+
+```vue
+<script setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useApi } from '../composables/useApi.js'
+import { useLiveData } from '../composables/useLiveData.js'
+import PumpStatusCard from './PumpStatusCard.vue'
+import TrendChart from './TrendChart.vue'
+
+const { fetchPoolsLive } = useApi()
+const pools = ref([])
+const selectedPool = ref('')
+const { snapshot, loading, error, start, stop } = useLiveData()
+
+onMounted(async () => {
+  pools.value = await fetchPoolsLive()
+  if (pools.value.length) {
+    selectedPool.value = pools.value[0].name
+    start(selectedPool.value)
+  }
+})
+onBeforeUnmount(stop)
+watch(selectedPool, (next) => { if (next) start(next) })
+</script>
+```
+
+Rendering rules:
+
+- If `!snapshot`: show a centered "Warte auf Daten…" placeholder.
+- If `error` is set: show a banner with retry button (no stale data presented).
+- If `snapshot.stale`: show the last value with a grey "Stale vor X min" badge
+  and do not animate any indicators.
+- The pool selector is hidden if only one pool exists.
+
+### 4.10 `useLiveData.js` – 30-second Polling (Phase 20)
+
+```js
+import { reactive, onBeforeUnmount } from 'vue'
+import { useApi } from './useApi.js'
+
+const state = reactive({ snapshot: null, loading: false, error: null, lastFetch: 0, intervalId: null, currentPool: '' })
+
+export function useLiveData() {
+  const { fetchLive } = useApi()
+  async function tick() {
+    if (!state.currentPool) return
+    state.loading = true
+    try {
+      state.snapshot = await fetchLive(state.currentPool)
+      state.error = null
+      state.lastFetch = Date.now()
+    } catch (e) {
+      state.error = String(e)
+    } finally {
+      state.loading = false
+    }
+  }
+  function start(pool, { intervalMs = 30000 } = {}) {
+    if (state.intervalId) clearInterval(state.intervalId)
+    state.currentPool = pool
+    tick()
+    state.intervalId = setInterval(tick, intervalMs)
+  }
+  function stop() {
+    if (state.intervalId) clearInterval(state.intervalId)
+    state.intervalId = null
+  }
+  return { ...toRefs(state), start, stop }
+}
+```
+
+The composable is implemented as a module-level singleton (matches `useToast.js`) so
+mounting `LiveView` twice (e.g., during fast view switches) does not double-poll.
+`onBeforeUnmount` calls `stop()` to release the interval when leaving the live view.
+
+### 4.11 `TrendChart.vue` (Phase 20)
+
+- Fetches `fetchHistory(pool, 'temp' | 'pH' | 'cl', 7)` for all three metrics in parallel.
+- Single Chart.js `line` chart, three Y axes:
+  - Left: `temp` (°C, primary blue)
+  - Right outer: `pH` (unitless, success green, range 6–8)
+  - Right inner: `cl` (mg/l, warning amber, range 0–3)
+- X axis: 7-day time scale, day ticks, localized date format.
+- Plugins: `Legend`, `Tooltip` (touch enabled), `chartjs-plugin-zoom`
+  (`zoom: { pinch: { enabled: true }, wheel: { enabled: false } }`,
+  `pan: { enabled: true, mode: 'x' }`).
+- A `ResizeObserver` calls `chart.resize()` on container size change.
+- Chart instance is destroyed in `onBeforeUnmount` to avoid memory leaks.
+
+### 4.12 `PumpStatusCard.vue` (Phase 20)
+
+Pure presentational component. Props: `pump: 'main' | 'solar'`, `state: boolean`,
+`runningSince: number | null`. Uses the existing color tokens (`bg-success/10` for
+running, `bg-slate-100` for idle). Icons are inline SVGs (gear for `main`, sun for
+`solar`) – no icon font dependency. Touch target ≥ 44×44 px.
+
+### 4.13 `App.vue` View State (Phase 20)
+
+The view state enum is extended:
+
+```js
+const view = ref('live') // 'live' | 'form' | 'chemistry' | 'settings'
+const navigationEntries = [
+  { label: 'Live', view: 'live' },
+  { label: 'Measurements', view: 'form' },
+  { label: 'Chemieupdate', view: 'chemistry' },
+]
+```
+
+`Live` becomes the default landing. The burger menu and gear icon pattern are reused
+unchanged. `LiveView` is rendered via `v-show` (so internal state survives temporary
+view switches), wrapped next to `MeasurementForm` and `ChemicalUpdateForm`.
 
 ---
 
@@ -1600,6 +1952,19 @@ POOL_LIST=[{"name":"Pool 1","topic":"pool1/manual"}, {"name":"Pool 2","topic":"p
 
 FRONTEND_URL=https://pool.example.org
 
+# === Live Data (Phase 20) ===
+# Subscription topics are built from POOL_LIST by .format(pool=<name>).
+LIVE_TOPIC_BLE_TEMPLATE=home/{pool}/pool/ble-yc01
+LIVE_TOPIC_PUMP_TEMPLATE=home/{pool}/pool/pump
+LIVE_AGGREGATION_WINDOW_MINUTES=60
+LIVE_RETENTION_DAYS=90
+LIVE_DB_PATH=/data/live/live.db
+LIVE_SAMPLE_RING_SIZE=5
+LIVE_STALE_AFTER_SECONDS=600
+LIVE_PUMP_FIELD_MAIN=mainPump
+LIVE_PUMP_FIELD_SOLAR=solarPump
+LIVE_PUMP_FIELD_TIME=time
+
 AI_PROVIDER=openrouter
 AI_API_KEY=
 AI_MODEL=google/gemini-3-flash-preview
@@ -1632,6 +1997,7 @@ MQTT_AVAILABILITY_TOPICS=
 
 **Note:** `MQTT_PORT=1883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
 `FRONTEND_URL` is used by the backend CORS middleware – set to the production domain.
+`LIVE_TOPIC_*_TEMPLATE` placeholders are expanded at startup; `{pool}` is replaced by each `POOL_LIST` entry's `name` value.
 
 ---
 

@@ -18,6 +18,7 @@ Progressive Web App (PWA) for:
 - Manual data entry at the pool via smartphone
 - **Chemical Update Page:** Log one chemical addition event (`chlorine`, `ph`, `flocculant`) with date/time and optional amount
 - **Automatic Image Analysis:** Capture a photo of test strips + reference scale, extract pH/chlorine via multimodal AI, prefill form fields
+- **Live View (default landing):** Real-time dashboard fed by BLE sensor and pump MQTT topics – main temperature, 5-sample means for pH/Cl, pump status icons, 7-day zoomable trend chart
 - Comparison of manual vs. automatic measurements (data foundation)
 - Sensor drift analysis and calibration (prepared, not part of this project)
 
@@ -38,18 +39,22 @@ graph TB
     PWA["Progressive Web App<br/><i>(Smartphone / Browser)</i>"]
     Caddy["Reverse Proxy (Caddy)"]
     Frontend["Frontend (Nginx)"]
-    API["API-Bridge (FastAPI)<br/><i>REST -> MQTT/AI Bridge</i>"]
+    API["API-Bridge (FastAPI)<br/><i>REST -> MQTT/AI + Live-Data Hub</i>"]
     MQTT["Mosquitto Broker"]
     AI["AI Service<br/><i>(OpenAI / Anthropic / Gemini)</i>"]
     Disk["Local Disk<br/><i>(image + result logging)</i>"]
+    DB["SQLite<br/><i>(live_aggregates, pump_events)</i>"]
+    Sensors["ESP32 Sensors / Relays"]
 
     PWA -->|HTTPS| Caddy
     Caddy -->|/api/*| API
     Caddy -->|/*| Frontend
-    API -->|MQTT| MQTT
+    API -->|MQTT publish| MQTT
     API -->|HTTPS| AI
     API <-->|fs| Disk
-
+    Sensors -->|MQTT publish| MQTT
+    MQTT -->|MQTT subscribe| API
+    API <-->|SQL| DB
 ```
 
 ### 2.2 Communication Flow
@@ -115,6 +120,33 @@ sequenceDiagram
     API->>Caddy: 201 Created
     Caddy->>PWA: Success toast
 
+```
+
+**Live Data: Sensor → Backend → PWA**
+
+```mermaid
+sequenceDiagram
+    participant ESP as ESP32 Sensor/Relay
+    participant MQTT as Mosquitto
+    participant API as API-Bridge (FastAPI)
+    participant DB as SQLite
+    participant PWA as PWA (LiveView)
+
+    ESP->>MQTT: publish home/H32/pool/ble-yc01 {temp, pH, cl}
+    ESP->>MQTT: publish home/H32/pool/pump {mainPump, solarPump}
+    MQTT->>API: on_message callback
+    API->>API: live_state.push_sample(...)
+    API->>API: live_state.set_pump(...) (True on change)
+    alt pump state changed
+        API->>DB: insert_pump_event(...)
+    end
+    Note over API,DB: every 60 min: aggregator writes 1h mean
+    API->>DB: insert_aggregate(...)
+    PWA->>API: GET /api/live?pool=H32 (every 30 s)
+    API-->>PWA: snapshot {ts, temp, pH, cl, pump, stale}
+    PWA->>API: GET /api/history?pool=H32&metric=temp&days=7
+    API->>DB: SELECT ... FROM live_aggregates ...
+    API-->>PWA: {points: [{t, v}, ...]}
 ```
 
 ### 2.3 Technology Stack
@@ -185,6 +217,7 @@ the AI result. Manual correction remains possible before submitting.
   - Switching between Measurement and Chemieupdate preserves entered values until submit/reset
 
 - **Navigation dropdown (burger menu):**
+  - Live *(default landing)*
   - Measurements
   - Chemieupdate
   - separator
@@ -193,8 +226,6 @@ the AI result. Manual correction remains possible before submitting.
 - **Settings page:**
   - "Abbrechen" (Cancel) and "Speichern" (Save) buttons at the bottom
   - Cancel discards unsaved changes, Save persists changes and shows confirmation toast
-
-- Dashboard tab in a later version
 
 ### 3.3.1 Measurement Page (Wireframe)
 
@@ -339,6 +370,109 @@ Settings are stored locally on the smartphone or in the browser.
 - Service Worker: Cache-first for static assets (app shell)
 - Support: Android Chrome ≥ 100, desktop current, iOS Safari ≥ 16
 
+### 3.7 Live View
+
+The Live View is the **default landing page** of the PWA. It is a real-time data
+dashboard fed by two MQTT topics per pool in `POOL_LIST`:
+
+- `home/<pool>/pool/ble-yc01` – sensor payload `{temp, pH, cl, [bat]}` published
+  periodically by the ESP32 sensor.
+- `home/<pool>/pool/pump` – pump payload `{mainPump, solarPump, time}` published by
+  the ESP32 relay controller on every state change.
+
+The backend subscribes to both topics, holds a 5-sample ring buffer per metric in
+memory, and writes per-hour means plus pump-state changes to a local SQLite database.
+The frontend polls the backend every 30 seconds.
+
+#### 3.7.1 Live View Layout
+
+```
+┌─────────────────────────────┐
+│ ≡ Pool Monitor          [⚙] │
+├─────────────────────────────┤
+│ Pool: [H32   ▼]  12:23:01   │
+│                             │
+│  ┌─────────────────────┐    │
+│  │  🌡  TEMPERATUR      │    │
+│  │       28.4 °C        │    │
+│  │  letzte Messung …   │    │
+│  └─────────────────────┘    │
+│  ┌──────────┐ ┌──────────┐  │
+│  │   pH     │ │   Cl     │  │
+│  │  7.18    │ │  0.72    │  │
+│  │ Ø 5 M.   │ │ Ø 5 M.   │  │
+│  └──────────┘ └──────────┘  │
+│  ┌──────────┐ ┌──────────┐  │
+│  │ ⚙ MAIN   │ │ ☀ SOLAR  │  │
+│  │  LÄUFT   │ │   AUS    │  │
+│  └──────────┘ └──────────┘  │
+│                             │
+│  Trend (letzte 7 Tage)      │
+│  ┌─────────────────────┐    │
+│  │   [zoombarer Chart] │    │
+│  └─────────────────────┘    │
+└─────────────────────────────┘
+```
+
+#### 3.7.2 Card Specifications
+
+| Card | Source | Display | Update |
+|------|--------|---------|--------|
+| **Temperatur (main)** | Latest raw sample from RAM | Big number, °C, label "letzte Messung HH:MM" | Every 30 s |
+| **pH (side)** | Mean of last 5 raw samples in RAM | Number with "Ø 5 M." subtitle | Every 30 s |
+| **Cl (side)** | Mean of last 5 raw samples in RAM | Number with "Ø 5 M." subtitle | Every 30 s |
+| **Main pump** | Current boolean in RAM | Large gear icon, label "HAUPTPUMPE", state "LÄUFT" (success) / "AUS" (slate) | Every 30 s |
+| **Solar pump** | Current boolean in RAM | Large sun icon, label "SOLARPUMPE", state "LÄUFT" (success) / "AUS" (slate) | Every 30 s |
+| **Trend chart** | Per-hour aggregates from SQLite | Chart.js line chart, 3 lines (temp, pH, cl), zoom/pan enabled | On pool change |
+
+The temperature card is intentionally the visual focal point (largest number, ~64 px).
+pH and Cl side cards use the same number style at ~32 px.
+
+#### 3.7.3 Stale Behavior
+
+If no new sample arrives for `LIVE_STALE_AFTER_SECONDS` (default 600 s = 10 min), the
+displayed values are kept but marked with a grey "Stale vor X min" badge. The chart
+keeps rendering with existing data; new pump events are still highlighted when
+received. A persistent connection error shows a red banner with a "Erneut versuchen"
+button.
+
+#### 3.7.4 Empty / Loading States
+
+- **No data yet** (first launch, no MQTT messages): centered "Warte auf Daten…"
+- **Connection error** (backend unreachable): red banner "Verbindung fehlgeschlagen"
+  with retry button. The polling loop continues in the background.
+- **No trend data** (chart): "Noch keine Daten" placeholder inside the chart frame.
+
+#### 3.7.5 Multi-Pool Behavior
+
+If `POOL_LIST` contains more than one pool, a pool selector dropdown is shown at the
+top. Switching the pool:
+
+- triggers an immediate `GET /api/live?pool=<new>`
+- resets the 30 s polling interval
+- re-fetches the chart data for the new pool
+
+The selector is hidden when only one pool is configured.
+
+#### 3.7.6 Polling Cadence
+
+| Action | Cadence |
+|--------|---------|
+| Initial fetch on view open | Immediate |
+| Subsequent fetches | Every 30 s |
+| Cleanup on view change | `clearInterval` in `onBeforeUnmount` |
+
+Polling, not SSE/WebSocket, is used because (a) the architecture principle prefers
+simple, stateless solutions, (b) the 30 s interval is acceptable for a manual-entry
+companion app, and (c) no service-worker buffering complexity is introduced.
+
+#### 3.7.7 Offline Behavior
+
+No offline support: when the PWA cannot reach the backend, the last successful
+snapshot is discarded (no localStorage caching) and a red error banner is shown. The
+underlying data is always live in the backend, so reconnecting simply resumes the
+display. This avoids subtle bugs from showing stale data without a clear indicator.
+
 ---
 
 ## 4. Backend
@@ -435,7 +569,90 @@ Logs exactly one chemical addition event.
 
 #### GET /api/status
 
-**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "uptime": 3600, "version": "1.0.0" }`
+**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "liveDataConfigured": true, "uptime": 3600, "version": "1.0.0" }`
+
+#### GET /api/pools/live
+
+Returns the subset of pools that have at least one sample in the backend's in-memory
+state. Used by the Live View to populate the pool selector dropdown.
+
+**Response 200:** `[{"name": "H32", "hasData": true}, {"name": "Pool 2", "hasData": false}]`
+
+**Errors:** 401 (unauthorized)
+
+#### GET /api/live?pool=H32
+
+Returns the current live snapshot for one pool. Served from RAM, not the database.
+
+**Query:** `pool` (required, must exist in `POOL_LIST`)
+
+**Response 200:**
+
+```json
+{
+  "pool": "H32",
+  "ts": 1755724982,
+  "stale": false,
+  "staleSeconds": 12,
+  "temp": 28.4,
+  "pH":  7.18,
+  "cl":  0.72,
+  "pump": { "main": true, "solar": false, "ts": 1755724500 }
+}
+```
+
+`pH` and `cl` are the mean of the last 5 raw samples (configurable via
+`LIVE_SAMPLE_RING_SIZE`). `stale` is `true` when `staleSeconds > LIVE_STALE_AFTER_SECONDS`
+(default 600 s). If the pool has no samples yet, the response is `200` with all
+numeric fields `null` and `stale: true`.
+
+**Errors:** 401 (unauthorized), 422 (unknown pool)
+
+#### GET /api/history?pool=H32&metric=temp&days=7
+
+Returns the per-hour aggregate series for one metric, sourced from SQLite.
+
+**Query:**
+
+| Param   | Type | Default | Range  | Description                          |
+| ------- | ---- | ------- | ------ | ------------------------------------ |
+| `pool`  | str  | -       | POOL_LIST | Pool name (required)              |
+| `metric`| str  | -       | `temp` \| `pH` \| `cl` | Metric name (required) |
+| `days`  | int  | 7       | 1..30  | Lookback window in days              |
+
+**Response 200:**
+
+```json
+{
+  "pool": "H32",
+  "metric": "temp",
+  "unit": "°C",
+  "points": [
+    { "t": 1755723600, "v": 27.8 },
+    { "t": 1755727200, "v": 28.1 }
+  ]
+}
+```
+
+**Errors:** 401 (unauthorized), 422 (validation)
+
+#### GET /api/pump-events?pool=H32&days=7
+
+Returns persisted pump state changes. State changes are recorded only on actual
+boolean transitions; repeated identical messages do not create new events.
+
+**Query:** `pool` (required), `days` (default 7, range 1..30)
+
+**Response 200:**
+
+```json
+{
+  "pool": "H32",
+  "events": [
+    { "pump": "main", "state": 1, "time": 1755724500, "received_at": 1755724501 }
+  ]
+}
+```
 
 ### 4.2 Configuration
 
@@ -469,7 +686,17 @@ Settings are set via environment variables.
 | MQTT_TOPICS                  | text     | -                | Override MQTT data topics for mqtt2mail (comma-separated)         |
 | MQTT_TOPIC_BASE              | text     | -                | Base topic for mqtt2mail fallback topic resolution                 |
 | MQTT_ALERT_TOPICS            | text     | -                | MQTT alert topics for mqtt2mail (comma-separated)                 |
-| MQTT_AVAILABILITY_TOPICS     | text     | -                | MQTT availability topics for mqtt2mail (comma-separated)          |
+| MQTT_AVAILABILITY_TOPICS     | text     | -                | MQTT availability topics for mqtt2mail (comma-separated)         |
+| LIVE_TOPIC_BLE_TEMPLATE      | text     | `home/{pool}/pool/ble-yc01` | MQTT topic template for BLE sensor messages (`{pool}` is replaced by each `POOL_LIST` entry's `name`) |
+| LIVE_TOPIC_PUMP_TEMPLATE     | text     | `home/{pool}/pool/pump` | MQTT topic template for pump state messages                |
+| LIVE_AGGREGATION_WINDOW_MINUTES | int  | `60`             | Window in minutes for per-hour mean aggregation into SQLite     |
+| LIVE_RETENTION_DAYS          | int      | `90`             | Auto-cleanup age for `live_aggregates` and `pump_events` rows    |
+| LIVE_DB_PATH                 | path     | `/data/live/live.db` | SQLite database file location                              |
+| LIVE_SAMPLE_RING_SIZE        | int      | `5`              | Number of most recent raw samples kept in RAM per metric        |
+| LIVE_STALE_AFTER_SECONDS     | int      | `600`            | After this many seconds without a new sample, the snapshot is marked `stale` |
+| LIVE_PUMP_FIELD_MAIN         | text     | `mainPump`       | Field name for the main-pump boolean in the pump topic payload  |
+| LIVE_PUMP_FIELD_SOLAR        | text     | `solarPump`      | Field name for the solar-pump boolean in the pump topic payload |
+| LIVE_PUMP_FIELD_TIME         | text     | `time`           | Field name for the optional timestamp in the pump topic payload |
 
 ### 4.3 MQTT Integration
 
@@ -518,6 +745,56 @@ Chemical update payload example:
 }
 ```
 
+#### Live-Data Subscription
+
+In addition to publishing, the backend **subscribes** to two topics per pool in
+`POOL_LIST`. The topics are derived from the templates below by substituting
+`{pool}` with the pool's `name` value.
+
+| Purpose | Topic template (default) | Direction | QoS |
+|---------|--------------------------|-----------|-----|
+| BLE sensor | `home/{pool}/pool/ble-yc01` | inbound | 1 |
+| Pump state | `home/{pool}/pool/pump` | inbound | 1 |
+
+**BLE sensor payload** (published periodically by the ESP32 sensor, typically every
+30–60 s):
+
+```json
+{
+  "time": 1755724982,
+  "pH":  7.2,
+  "cl":  0.7,
+  "temp": 28.4,
+  "bat":  2980
+}
+```
+
+`bat` is optional. The backend keeps `pH`, `cl`, `temp` in a 5-sample ring buffer in
+RAM. Temperature is shown as the current value; `pH` and `Cl` are shown as the mean
+of the ring (to smooth single-sample noise).
+
+**Pump payload** (published by the ESP32 relay controller on every state change):
+
+```json
+{
+  "mainPump": true,
+  "solarPump": false,
+  "time": 1755724982
+}
+```
+
+Field names are configurable via `LIVE_PUMP_FIELD_MAIN`, `LIVE_PUMP_FIELD_SOLAR`, and
+`LIVE_PUMP_FIELD_TIME`. The backend only writes a `pump_events` row when the boolean
+state actually changes; identical re-publishes are ignored.
+
+**Per-hour aggregation**: at the end of every full hour, the backend computes the
+mean of the values received during that hour for each (pool, metric) and stores the
+result in the local SQLite database. This 1-hour mean is the data source for the
+7-day trend chart.
+
+**Retention**: aggregates and pump events older than `LIVE_RETENTION_DAYS` (default
+90) are deleted in a single daily job (03:00 UTC).
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -529,6 +806,9 @@ Chemical update payload example:
 | MQTT publish             | < 200ms                      |
 | Image analysis (p95)     | < 15s (incl. AI round-trip)  |
 | Image upload payload     | < 2 MB after client compression |
+| `/api/live` response     | < 50ms (RAM-only)            |
+| `/api/history` response  | < 200ms (SQLite, ≤ 168 points) |
+| Live-View polling load   | 2 req / pool / 30 s          |
 | Availability             | 90% (hobby)                  |
 
 ---
@@ -575,10 +855,10 @@ Via Docker Compose.
 
 | Level                | Framework                | Coverage                                    |
 | -------------------- | ------------------------ | ------------------------------------------- |
-| Frontend Unit        | Vitest                   | Composables, utils, validation              |
-| Frontend Components  | Vitest + @vue/test-utils | StepperInput component, ImageCapture flow   |
-| Backend Unit         | pytest                   | Models, validation, MQTT, AI client (mocked)|
-| Backend API          | httpx + pytest           | All endpoints incl. `/api/analyze-image` (rate limit, refusal, timeout via mocks) |
+| Frontend Unit        | Vitest                   | Composables (incl. `useLiveData`), utils, validation |
+| Frontend Components  | Vitest + @vue/test-utils | StepperInput, ImageCapture, LiveView, TrendChart |
+| Backend Unit         | pytest                   | Models, validation, MQTT, AI client, `db`, `live_state`, `aggregator` (all mocked) |
+| Backend API          | httpx + pytest           | All endpoints incl. `/api/analyze-image`, `/api/live`, `/api/history`, `/api/pump-events` (rate limit, refusal, timeout, retention, polling via mocks) |
 
 ---
 
@@ -615,51 +895,19 @@ Via Docker Compose.
 
 ## 12. Future Enhancements
 
-> History and charts are not part of the first version. The architecture (SQLite, GET /api/measurements) is designed to be easily extensible later.
+> The Live View (Phase 20) implements the dashboard, chart, and SQLite persistence
+> that were previously described as future enhancements. The two manual-entry
+> measurement history endpoints (`GET /api/measurements`) and the manual-measurement
+> table are still planned for a later phase.
 
-### 12.1 Extended System Overview
+### 12.1 Future Scope: Manual Measurement History
 
-```mermaid
-graph TB
-    PWA["Progressive Web App<br/><i>(Smartphone / Browser)</i>"]
-    Caddy["Reverse Proxy (Caddy)"]
-    Frontend["Frontend (Nginx)"]
-    API["API-Bridge (FastAPI)<br/><i>REST -> MQTT/DB Bridge</i>"]
-    MQTT["Mosquitto Broker"]
-    DB["Local DB<br/><i>(SQLite as local cache)</i>"]
+Persistence of manual measurements (independent of MQTT) is not part of Phase 20.
+The Phase 20 SQLite tables (`live_aggregates`, `pump_events`) are designed to be
+extended by a future `measurements` table without breaking the live-data API
+contract.
 
-    PWA -->|HTTPS| Caddy
-    Caddy -->|/api/*| API
-    Caddy -->|/*| Frontend
-    API -->|MQTT| MQTT
-    MQTT .->|MQTT| API
-    API <.->|SQL| DB
-
-```
-
-### 12.2 UI Extensions
-
-#### 12.2.1 History
-
-- Table of the last 50 measurements (newest first)
-- Color coding: pH 7.0-7.4 green, 6.8-7.6 yellow, else red | Chlorine 0.6-1.0 green, 0.3-1.5 yellow, else red (thresholds configurable)
-
-#### 12.2.2 Charts
-
-- Chart.js line chart (last 30 measurements)
-- Switchable pH/chlorine/temperature, ideal range as band
-- Tooltip on touch/hover
-
-### 12.3 REST API
-
-#### GET /api/measurements
-
-**Query:** `limit` (default 50, max 500), `offset`, `from`, `to`
-**Response 200:** `{ "measurements": [{ "time": 1755724982, ... }], "total": 127, "limit": 50, "offset": 0 }`
-
-### 12.4 Data Persistence (SQLite)
-
-#### 12.4.1 Measurements Table
+#### 12.1.1 Planned `measurements` Table
 
 ```sql
 CREATE TABLE measurements (
@@ -675,9 +923,19 @@ CREATE TABLE measurements (
 CREATE INDEX idx_measurements_time ON measurements(time);
 ```
 
-#### 12.4.2 Sensor Data Caching
+#### 12.1.2 Planned `GET /api/measurements`
 
-- Backend subscribes to all MQTT topics (`pool/#`)
-- All incoming sensor data is cached in SQLite
-- Enables later comparison of manual vs. automatic measurements
-- Auto-cleanup after 90 days (configurable)
+**Query:** `limit` (default 50, max 500), `offset`, `from`, `to`
+**Response 200:** `{ "measurements": [{ "time": 1755724982, ... }], "total": 127, "limit": 50, "offset": 0 }`
+
+#### 12.1.3 History Table UI
+
+- Table of the last 50 manual measurements (newest first)
+- Color coding: pH 7.0-7.4 green, 6.8-7.6 yellow, else red | Chlorine 0.6-1.0 green, 0.3-1.5 yellow, else red (thresholds configurable)
+
+#### 12.1.4 Manual-vs-Auto Compare View
+
+- Side-by-side chart of the last 30 manual measurements and the corresponding
+  automatic sensor aggregates from `live_aggregates`
+- Switchable pH/chlorine/temperature, ideal range as band
+- Tooltip on touch/hover

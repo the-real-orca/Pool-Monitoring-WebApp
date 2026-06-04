@@ -414,6 +414,169 @@ addition event per entry with optional amount and enum unit.
 **Verify:** `cd src/backend && pytest -v` and `cd src/frontend && npm run test` green; manual flow publishes chemistry event to `.../chem` topic.
 
 
+---
+
+## Phase 20 – Feature: Live Data (MQTT Subscribe + Live View + Trend Chart)
+
+Goal: Backend subscribes to sensor + pump MQTT topics, aggregates per-hour mean into SQLite, and persists every pump-state change. Frontend adds a `Live` view (default landing page) with a modern dashboard (current temperature as main value, pH/Cl as 5-sample averages from RAM, pump status as icons) and a zoomable 7-day trend chart of temperature, pH, and chlorine.
+
+Architecture: all incoming topics derive from `POOL_LIST` via configurable templates
+(`LIVE_TOPIC_BLE_TEMPLATE`, `LIVE_TOPIC_PUMP_TEMPLATE`). Aggregation is a per-hour mean
+of the rolling in-memory ring buffer; pump events are persisted only on actual state
+change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /api/history`
+(one call per metric, 1-hour buckets).
+
+### 20.1 ENV and configuration surface
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.1.1 | `src/.env.example` | New env block `LIVE_*`: `LIVE_TOPIC_BLE_TEMPLATE=home/{pool}/pool/ble-yc01`, `LIVE_TOPIC_PUMP_TEMPLATE=home/{pool}/pool/pump`, `LIVE_AGGREGATION_WINDOW_MINUTES=60`, `LIVE_RETENTION_DAYS=90`, `LIVE_DB_PATH=/data/live/live.db`, `LIVE_SAMPLE_RING_SIZE=5`, `LIVE_STALE_AFTER_SECONDS=600`, `LIVE_PUMP_FIELD_MAIN=mainPump`, `LIVE_PUMP_FIELD_SOLAR=solarPump`, `LIVE_PUMP_FIELD_TIME=time` |
+| [ ] 20.1.2 | `src/.gitignore` | Ignore `data/live/` local dev DB |
+
+**Verify:** `.env.example` contains the new block; restart picks up defaults.
+
+### 20.2 Backend: SQLite layer (`db.py`)
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.2.1 | `src/backend/db.py` | New module. `init_db(path)` opens SQLite, `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA foreign_keys=ON`, `check_same_thread=False`. Schema (idempotent `CREATE TABLE IF NOT EXISTS`): `live_aggregates(pool TEXT, metric TEXT, hour_start INTEGER, value REAL, sample_count INTEGER, PRIMARY KEY(pool,metric,hour_start))`; index on `hour_start`. `pump_events(id INTEGER PK AUTOINCREMENT, pool TEXT, pump TEXT, state INTEGER, time INTEGER, received_at INTEGER)`; index on `time`. Functions: `insert_aggregate(pool, metric, hour_start, value, n)`, `insert_pump_event(pool, pump, state, time, received_at)`, `get_aggregates(pool, metric, since_ts)`, `get_pump_events(pool, since_ts)`, `cleanup_old_rows(retention_days)`. A module-level `threading.Lock` serializes writes. |
+| [ ] 20.2.2 | `src/backend/tests/test_db.py` | In-memory SQLite fixture (`tmp_path`); tests: schema creation idempotent, insert/get aggregate roundtrip, insert/get pump event roundtrip, cleanup deletes rows older than `retention_days`, primary-key conflict on duplicate `(pool, metric, hour_start)` is a no-op (UPSERT via `INSERT OR REPLACE`) |
+
+**Verify:** `pytest -v src/backend/tests/test_db.py` green.
+
+### 20.3 Backend: in-memory live state (`live_state.py`)
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.3.1 | `src/backend/live_state.py` | Thread-safe `LiveState` class. `push_sample(pool, metric, value, ts)`: appends to per-metric ring of max `ring_size` (default 5), updates `last_value` + `last_ts`. `set_pump(pool, name, state, ts) -> bool`: returns `True` only on actual change; updates internal state. `get_snapshot(pool) -> dict`: returns `{ts, temp, pH, cl, pump, stale}` where pH/Cl = mean of ring, `stale = (now - last_ts) > stale_after`. `get_known_pools() -> list[str]`. All access guarded by a single `threading.Lock` (paho callback runs in a worker thread). |
+| [ ] 20.3.2 | `src/backend/tests/test_live_state.py` | Tests: ring buffer caps at `ring_size`; pump change detection (same state → no event, different state → event); stale flag flips after threshold; per-pool isolation; 5-sample mean computed correctly |
+
+**Verify:** `pytest -v src/backend/tests/test_live_state.py` green.
+
+### 20.4 Backend: MQTT subscribe (`mqtt.py`)
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.4.1 | `src/backend/mqtt.py` | Add module state `_subscriptions: list[tuple[str, Callable]]`. New function `subscribe(topic: str, on_message: Callable[[str, dict], None])` – registers subscription. In `on_connect` callback, re-subscribe to all registered topics (survives reconnect). Add `on_message` callback that parses JSON, routes to handler. Keep `publish()` API unchanged. |
+| [ ] 20.4.2 | `src/backend/tests/test_mqtt.py` | Tests using `paho.mqtt.client.Client` mocked: subscribe registers topics; reconnect re-subscribes; malformed JSON is logged and dropped |
+
+**Verify:** `pytest -v src/backend/tests/test_mqtt.py` green.
+
+### 20.5 Backend: aggregator background task (`aggregator.py`)
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.5.1 | `src/backend/aggregator.py` | `Aggregator` class with `start()` (returns `asyncio.Task`) and `stop()`. Loop: `await asyncio.sleep(60)`; on each tick compute the previous full hour bucket; for each (pool, metric) compute mean of ring buffer samples received in that hour and call `db.insert_aggregate(...)`. Daily at 03:00 UTC: `db.cleanup_old_rows(retention_days)`. Failures are logged, not raised (never kill the task). |
+| [ ] 20.5.2 | `src/backend/tests/test_aggregator.py` | Test: with a mock `db` and `live_state`, advance time to the next hour boundary; assert `insert_aggregate` called once per (pool, metric) with the correct mean and sample count; cleanup runs on day boundary; one failing insert does not abort the loop |
+
+**Verify:** `pytest -v src/backend/tests/test_aggregator.py` green.
+
+### 20.6 Backend: integration in `main.py` and new endpoints
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.6.1 | `src/backend/main.py` | Read `LIVE_*` env vars at top with safe defaults. Import `db`, `live_state`, `aggregator`. In `lifespan`: call `db.init_db(LIVE_DB_PATH)`, instantiate `live_state.LiveState(ring_size, stale_after)`, instantiate `Aggregator`; for each pool in `POOL_LIST` subscribe to `LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)` and `LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)`; on shutdown stop the aggregator. Add MQTT `on_message` dispatcher that calls `live_state.push_sample(...)` for BLE messages and `live_state.set_pump(...)` (and on change `db.insert_pump_event(...)`) for pump messages. Pump field names read from `LIVE_PUMP_FIELD_*`. |
+| [ ] 20.6.2 | `src/backend/main.py` | New endpoints (all `Depends(verify_token)`): `GET /api/pools/live` returns list of pool names that have at least one sample; `GET /api/live?pool=<name>` returns `live_state.get_snapshot(pool)` enriched with `stale_seconds`; `GET /api/history?pool=<name>&metric=temp\|pH\|cl&days=7` returns `db.get_aggregates(...)`; `GET /api/pump-events?pool=<name>&days=7` returns `db.get_pump_events(...)`. All query params validated: `pool` must be in `POOL_LIST`, `metric` ∈ {temp, pH, cl}, `days` int in 1..30. |
+| [ ] 20.6.3 | `src/backend/main.py` | Extend `GET /api/status` with `liveDataConfigured: bool` (true if DB path is set and `init_db` succeeded) |
+| [ ] 20.6.4 | `src/backend/tests/test_api_live.py` | TestClient + temp SQLite + monkey-patched `live_state`: `GET /api/live` returns snapshot shape; 401 without token; 422 on unknown pool; 422 on bad metric; history returns 168 points for 7d with 1h bucket; pump-events returns inserted events in order; `/api/pools/live` returns only pools with data |
+
+**Verify:** `pytest -v src/backend/tests/` (all green) and `uvicorn main:app` starts without import errors when `LIVE_DB_PATH` is writable.
+
+### 20.7 Infrastructure
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.7.1 | `src/docker-compose.yml` | Add `volumes: - ./data/live:/data/live` to `backend` service. |
+| [ ] 20.7.2 | `src/deploy-prepare.sh` | Ensure `data/` placeholder is created in the deployment package; add `data/live/.gitkeep` so the volume mount exists on first deploy. |
+
+**Verify:** `docker compose config` clean; container starts with writable `/data/live`.
+
+### 20.8 Frontend: dependencies
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.8.1 | `src/frontend/package.json` | Add dependencies `chart.js@^4.4` and `chartjs-plugin-zoom@^2.0`. Update `npm install`. |
+| [ ] 20.8.2 | `src/frontend/src/main.js` | Import `chartjs-plugin-zoom` once (auto-registers on `Chart.register()`). |
+
+**Verify:** `npm run build` succeeds; bundle includes Chart.js.
+
+### 20.9 Frontend: API composable extensions
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.9.1 | `src/frontend/src/composables/useApi.js` | Add `fetchPoolsLive() -> [{name, hasData}]` (GET `/api/pools/live`), `fetchLive(pool) -> {ts, temp, pH, cl, pump, stale, staleSeconds}`, `fetchHistory(pool, metric, days) -> {metric, unit, points: [{t, v}]}`, `fetchPumpEvents(pool, days) -> {events: [...]}`. All send `Authorization: Bearer`. Differentiate 401/422/network. |
+| [ ] 20.9.2 | `src/frontend/tests/useApi.spec.js` | Add tests for the four new methods (success, 401, 422 on unknown pool, network error). |
+
+**Verify:** `npm run test` green for useApi.
+
+### 20.10 Frontend: live-data composable
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.10.1 | `src/frontend/src/composables/useLiveData.js` | Module-level singleton state (`snapshot`, `loading`, `error`, `lastFetch`). `start(pool, {intervalMs=30000, onError})` schedules `setInterval` calling `fetchLive(pool)`; updates state; clears on `stop()`. Exposes `stale` computed from `staleSeconds` and a `usingCached` flag if last fetch failed. |
+| [ ] 20.10.2 | `src/frontend/tests/useLiveData.spec.js` | Use vitest fake timers. Test: `start` triggers first fetch immediately, then every `intervalMs`; `stop` clears interval; on fetch error the error is exposed and polling continues; `stale` computed property correct. |
+
+**Verify:** `npm run test` green.
+
+### 20.11 Frontend: `PumpStatusCard.vue`
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.11.1 | `src/frontend/src/components/PumpStatusCard.vue` | Props: `pump` (String: `'main'` / `'solar'`), `state` (Boolean), `runningSince` (Number | null). Display: large icon (gear for main, sun for solar), label (HAUPTPUMPE / SOLARPUMPE), status text (LÄUFT / AUS), and "läuft seit X min" if `runningSince` known. Color tokens: running = `bg-success/10 text-success border-success/30`, idle = `bg-slate-100 text-slate-500`. Touch target ≥ 44×44 px. |
+
+**Verify:** Component renders for both states; no business logic in template beyond display.
+
+### 20.12 Frontend: `LiveView.vue`
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.12.1 | `src/frontend/src/components/LiveView.vue` | Composition API. On mount: load `pools = await fetchPoolsLive()`, default to first pool, call `useLiveData().start(pool)`. Template: pool selector (if >1 pool), last-update timestamp, big "Temperatur" card (large number, °C, stale badge if `stale`), two side cards pH/Cl (5-sample mean + "Ø 5 M."), two `PumpStatusCard` instances, then `<TrendChart :pool="pool" />` below. Cleanup in `onBeforeUnmount` calling `stop()`. Handle empty/error state ("Warte auf Daten..." if no snapshot yet, or "Verbindung fehlgeschlagen" with retry button on persistent error). |
+| [ ] 20.12.2 | `src/frontend/tests/LiveView.spec.js` | Render test: with mock `useLiveData` returning a known snapshot, all cards show correct values; pool selector lists pools; cleanup is called on unmount (use vi.fn for `stop`). |
+
+**Verify:** `npm run test` green; manual test against running backend shows live values.
+
+### 20.13 Frontend: `TrendChart.vue`
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.13.1 | `src/frontend/src/components/TrendChart.vue` | Props: `pool` (String). On `pool` change and on mount: fetch `fetchHistory(pool, 'temp', 7)`, `fetchHistory(pool, 'pH', 7)`, `fetchHistory(pool, 'cl', 7)` in parallel. Build a single Chart.js line chart with 3 datasets (temp → primary blue, pH → success green, cl → warning amber), 3 Y-axes (left: temp °C, right: pH, right-inner: cl), X axis = time (last 7d, day ticks). Plugins: legend, tooltip (touch enabled), `chartjs-plugin-zoom` with `pinch` + `wheel` zoom and `pan`. Empty state: "Noch keine Daten". Resize observer to redraw on container size change. |
+| [ ] 20.13.2 | `src/frontend/tests/TrendChart.spec.js` | Mock `fetchHistory`. Render test: 3 datasets created; empty state shown when no points; chart instance destroyed in `onBeforeUnmount` (no memory leak). |
+
+**Verify:** `npm run test` green; manual test shows 3 lines, zoom on touch works.
+
+### 20.14 App shell integration
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.14.1 | `src/frontend/src/App.vue` | Add `{ label: 'Live', view: 'live' }` as first entry in `navigationEntries`. Change `const view = ref('live')` (default = live). Add `<div v-show="view === 'live'"><LiveView /></div>` block. Reuse the existing header + burger menu + settings pattern. |
+| [ ] 20.14.2 | `src/frontend/src/App.vue` | Add `import LiveView from './components/LiveView.vue'`. |
+
+**Verify:** App opens to Live view by default; burger menu lists Live / Measurements / Chemieupdate / Settings.
+
+### 20.15 End-to-end test
+
+| # | Step | Expected result |
+|---|-------|-----------------|
+| [ ] 20.15.1 | Start stack (`docker compose up -d`) | All services healthy |
+| [ ] 20.15.2 | `mosquitto_pub -h localhost -p 2883 -t home/H32/pool/ble-yc01 -m '{"temp":28.4,"pH":7.2,"cl":0.7}'` | Backend log shows message received; `sqlite3 data/live/live.db "SELECT * FROM live_aggregates"` (after 1h) shows row |
+| [ ] 20.15.3 | `mosquitto_pub -h localhost -p 2883 -t home/H32/pool/pump -m '{"mainPump":true,"solarPump":false,"time":1755724982}'` | `SELECT * FROM pump_events` shows one event |
+| [ ] 20.15.4 | Open `https://<host>/` in browser | Live view loads; temperature shows 28.4; pH 7.2; cl 0.7; main pump = LÄUFT; chart empty (no aggregates yet) |
+| [ ] 20.15.5 | Wait 30 s | Live view auto-refreshes (timestamp updates) |
+| [ ] 20.15.6 | Publish pump state change to `false` | `pump_events` has 2 rows; UI updates within 30 s |
+
+**Verify:** Full E2E flow green.
+
+### 20.16 Plan + docs sync
+
+| # | File | Content |
+|---|------|---------|
+| [ ] 20.16.1 | `docs/plan.md` | All checkboxes in Phase 20 set as completed |
+| [ ] 20.16.2 | `docs/Pool-Monitoring - Functional Specification (FSD).md` | New section 3.4 "Live View": pool selector, temperature main card, pH/cl side cards (5-sample mean), pump status cards, 7-day trend chart, stale behavior, polling cadence. Navigation dropdown gets new entry "Live" as default landing. |
+| [ ] 20.16.3 | `docs/Pool-Monitoring - Technical Specification (TSD).md` | New sections covering: 4.3 Live-View component contract, 5.8 `db.py` (SQLite + WAL), 5.9 `live_state.py` (ring buffer, pump state change), 5.10 `aggregator.py` (hourly rollup + retention), 5.11 new endpoints `/api/pools/live`, `/api/live`, `/api/history`, `/api/pump-events`. Update directory tree (Phase 20) and explicitly promote Chart.js from "Future Enhancement" to "Phase 20 dependency". |
+
+**Verify:** `git diff --stat` shows only docs; TSD §2 reflects the dependency promotion.
+
+
 ## File Overview
 
 ```
@@ -423,58 +586,73 @@ src/
 ├── docker-compose.yml
 ├── Caddyfile
 ├── deploy-prepare.sh
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── pyproject.toml
-│   ├── main.py
-│   ├── mqtt.py
-│   ├── ai.py                          # Phase 16
-│   └── tests/
-│       ├── conftest.py
-│       ├── test_models.py
-│       ├── test_api.py
-│       ├── test_auth.py
-│       └── test_ai.py                 # Phase 16
-├── mqtt2mail/                         # Phase 18
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── .env.example
-│   ├── README.md
-│   └── app/
-│       └── mqtt2mail.py
-└── frontend/
-    ├── Dockerfile
-    ├── Dockerfile_production
-    ├── nginx.conf
-    ├── package.json
-    ├── vite.config.js
-    ├── index.html
-    ├── public/icons/
-    │   ├── icon-192.png
-    │   └── icon-512.png
-    ├── src/
-    │   ├── main.js
-    │   ├── main.css
-    │   ├── App.vue
-    │   ├── validation.js
-    │   ├── components/
-    │   │   ├── StepperInput.vue
-    │   │   ├── ValueSliderInput.vue   # Phase 7
-    │   │   ├── MeasurementForm.vue
-    │   │   ├── ImageCaptureModal.vue  # Phase 16
-    │   │   ├── ChemicalUpdateForm.vue # Phase 19
-    │   │   └── SettingsPanel.vue
-    │   └── composables/
-    │       ├── useSettings.js
-    │       ├── useApi.js
-    │       ├── useCamera.js           # Phase 16
-    │       ├── useImage.js            # Phase 16
-    │       └── useToast.js
-    └── tests/
-        ├── validation.spec.js
-        ├── useSettings.spec.js
-        ├── StepperInput.spec.js
-        ├── useImage.spec.js           # Phase 16
-        └── useApi.spec.js             # Phase 16
-```
+    ├── backend/
+    │   ├── Dockerfile
+    │   ├── requirements.txt
+    │   ├── pyproject.toml
+    │   ├── main.py
+    │   ├── mqtt.py
+    │   ├── ai.py                          # Phase 16
+    │   ├── db.py                          # Phase 20 (SQLite)
+    │   ├── live_state.py                  # Phase 20 (in-memory state)
+    │   ├── aggregator.py                  # Phase 20 (hourly rollup)
+    │   └── tests/
+    │       ├── conftest.py
+    │       ├── test_models.py
+    │       ├── test_api.py
+    │       ├── test_auth.py
+    │       ├── test_ai.py                 # Phase 16
+    │       ├── test_db.py                 # Phase 20
+    │       ├── test_live_state.py         # Phase 20
+    │       ├── test_mqtt.py               # Phase 20
+    │       ├── test_aggregator.py         # Phase 20
+    │       └── test_api_live.py           # Phase 20
+    ├── mqtt2mail/                         # Phase 18
+    │   ├── Dockerfile
+    │   ├── requirements.txt
+    │   ├── .env.example
+    │   ├── README.md
+    │   └── app/
+    │       └── mqtt2mail.py
+    └── frontend/
+        ├── Dockerfile
+        ├── Dockerfile_production
+        ├── nginx.conf
+        ├── package.json
+        ├── vite.config.js
+        ├── index.html
+        ├── public/icons/
+        │   ├── icon-192.png
+        │   └── icon-512.png
+        ├── src/
+        │   ├── main.js
+        │   ├── main.css
+        │   ├── App.vue
+        │   ├── validation.js
+        │   ├── components/
+        │   │   ├── StepperInput.vue
+        │   │   ├── ValueSliderInput.vue   # Phase 7
+        │   │   ├── MeasurementForm.vue
+        │   │   ├── ImageCaptureModal.vue  # Phase 16
+        │   │   ├── ChemicalUpdateForm.vue # Phase 19
+        │   │   ├── LiveView.vue           # Phase 20
+        │   │   ├── TrendChart.vue         # Phase 20
+        │   │   ├── PumpStatusCard.vue     # Phase 20
+        │   │   └── SettingsPanel.vue
+        │   └── composables/
+        │       ├── useSettings.js
+        │       ├── useApi.js
+        │       ├── useCamera.js           # Phase 16
+        │       ├── useImage.js            # Phase 16
+        │       ├── useToast.js
+        │       └── useLiveData.js         # Phase 20
+        └── tests/
+            ├── validation.spec.js
+            ├── useSettings.spec.js
+            ├── StepperInput.spec.js
+            ├── useImage.spec.js           # Phase 16
+            ├── useApi.spec.js             # Phase 16
+            ├── useLiveData.spec.js        # Phase 20
+            ├── LiveView.spec.js           # Phase 20
+            └── TrendChart.spec.js         # Phase 20
+    ```
