@@ -388,6 +388,7 @@ to topics from the pool config (`POOL_LIST`).
 | [x] 18.5 | `src/deploy-prepare.sh` | mqtt2mail files included in deployment package |
 | [x] 18.6 | `README.md`, `src/mqtt2mail/README.md` | Project-wide usage and topic configuration documented |
 | [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` files | Email sending always active (stdout fallback on error); startup test mail; report timing via `REPORT_TIMES` or `REPORT_INTERVAL_MINUTES` |
+| [x] 18.8 | `src/mqtt2mail/app/mqtt2mail.py` | Fix disconnect loop: random client ID suffix, `reconnect_delay_set(min_delay=30)`, `on_subscribe` callback, paho debug logging |
 
 
 ---

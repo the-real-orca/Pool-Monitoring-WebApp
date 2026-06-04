@@ -678,10 +678,13 @@ def parse_json_payload(raw: bytes) -> Optional[dict[str, Any]]:
 
 
 def main() -> None:
+    log_level = env_str("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
-        level=getattr(logging, env_str("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    if log_level == "DEBUG":
+        logging.getLogger("paho.mqtt.client").setLevel(logging.DEBUG)
 
     aggregator = PoolAggregator()
     stop_event = threading.Event()
@@ -696,7 +699,7 @@ def main() -> None:
     data_topics, alert_topics, availability_topics = resolve_topics()
     mqtt_host = env_str("MQTT_HOST")
     mqtt_port = env_int("MQTT_PORT", 1883)
-    mqtt_client_id = env_str("MQTT_CLIENT_ID", "pool-mqtt-mailer")
+    mqtt_client_id = env_str("MQTT_CLIENT_ID", f"pool-mqtt-mailer-{os.urandom(4).hex()}")
 
     if not mqtt_host:
         raise RuntimeError("MQTT_HOST must be configured")
@@ -758,9 +761,17 @@ def main() -> None:
     def on_disconnect(_client: mqtt.Client, _userdata: Any, _disconnect_flags: mqtt.DisconnectFlags, reason_code: mqtt.ReasonCode, _properties: Any) -> None:
         logging.warning("Disconnected from MQTT broker: %s", reason_code)
 
+    def on_subscribe(_client: mqtt.Client, _userdata: Any, _mid: int, reason_code_list: list[mqtt.ReasonCode], _properties: Any) -> None:
+        for rc in reason_code_list:
+            if rc is not None and rc not in (0, 1, 2):
+                logging.error("Subscribe denied (reason code: %s)", rc)
+
+    client.reconnect_delay_set(min_delay=30, max_delay=300)
+
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
+    client.on_subscribe = on_subscribe
 
     reporter = threading.Thread(target=reporter_loop, args=(aggregator, stop_event), daemon=True)
     reporter.start()
