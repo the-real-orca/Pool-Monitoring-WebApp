@@ -6,11 +6,17 @@
 
 ### 1.1 Purpose
 
-Progressive Web App (PWA) for manual entry of pool measurements (pH, chlorine, temperature), transmission via Python backend bridge to an MQTT broker, and comparison with automatic sensor data.
+Progressive Web App (PWA) for:
+
+- manual entry of pool measurements (pH, chlorine, temperature),
+- manual logging of chemical additions (chlorine, pH product, flocculant),
+- transmission via Python backend bridge to an MQTT broker,
+- and comparison with automatic sensor data.
 
 ### 1.2 Core Features
 
 - Manual data entry at the pool via smartphone
+- **Chemical Update Page:** Log one chemical addition event (`chlorine`, `ph`, `flocculant`) with date/time and optional amount
 - **Automatic Image Analysis:** Capture a photo of test strips + reference scale, extract pH/chlorine via multimodal AI, prefill form fields
 - Comparison of manual vs. automatic measurements (data foundation)
 - Sensor drift analysis and calibration (prepared, not part of this project)
@@ -92,6 +98,25 @@ sequenceDiagram
 
 ```
 
+**Log Chemical Addition**
+
+```mermaid
+sequenceDiagram
+    participant PWA as PWA (Smartphone)
+    participant Caddy as Caddy (Proxy)
+    participant API as API-Bridge (FastAPI)
+    participant MQTT as Mosquitto
+
+    PWA->>Caddy: POST /api/chem (HTTPS)
+    Caddy->>API: Forward
+    API->>API: Validate token
+    API->>API: Validate body (chemicalType, amount/unit)
+    API->>MQTT: Publish JSON to <pool-topic>/chem
+    API->>Caddy: 201 Created
+    Caddy->>PWA: Success toast
+
+```
+
 ### 2.3 Technology Stack
 
 | Component     | Technology                                             |
@@ -124,15 +149,16 @@ the AI result. Manual correction remains possible before submitting.
 
 #### 3.1.2 UI Behavior
 
-- Modern, bright design for outdoor use
-- Numeric fields: combined `[-] [Wert] [+]` Stepper mit Popover-Slider
-- Touch-optimized (buttons ≥ 44x44px)
-- Klick auf den Wert → Overlay-Slider öffnet sich über dem Feld (volle Container-Breite, Bottom-Sheet-Stil) mit Live-Vorschau
-- Slider schließt bei Klick außerhalb, nach 5s Inaktivität, oder 1s nach Loslassen
-- +/- Buttons: Gedrückthalten startet Auto-Repeat (500ms initial, dann alle 100ms)
-- Real-time validation with visual error display
-- After successful submission: toast notification, form reset
-- On error: show error message, preserve values, allow retry
+- Bright, high-contrast layout optimized for outdoor usage
+- Numeric fields use a combined `[-] [Value] [+]` stepper with popover slider
+- Touch-optimized controls (minimum target size `44x44px`)
+- Tapping the value opens a full-width overlay slider (bottom-sheet style)
+- Slider closes on outside click, after 5s inactivity, or 1s after release
+- Holding `+/-` starts auto-repeat (500ms initial delay, then every 100ms)
+- Real-time validation with inline error feedback
+- On successful submit: success toast and form reset
+- On failure: preserve entered values and allow retry
+- UI labels are German; submitted API enum values are English
 
 ### 3.2 UI Design
 
@@ -147,13 +173,26 @@ the AI result. Manual correction remains possible before submitting.
 
 ### 3.3 Navigation
 
-- **Main page:** Measurement form
-  - "SEND" button below form
-  - Gear icon top-right → Settings
+- **Measurement page:**
+  - Primary action button "SEND"
+  - Burger menu (top-left) opens navigation dropdown
+  - Gear icon (top-right) opens Settings
+
+- **Chemieupdate page:**
+  - Primary action button "SEND"
+  - Same burger menu behavior as measurement page
+  - Gear icon (top-right) opens Settings
+  - Switching between Measurement and Chemieupdate preserves entered values until submit/reset
+
+- **Navigation dropdown (burger menu):**
+  - Measurements
+  - Chemieupdate
+  - separator
+  - Settings
 
 - **Settings page:**
-  - "Abbrechen" (Cancel) and "Speichern" (Save) buttons at bottom
-  - Cancel reverts unsaved changes, Save persists + toast confirmation
+  - "Abbrechen" (Cancel) and "Speichern" (Save) buttons at the bottom
+  - Cancel discards unsaved changes, Save persists changes and shows confirmation toast
 
 - Dashboard tab in a later version
 
@@ -161,8 +200,9 @@ the AI result. Manual correction remains possible before submitting.
 
 ```
 ┌─────────────────────────────┐
-│  Pool Monitor          [⚙️] │
+│ ≡ Pool Monitor          [⚙️] │
 ├─────────────────────────────┤
+│ Measurements                 │
 │  📅 Date/Time (editable)    │
 │  [2026-05-16 14:30    ]     │
 │  🏊 Pool                    │
@@ -184,7 +224,56 @@ the AI result. Manual correction remains possible before submitting.
 Numeric fields combine a stepper `[-] [24.0°C] [+]` with a popover slider on value click for touch-friendly adjustment.
 On mobile with camera: "Foto" + "Datei" buttons shown side-by-side. On desktop or no camera: only "Datei" button.
 
-### 3.1.3 Image Analysis Flow
+### 3.3.2 Chemieupdate Page (Wireframe)
+
+```
+┌─────────────────────────────┐
+│ ≡ Pool Monitor          [⚙️] │
+├─────────────────────────────┤
+│ Chemieupdate                │
+│  📅 Date/Time (editable)    │
+│  [2026-06-04 18:45    ]     │
+│  🏊 Pool                    │
+│  [Pool 1              ▼]    │
+│  🧪 Chemikalie              │
+│  [Chlor ▼]                  │
+│  🔢 Menge (optional)        │
+│  [ - ] [10.0 ] [ + ]  [ml ▼] │
+│  ┌─────────────────────┐    │
+│  │     SEND            │    │
+│  └─────────────────────┘    │
+└─────────────────────────────┘
+```
+
+Amount uses the same stepper + popover-slider interaction pattern as other numeric inputs.
+Unit is selected via dropdown.
+Setting the amount to `0` clears the optional amount and unit selection in the UI.
+
+
+### 3.3.3 Chemieupdate Field Definition
+
+| Field              | Type                                           | Default         | Validation |
+| ------------------ | ---------------------------------------------- | --------------- | ---------- |
+| **Date/Time**      | datetime-local (UI) / Unix timestamp (API)    | <Current Time>  | Required, valid date |
+| **Pool**           | select                                         | 1st Item        | Must exist in backend list |
+| **Chemikalie**     | select                                         | `chlorine`      | Required enum: `chlorine`, `ph`, `flocculant` |
+| **Menge**          | number                                         | empty           | Optional, UI range `0.0-100.0`, API value > 0, max 1 decimal |
+| **Einheit**        | select                                         | empty           | Required when `Menge` is set; enum: `ml`, `g`, `tabs`, `l` |
+
+Consistency rules:
+
+- If `amount` is set, `unit` must be set.
+- If `unit` is set, `amount` must be set.
+
+### 3.3.4 UI Label Mapping (DE -> API enum)
+
+| UI label | API value |
+| -------- | --------- |
+| Chlor | `chlorine` |
+| pH Minus/Plus | `ph` |
+| Flockungsmittel | `flocculant` |
+
+### 3.3.5 Image Analysis Flow (Measurement Page)
 
 1. User taps **Foto** (camera) or **Datei** (file picker) → camera or file dialog opens.
 2. Captured image is **client-side compressed** (Canvas API, max 1920 px on long edge,
@@ -315,6 +404,34 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 | 502    | AI service returned an unrecoverable error (auth)                    |
 | 503    | AI service unreachable / timeout                                     |
 
+#### POST /api/chem
+
+Logs exactly one chemical addition event.
+
+**Request:** `Authorization: Bearer <token>`, JSON body
+
+```json
+{
+  "time": 1780577400,
+  "name": "Pool 1",
+  "chemicalType": "chlorine",
+  "amount": 120.0,
+  "unit": "ml"
+}
+```
+
+`amount` and `unit` are both optional, but must be set together.
+
+**Response 201:** `{ "status": "success", "message": "Chemical update published to MQTT" }`
+
+**Errors:**
+
+| Status | Cause |
+| ------ | ----- |
+| 401    | Invalid / missing token |
+| 422    | Validation error (pool name, chemicalType enum, amount/unit consistency) |
+| 503    | MQTT unavailable |
+
 #### GET /api/status
 
 **Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "uptime": 3600, "version": "1.0.0" }`
@@ -355,11 +472,50 @@ Settings are set via environment variables.
 
 ### 4.3 MQTT Integration
 
-Measurements are sent to the preconfigured MQTT topic.
+Measurements are sent to the configured pool topic from `POOL_LIST`.
+Chemical update events are sent to the same pool topic with the suffix `/chem`.
+
 Data is validated in the backend and a new JSON message is generated to prevent malformed data and code injection.
 
 Same validation ranges as the frontend (see frontend form field table).
 The MQTT topic is dynamically selected based on the submitted pool `name` mapping in `POOL_LIST`.
+
+Examples for `POOL_LIST` entry `{ "name": "Pool 1", "topic": "pool1/manual" }`:
+
+#### Measurement Example
+
+Measurement topic: `pool1/manual`
+
+Measurement payload example:
+
+```json
+{
+  "time": 1755724982,
+  "name": "Pool 1",
+  "sensorType": "manual",
+  "pH": 7.2,
+  "cl": 1.0,
+  "temp": 24.6,
+  "status": "Water slightly cloudy"
+}
+```
+
+
+#### Chemical update Example
+
+Chemical update topic: `pool1/manual/chem` (derived from the pool topic)
+
+Chemical update payload example:
+
+```json
+{
+  "time": 1780577400,
+  "name": "Pool 1",
+  "chemicalType": "chlorine",
+  "amount": 120.0,
+  "unit": "ml"
+}
+```
 
 ---
 
@@ -392,6 +548,7 @@ Via Docker Compose.
 | ------------------ | ------------------------------------------- |
 | Network error      | Error message, manual retry                 |
 | Invalid input      | Inline validation, form blocked             |
+| Chem amount/unit mismatch | Inline validation, form blocked       |
 | API 401            | Error toast with token hint, user navigates to settings manually |
 | API 429            | Toast: daily limit reached, fall back to manual entry |
 | API 422 (AI refusal / no values) | Toast: "AI could not analyze the image", form unchanged |

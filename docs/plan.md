@@ -390,6 +390,29 @@ to topics from the pool config (`POOL_LIST`).
 | [x] 18.7 | `src/mqtt2mail/app/mqtt2mail.py`, `.env.example` files | Email sending always active (stdout fallback on error); startup test mail; report timing via `REPORT_TIMES` or `REPORT_INTERVAL_MINUTES` |
 
 
+---
+
+
+## Phase 19 – Feature: Chemieupdate (B1)
+
+Goal: Add a dedicated chemistry update page and backend endpoint to log one chemical
+addition event per entry with optional amount and enum unit.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 19.1 | `docs/Pool-Monitoring - Functional Specification (FSD).md` | Rewrite Chemieupdate specification with clean wording: navigation (burger menu), UI wireframes, API contract `POST /api/chem`, topic suffix `/chem`, enum mapping (DE -> EN), and `amount`/`unit` pair rule |
+| [x] 19.2 | `docs/Pool-Monitoring - Technical Specification (TSD).md` | Align technical design with FSD rewrite: view state (`form\|chemistry\|settings`), component responsibilities, chemistry API payload, and MQTT payload constraints (chem payload without `sensorType`) |
+| [x] 19.3 | `src/backend/main.py` | Add `ChemicalUpdate` model + validators (`chemicalType` enum, `unit` enum, `amount`/`unit` pair rule) and `POST /api/chem` route |
+| [x] 19.4 | `src/backend/main.py` | Add `build_chemical_payload()` and publish to `<pool-topic>/chem`; remove `sensorType` from chemistry MQTT payload |
+| [x] 19.5 | `src/backend/tests/test_models.py`, `src/backend/tests/test_api.py` | Add tests for `ChemicalUpdate` validation, route status codes (201/401/422/503), topic suffix `/chem`, and payload shape |
+| [x] 19.6 | `src/frontend/src/App.vue` | Add third view state (`chemistry`) and navigation between measurement and chemistry forms (without Vue Router) |
+| [x] 19.7 | `src/frontend/src/components/ChemicalUpdateForm.vue` | New form: datetime, pool, chemical type, optional amount + unit, inline validation, toast feedback |
+| [x] 19.8 | `src/frontend/src/composables/useApi.js` | Add `postChemicalUpdate()` with auth header and error mapping |
+| [x] 19.9 | `src/frontend/tests/useApi.spec.js` (+ optional component spec) | Add frontend tests for chemistry API call and error paths |
+
+**Verify:** `cd src/backend && pytest -v` and `cd src/frontend && npm run test` green; manual flow publishes chemistry event to `.../chem` topic.
+
+
 ## File Overview
 
 ```
@@ -439,6 +462,7 @@ src/
     │   │   ├── ValueSliderInput.vue   # Phase 7
     │   │   ├── MeasurementForm.vue
     │   │   ├── ImageCaptureModal.vue  # Phase 16
+    │   │   ├── ChemicalUpdateForm.vue # Phase 19
     │   │   └── SettingsPanel.vue
     │   └── composables/
     │       ├── useSettings.js

@@ -10,7 +10,7 @@ This document describes the concrete technical implementation of FSD v1.0.
 Guiding principle: **As flat and simple as possible – as modular as necessary.**
 Every file, abstraction, and dependency must justify its place.
 
-**v1 scope:** Measurement form → MQTT publish. No database access, no dashboard.
+**v1 scope:** Measurement form + chemistry update form -> MQTT publish. No database access, no dashboard.
 
 ---
 
@@ -32,7 +32,7 @@ Every file, abstraction, and dependency must justify its place.
 
 | Excluded | Rationale |
 | -------- | --------- |
-| Vue Router | Only 2 views → `ref('form' \| 'settings')` in `App.vue` suffices |
+| Vue Router | A small fixed set of views (`form`, `chemistry`, `settings`) is handled via `ref` state in `App.vue` |
 | Pinia / Vuex | Composable-level `reactive()` is enough for this scope |
 | DB / ORM | v1 is stateless; extension prepared in Future Enhancements |
 | Separate `config.py` | `os.getenv()` directly in `main.py` – 6 lines instead of a module |
@@ -59,13 +59,14 @@ src/
 ├── frontend/
 │   ├── src/
 │   │   ├── main.js          # App mount, PWA registration
-│   │   ├── App.vue          # Root: view toggle (form|settings), toast display
+│   │   ├── App.vue          # Root: view toggle (form|chemistry|settings), toast display
 │   │   ├── validation.js    # Field constants (min, max, step, default, unit)
 │   │   ├── components/
 │   │   │   ├── StepperInput.vue       # Reusable +/- input stepper (no longer used by MeasurementForm)
 │   │   │   ├── ValueSliderInput.vue   # [+] [Wert] [+] Stepper + Popover-Slider-Kombo
 │   │   │   ├── MeasurementForm.vue    # Measurement form with submit flow + photo button
 │   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
+│   │   │   ├── ChemicalUpdateForm.vue # Chemistry update form (Phase 19)
 │   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
 │   │   └── composables/
 │   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. analyzeImage)
@@ -120,6 +121,7 @@ frontend/tests/
 ### 4.1 View Switching (No Router)
 
 `App.vue` holds `const view = ref('form')` and renders conditionally.
+Target state set: `form | chemistry | settings`.
 `useToast` is a module-level singleton, callable from any component.
 
 ```vue
@@ -127,6 +129,7 @@ frontend/tests/
 <script setup>
 import { ref } from 'vue'
 import MeasurementForm from './components/MeasurementForm.vue'
+import ChemicalUpdateForm from './components/ChemicalUpdateForm.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { useToast } from './composables/useToast.js'
 
@@ -141,7 +144,16 @@ const { toast } = useToast()
         <h1 class="text-2xl font-bold text-white">Pool Monitor</h1>
       </div>
       <div class="p-6">
-        <MeasurementForm v-if="view === 'form'" @open-settings="view = 'settings'" />
+        <MeasurementForm
+          v-if="view === 'form'"
+          @open-chemistry="view = 'chemistry'"
+          @open-settings="view = 'settings'"
+        />
+        <ChemicalUpdateForm
+          v-else-if="view === 'chemistry'"
+          @open-form="view = 'form'"
+          @open-settings="view = 'settings'"
+        />
         <SettingsPanel v-else @close="view = 'form'" />
       </div>
     </div>
@@ -162,7 +174,7 @@ const { toast } = useToast()
 </style>
 ```
 
-The app shell provides a centered card layout with a colored header bar. The form title is rendered inside `MeasurementForm.vue` (see FSD wireframe), while the app-level title "Pool Monitor" sits in the header bar.
+The app shell provides a centered card layout with a colored header bar. Primary page navigation is opened via a burger menu in the top-left area (FSD 3.3), while the settings shortcut remains top-right.
 
 ### 4.2 Components
 
@@ -170,7 +182,8 @@ The app shell provides a centered card layout with a colored header bar. The for
 | ---- | -------------- | ----- | ----- |
 | `StepperInput.vue` | Number input +/- stepper *(ersetzt durch ValueSliderInput)* | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
 | `ValueSliderInput.vue` | `[-] [Wert] [+]` Stepper + Popover-Slider, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
-| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-settings` |
+| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-chemistry`, `open-settings` |
+| `ChemicalUpdateForm.vue` | Form for one chemical event with optional amount + unit | – | `open-form`, `open-settings` |
 | `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `mode` (String, default `'camera'`) | `close`, `applied` (payload `{pH, cl, image}`) |
 | `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
@@ -497,7 +510,32 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement, fetchPools, analyzeImage }
+  return { loading, error, postMeasurement, postChemicalUpdate, fetchPools, analyzeImage }
+}
+```
+
+Target chemistry call in `useApi.js`:
+
+```js
+async function postChemicalUpdate(form) {
+  const payload = {
+    time: form.time,
+    name: form.name,
+    chemicalType: form.chemicalType,
+  }
+  if (form.amount != null) payload.amount = form.amount
+  if (form.unit) payload.unit = form.unit
+
+  const res = await fetch('/api/chem', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.token}`,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  return res.ok
 }
 ```
 
@@ -1264,6 +1302,7 @@ def get_client() -> AIClient: ...               # returns module-level singleton
 async def startup() -> None: ...                # creates AI_IMAGE_STORAGE_PATH, starts OpenRouter client
 async def shutdown() -> None: ...               # closes client
 def is_configured() -> bool: ...                # checks if client is started and key is set
+```
 
 ### 5.8 Rate Limiting for `/api/analyze-image`
 
@@ -1687,3 +1726,147 @@ frontend/tests/
 | 13 | Frontend: Image capture flow | `useImage.js`, `ImageCaptureModal.vue`, `useApi.analyzeImage`, button in `MeasurementForm.vue` |
 | 14 | Frontend tests | `tests/useImage.spec.js` |
 | 15 | Integration | End-to-end photo capture → AI → form prefill |
+| 16 | Backend: chemistry endpoint `/api/chem` | `main.py`, validators for `chemicalType` + `amount/unit` |
+| 17 | Frontend: chemistry form + burger navigation | `App.vue`, `ChemicalUpdateForm.vue`, `useApi.postChemicalUpdate` |
+| 18 | Tests: chemistry flow | `backend/tests/test_models.py`, `backend/tests/test_api.py`, `frontend/tests/useApi.spec.js` |
+| 19 | Integration: chemistry MQTT publish | manual check for topic suffix `/chem` and payload without `sensorType` |
+
+---
+
+## 10. Chemieupdate Specification (Phase 19)
+
+This section defines the approved target implementation for the chemistry update feature.
+
+### 10.1 Scope
+
+- Add dedicated endpoint `POST /api/chem` for chemistry events.
+- Add dedicated frontend view `chemistry` (no Vue Router).
+- One event contains exactly one chemical type (`B1` mode).
+- Publish chemistry events to `<pool-topic>/chem`.
+- Chemistry MQTT payload must not contain `sensorType`.
+
+### 10.2 API Contract (`POST /api/chem`)
+
+| Field | Type | Required | Rules |
+| ----- | ---- | -------- | ----- |
+| `time` | int | yes | Unix timestamp (seconds) |
+| `name` | string | yes | Must match pool name in `POOL_LIST` |
+| `chemicalType` | enum | yes | `chlorine`, `ph`, `flocculant` |
+| `amount` | float | no | Must be `> 0` when present |
+| `unit` | enum | no | `ml`, `g`, `tabs`, `l` |
+
+Pair-consistency validation:
+
+- `amount` set -> `unit` must be set
+- `unit` set -> `amount` must be set
+
+Request example:
+
+```json
+{
+  "time": 1780577400,
+  "name": "Pool 1",
+  "chemicalType": "chlorine",
+  "amount": 120.0,
+  "unit": "ml"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "status": "success",
+  "message": "Chemical update published to MQTT"
+}
+```
+
+Status codes: `201`, `401`, `422`, `503`.
+
+### 10.3 MQTT Topic and Payload
+
+Topic resolution reuses pool mapping from `POOL_LIST` and appends `/chem`.
+
+Example:
+
+- pool topic: `pool1/manual`
+- chemistry topic: `pool1/manual/chem`
+
+Payload example (no `sensorType`):
+
+```json
+{
+  "time": 1780577400,
+  "name": "Pool 1",
+  "chemicalType": "chlorine",
+  "amount": 120.0,
+  "unit": "ml"
+}
+```
+
+### 10.4 Frontend View Extension
+
+`App.vue` target state handling:
+
+```js
+const view = ref('form') // 'form' | 'chemistry' | 'settings'
+```
+
+Expected rendering pattern:
+
+```vue
+<div v-show="view !== 'settings'">
+  <div v-show="view === 'form'"><MeasurementForm /></div>
+  <div v-show="view === 'chemistry'"><ChemicalUpdateForm /></div>
+</div>
+<SettingsPanel v-if="view === 'settings'" @close="view = 'form'" />
+```
+
+`v-show` is used for the measurement/chemistry pages so both form states remain mounted and preserve entered values when switching via the burger menu.
+
+Navigation behavior (burger menu):
+
+| Current view | Burger entries |
+| ------------ | -------------- |
+| Measurement | Measurements, Chemieupdate, separator, Settings |
+| Chemieupdate | Measurements, Chemieupdate, separator, Settings |
+
+Settings remains directly accessible via gear icon in the header.
+
+UI labels are German; API enum values are English.
+
+| UI label | API value |
+| -------- | --------- |
+| Chlor | `chlorine` |
+| pH Minus/Plus | `ph` |
+| Flockungsmittel | `flocculant` |
+
+Amount entry uses `ValueSliderInput` with UI range `0.0-100.0` and one decimal place. `0` acts as a UI reset value: the optional amount is cleared and the selected unit is removed. The API still only receives `amount` when it is `> 0`.
+
+### 10.5 Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant UI as ChemicalUpdateForm
+    participant API as FastAPI /api/chem
+    participant MQTT as Mosquitto
+
+    UI->>API: POST /api/chem (Bearer + JSON)
+    API->>API: Validate token and body
+    API->>API: Resolve pool topic from POOL_LIST
+    API->>MQTT: Publish to <pool-topic>/chem
+    API-->>UI: 201 success
+```
+
+### 10.6 UI Example (Target)
+
+```
+┌─────────────────────────────┐
+│ ≡ Pool Monitor          [⚙] │
+│ Date/Time  [..............] │
+│ Pool       [Pool 1      ▼]  │
+│ Chemikalie [Chlor       ▼]  │
+│ Menge      [-][10.0][+] [ml▼]│
+│ [ SEND ]                    │
+└─────────────────────────────┘
+```
