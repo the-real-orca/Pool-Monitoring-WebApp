@@ -45,8 +45,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    depends_on:
-      - mosquitto
+#    depends_on:
+#      - mosquitto
     # Optional: set timezone inside the container for local timestamps
     environment:
       TZ: ${TZ:-Europe/Vienna}

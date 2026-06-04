@@ -1,7 +1,15 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 
-const props = defineProps(['modelValue', 'min', 'max', 'step', 'decimals', 'unit'])
+const props = defineProps({
+  modelValue: { type: Number, default: null },
+  min: { type: Number, required: true },
+  max: { type: Number, required: true },
+  step: { type: Number, required: true },
+  decimals: { type: Number, required: true },
+  unit: { type: String, default: '' },
+  emptyValue: { type: Number, default: null },
+})
 const emit = defineEmits(['update:modelValue'])
 
 const showSlider = ref(false)
@@ -11,7 +19,8 @@ const isDragging = ref(false)
 const overlayRef = ref(null)
 const holdTimer = ref(null)
 
-const displayValue = computed(() => props.modelValue.toFixed(props.decimals))
+const hasValue = computed(() => typeof props.modelValue === 'number' && !Number.isNaN(props.modelValue))
+const displayValue = computed(() => hasValue.value ? props.modelValue.toFixed(props.decimals) : '')
 
 const rangeSteps = computed(() => {
   return Math.round((props.max - props.min) / props.step)
@@ -26,7 +35,10 @@ function rangeToValue(rangeVal) {
   return parseFloat(val.toFixed(props.decimals))
 }
 
-const sliderRangeValue = computed(() => valueToRange(props.modelValue))
+const sliderRangeValue = computed(() => hasValue.value ? valueToRange(props.modelValue) : 0)
+
+const canDecrease = computed(() => hasValue.value && props.modelValue > props.min)
+const canIncrease = computed(() => !hasValue.value || props.modelValue < props.max)
 
 function openSlider() {
   showSlider.value = true
@@ -72,6 +84,13 @@ function onSliderInput(event) {
 }
 
 function step(dir) {
+  if (!hasValue.value) {
+    if (dir > 0) {
+      emit('update:modelValue', props.emptyValue ?? props.min)
+    }
+    return
+  }
+
   const next = parseFloat((props.modelValue + dir * props.step).toFixed(props.decimals))
   if (next >= props.min && next <= props.max) {
     emit('update:modelValue', next)
@@ -123,7 +142,7 @@ onBeforeUnmount(() => {
         @touchstart.prevent="onHoldStart(-1)"
         @touchend="onHoldEnd"
         @touchcancel="onHoldEnd"
-        :disabled="modelValue <= min"
+        :disabled="!canDecrease"
         class="select-none flex size-11 items-center justify-center rounded-lg bg-primary text-white text-xl font-bold disabled:opacity-30 disabled:cursor-not-allowed active:bg-primary/80"
       >−</button>
       <button
@@ -131,7 +150,7 @@ onBeforeUnmount(() => {
         @click="openSlider"
         class="w-24 rounded-lg border-2 border-primary/30 px-3 py-1.5 text-center text-lg font-bold text-primary hover:border-primary hover:bg-primary/5 transition"
       >
-        {{ displayValue }}<span class="text-xs font-normal ml-0.5">{{ unit }}</span>
+        {{ displayValue }}<span v-if="unit" class="ml-0.5 text-xs font-normal">{{ unit }}</span>
       </button>
       <button
         type="button"
@@ -141,15 +160,15 @@ onBeforeUnmount(() => {
         @touchstart.prevent="onHoldStart(+1)"
         @touchend="onHoldEnd"
         @touchcancel="onHoldEnd"
-        :disabled="modelValue >= max"
+        :disabled="!canIncrease"
         class="select-none flex size-11 items-center justify-center rounded-lg bg-primary text-white text-xl font-bold disabled:opacity-30 disabled:cursor-not-allowed active:bg-primary/80"
       >+</button>
     </div>
 
     <!-- Overlay slider positioned above the value -->
-    <Transition name="slider-popover">
-      <div v-if="showSlider" ref="overlayRef" class="slider-popover">
-        <div class="slider-value">{{ displayValue }}<span class="unit">{{ unit }}</span></div>
+      <Transition name="slider-popover">
+        <div v-if="showSlider" ref="overlayRef" class="slider-popover">
+        <div class="slider-value">{{ displayValue }}<span v-if="unit" class="unit">{{ unit }}</span></div>
         <input
           type="range"
           :min="0"

@@ -8,6 +8,7 @@ function saveSettings(s) {
 
 describe('analyzeImage', () => {
   beforeEach(() => {
+    vi.resetModules()
     localStorage.clear()
     saveSettings({ token: 'test-token' })
     vi.stubGlobal('fetch', vi.fn())
@@ -111,5 +112,132 @@ describe('analyzeImage', () => {
     const headers = fetch.mock.calls[0][1].headers
     expect(headers).toEqual({ 'Authorization': 'Bearer test-token' })
     expect(headers['Content-Type']).toBeUndefined()
+  })
+})
+
+describe('postMeasurement', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('uses provided timestamp and manual sensor type', async () => {
+    fetch.mockResolvedValue({ status: 201, ok: true })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postMeasurement } = useApi()
+    const ok = await postMeasurement({
+      time: 1755724982,
+      name: 'Pool',
+      pH: 7.2,
+      cl: 1.0,
+      temp: 24.6,
+      status: 'Cloudy',
+      aiPH: 7.3,
+      aiCL: 1.5,
+      aiImage: '2026-05-29/123456_abc.jpg',
+      aiCorrected: true,
+    })
+
+    expect(ok).toBe(true)
+    expect(fetch).toHaveBeenCalledWith('/api/measurements', expect.objectContaining({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-token',
+      },
+    }))
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(payload).toEqual({
+      time: 1755724982,
+      name: 'Pool',
+      sensorType: 'manual',
+      pH: 7.2,
+      cl: 1.0,
+      temp: 24.6,
+      status: 'Cloudy',
+      aiPH: 7.3,
+      aiCL: 1.5,
+      aiImage: '2026-05-29/123456_abc.jpg',
+      aiCorrected: true,
+    })
+  })
+})
+
+describe('postChemicalUpdate', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    saveSettings({ token: 'test-token' })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('posts chemical updates with amount and unit', async () => {
+    fetch.mockResolvedValue({ status: 201, ok: true })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postChemicalUpdate } = useApi()
+    const ok = await postChemicalUpdate({
+      time: 1755724982,
+      name: 'Pool',
+      chemicalType: 'chlorine',
+      amount: 250.0,
+      unit: 'ml',
+    })
+
+    expect(ok).toBe(true)
+    expect(fetch).toHaveBeenCalledWith('/api/chem', expect.objectContaining({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-token',
+      },
+    }))
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(payload).toEqual({
+      time: 1755724982,
+      name: 'Pool',
+      chemicalType: 'chlorine',
+      amount: 250,
+      unit: 'ml',
+    })
+  })
+
+  it('omits optional amount and unit when absent', async () => {
+    fetch.mockResolvedValue({ status: 201, ok: true })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postChemicalUpdate } = useApi()
+    await postChemicalUpdate({
+      time: 1755724982,
+      name: 'Pool',
+      chemicalType: 'ph',
+    })
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(payload).toEqual({
+      time: 1755724982,
+      name: 'Pool',
+      chemicalType: 'ph',
+    })
+  })
+
+  it('returns false and sets error for unauthorized requests', async () => {
+    fetch.mockResolvedValue({ status: 401, ok: false })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postChemicalUpdate, error } = useApi()
+    const ok = await postChemicalUpdate({
+      time: 1755724982,
+      name: 'Pool',
+      chemicalType: 'ph',
+    })
+
+    expect(ok).toBe(false)
+    expect(error.value).toBe('401')
   })
 })

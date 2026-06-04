@@ -267,11 +267,12 @@ Consistency rules:
 
 ### 3.3.4 UI Label Mapping (DE -> API enum)
 
-| UI label | API value |
-| -------- | --------- |
-| Chlor | `chlorine` |
-| pH Minus/Plus | `ph` |
-| Flockungsmittel | `flocculant` |
+| UI label | API value | amount sign |
+| -------- | --------- | ----------- |
+| Chlor | `chlorine` | positive |
+| pH-Plus | `ph` | positive |
+| pH-Minus | `ph` | negative |
+| Flockungsmittel | `flocculant` | positive |
 
 ### 3.3.5 Image Analysis Flow (Measurement Page)
 

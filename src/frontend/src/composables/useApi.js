@@ -22,7 +22,7 @@ export function useApi() {
     loading.value = true
     error.value = null
     const payload = {
-      time:       Math.floor(Date.now() / 1000),
+      time:       form.time,
       name:       form.name,
       sensorType: 'manual',
       pH:         form.pH,
@@ -46,6 +46,40 @@ export function useApi() {
     }
     try {
       const res = await fetch(`/api/measurements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.token}`,
+        },
+        body: JSON.stringify(payload),
+      })
+      if (res.status === 401) { error.value = '401'; return false }
+      if (!res.ok) { error.value = String(res.status); return false }
+      return true
+    } catch {
+      error.value = 'network'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function postChemicalUpdate(form) {
+    loading.value = true
+    error.value = null
+    const payload = {
+      time: form.time,
+      name: form.name,
+      chemicalType: form.chemicalType,
+    }
+    if (form.amount != null) {
+      payload.amount = form.amount
+    }
+    if (form.unit) {
+      payload.unit = form.unit
+    }
+    try {
+      const res = await fetch(`/api/chem`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,5 +122,5 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement, fetchPools, analyzeImage }
+  return { loading, error, postMeasurement, postChemicalUpdate, fetchPools, analyzeImage }
 }

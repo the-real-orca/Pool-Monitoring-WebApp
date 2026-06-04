@@ -1835,11 +1835,12 @@ Settings remains directly accessible via gear icon in the header.
 
 UI labels are German; API enum values are English.
 
-| UI label | API value |
-| -------- | --------- |
-| Chlor | `chlorine` |
-| pH Minus/Plus | `ph` |
-| Flockungsmittel | `flocculant` |
+| UI label | API value | amount sign |
+| -------- | --------- | ----------- |
+| Chlor | `chlorine` | positive |
+| pH-Plus | `ph` | positive |
+| pH-Minus | `ph` | negative |
+| Flockungsmittel | `flocculant` | positive |
 
 Amount entry uses `ValueSliderInput` with UI range `0.0-100.0` and one decimal place. `0` acts as a UI reset value: the optional amount is cleared and the selected unit is removed. The API still only receives `amount` when it is `> 0`.
 

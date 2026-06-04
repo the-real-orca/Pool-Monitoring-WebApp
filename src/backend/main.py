@@ -141,7 +141,7 @@ class ChemicalUpdate(BaseModel):
     time: int
     name: str = Field(min_length=1, max_length=50)
     chemicalType: ChemicalType
-    amount: float | None = Field(default=None, gt=0)
+    amount: float | None = Field(default=None)
     unit: ChemicalUnit | None = None
 
     @field_validator("name")
