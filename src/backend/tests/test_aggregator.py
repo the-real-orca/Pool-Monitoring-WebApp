@@ -13,19 +13,24 @@ def _setup_db(tmp_path):
     db.init_db(str(tmp_path / "data.db"))
 
 
-def test_hour_start_alignment():
+def test_window_start_alignment():
     # 2024-01-01 00:00:00 UTC is a clean hour boundary: 1_704_067_200
     base = 1_704_067_200
-    assert aggregator._hour_start(base) == base
-    assert aggregator._hour_start(base + 123) == base
-    assert aggregator._hour_start(base + 3599) == base
-    assert aggregator._hour_start(base + 3600) == base + 3600
+    ws = aggregator.Aggregator._window_start
+    assert ws(base, 3600) == base
+    assert ws(base + 123, 3600) == base
+    assert ws(base + 3599, 3600) == base
+    assert ws(base + 3600, 3600) == base + 3600
     # An off-the-hour timestamp: 800 s into the current hour
-    assert aggregator._hour_start(base + 800) == base
-    assert aggregator._hour_start(base + 3600 + 800) == base + 3600
+    assert ws(base + 800, 3600) == base
+    assert ws(base + 3600 + 800, 3600) == base + 3600
+    # Custom 5-minute window
+    assert ws(base + 120, 300) == base
+    assert ws(base + 300, 300) == base + 300
+    assert ws(base + 301, 300) == base + 300
 
 
-def test_rollup_window_writes_aggregate_per_metric(tmp_path):
+def test_flush_window_writes_aggregate_per_metric(tmp_path):
     _setup_db(tmp_path)
     state = live_state.LiveState(ring_size=10, stale_after_seconds=600)
     state.push_sample("H32", "temp", 24.0, 1_700_000_100)
@@ -33,13 +38,14 @@ def test_rollup_window_writes_aggregate_per_metric(tmp_path):
     state.push_sample("H32", "pH", 7.0, 1_700_000_200)
     state.push_sample("H32", "pH", 7.4, 1_700_000_600)
 
-    a = aggregator.Aggregator(state, tick_seconds=1, retention_days=90)
-    hour = 1_700_000_000
-    a._rollup_window(hour, hour + 3600)
+    a = aggregator.Aggregator(state, window_minutes=60, tick_seconds=1, retention_days=90)
+    a._collect()
+    window_start = 1_700_000_000
+    a._flush_window(window_start)
 
     temps = db.get_aggregates("H32", "temp", 0)
     assert len(temps) == 1
-    assert temps[0]["t"] == hour
+    assert temps[0]["t"] == window_start
     assert temps[0]["v"] == 25.0
     assert temps[0]["n"] == 2
 
@@ -51,26 +57,26 @@ def test_rollup_window_writes_aggregate_per_metric(tmp_path):
     assert db.get_aggregates("H32", "cl", 0) == []
 
 
-def test_rollup_skips_pools_with_no_samples(tmp_path):
+def test_flush_skips_pools_with_no_samples(tmp_path):
     _setup_db(tmp_path)
     state = live_state.LiveState()
     state.push_sample("H32", "temp", 25.0, 1_700_000_100)
-    a = aggregator.Aggregator(state)
-    a._rollup_window(1_700_000_000, 1_700_000_000 + 3600)
-    # Other pools simply produce no rows
+    a = aggregator.Aggregator(state, window_minutes=60)
+    a._collect()
+    a._flush_window(1_700_000_000)
     assert db.get_aggregates("OtherPool", "temp", 0) == []
 
 
-def test_rollup_does_nothing_when_db_not_configured(tmp_path):
+def test_flush_does_nothing_when_db_not_configured(tmp_path):
     db.close()
     state = live_state.LiveState()
     state.push_sample("H32", "temp", 25.0, 1_700_000_100)
-    a = aggregator.Aggregator(state)
-    # No DB; should not raise
-    a._rollup_window(1_700_000_000, 1_700_000_000 + 3600)
+    a = aggregator.Aggregator(state, window_minutes=60)
+    a._collect()
+    a._flush_window(1_700_000_000)
 
 
-def test_rollup_continues_after_failing_insert(tmp_path, monkeypatch):
+def test_flush_continues_after_failing_insert(tmp_path, monkeypatch):
     _setup_db(tmp_path)
     state = live_state.LiveState()
     state.push_sample("H32", "temp", 25.0, 1_700_000_100)
@@ -86,10 +92,10 @@ def test_rollup_continues_after_failing_insert(tmp_path, monkeypatch):
         return real_insert(pool, metric, hour_start, value, n)
 
     monkeypatch.setattr(aggregator.db, "insert_aggregate", flaky)
-    a = aggregator.Aggregator(state)
-    a._rollup_window(1_700_000_000, 1_700_000_000 + 3600)
+    a = aggregator.Aggregator(state, window_minutes=60)
+    a._collect()
+    a._flush_window(1_700_000_000)
 
-    # pH still made it into the DB even though temp raised
     assert len(db.get_aggregates("H32", "pH", 0)) == 1
     assert calls["n"] == 1
 

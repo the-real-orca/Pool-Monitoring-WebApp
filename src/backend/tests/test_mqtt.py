@@ -123,3 +123,17 @@ def test_on_message_routes_to_correct_topic_only():
     mqtt._on_message(None, None, msg)
     assert a_received == [{"temp": 1.0}]
     assert b_received == []
+
+
+def test_disconnect_does_not_raise_unbound_local_error():
+    """Regression: disconnect() must declare ``global _client``, otherwise
+    the ``_client = None`` assignment makes the earlier ``if _client:``
+    reference an unbound local (UnboundLocalError)."""
+    # Not connected → should be a no-op.
+    mqtt.disconnect()
+    # Simulate connected + disconnect without crash.
+    client = MagicMock()
+    client.is_connected.return_value = True
+    mqtt._client = client
+    mqtt.disconnect()
+    assert mqtt._client is None

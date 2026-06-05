@@ -38,6 +38,7 @@ def _on_message(c, userdata, msg):
     if not isinstance(payload, dict):
         logging.warning("MQTT message on %s: payload is not a JSON object, dropping", msg.topic)
         return
+    logging.debug("MQTT recv: topic=%s payload=%s", msg.topic, payload)
     for topic, cb in _subscriptions:
         if msg.topic == topic:
             try:
@@ -94,6 +95,7 @@ def publish(topic: str, payload: dict) -> bool:
 
 
 def disconnect() -> None:
+    global _client
     if _client:
         _client.loop_stop()
         _client.disconnect()

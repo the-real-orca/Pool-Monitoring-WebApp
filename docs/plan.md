@@ -577,6 +577,90 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 **Verify:** `git diff --stat` shows only docs; TSD §2 reflects the dependency promotion.
 
 
+---
+
+## Phase 21 – Live Data Polish (debug logging, dynamic history, rate-limit)
+
+Goal: Make the live-data path observable in DEBUG, remove the rate-limit
+collision between polling reads and the per-IP middleware, refactor the
+aggregator from fixed-hour to configurable-window rollups, and give the
+trend chart infinite-scroll history with synchronized zoom/pan.
+
+### 21.1 Observability – `LOG_LEVEL` end-to-end
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.1.1 | `src/backend/main.py` | `LOG_LEVEL` env read at startup, `logging.basicConfig(level=…, format=…)` so root + child loggers respect it |
+| [x] 21.1.2 | `src/backend/mqtt.py` | `logging.debug("MQTT recv: topic=%s payload=%s", ...)` in `_on_message` |
+| [x] 21.1.3 | `src/backend/db.py` | `log.debug("DB write: measurements ...")` and `("DB write: pump_events ...")` in the insert helpers |
+| [x] 21.1.4 | `src/backend/aggregator.py` | `log.debug("aggregator collect: ...")` and `("aggregator flush: ...")` |
+| [x] 21.1.5 | `src/.env.example` | Document `LOG_LEVEL=INFO` default |
+
+**Verify:** `LOG_LEVEL=DEBUG docker compose up` shows per-MQTT-message, per-aggregator-tick and per-DB-write lines.
+
+### 21.2 Aggregator – configurable window (was hard-coded 1h)
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.2.1 | `src/backend/aggregator.py` | New `window_minutes` constructor param (default 60), `tick_seconds` default 30; replaced `_rollup_window` with `_collect` (drains ring buffer into `_pending` keyed by `(pool, metric, ts)`) + `_flush_window` (writes one mean per window). Removes broken `max(60, …)` floor → now `max(1, …)` |
+| [x] 21.2.2 | `src/backend/main.py` | Pass `window_minutes=LIVE_AGGREGATION_WINDOW_MINUTES` to the Aggregator |
+| [x] 21.2.3 | `src/backend/tests/test_aggregator.py` | Update tests to the new `_collect` / `_flush_window` API; cover multi-window flushing and dedup via `_last_read_ts` |
+| [x] 21.2.4 | `src/backend/live_state.py` | No behaviour change; only docstring tweak |
+
+**Verify:** `LIVE_AGGREGATION_WINDOW_MINUTES=1` startup log shows `window=60s`; rows appear in `measurements` every 60 s.
+
+### 21.3 History API – `before_ts` for backfill
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.3.1 | `src/backend/db.py` | New `get_aggregates_range(pool, metric, start_ts, end_ts)` |
+| [x] 21.3.2 | `src/backend/main.py` | `GET /api/history` accepts optional `before_ts` (ge=0); returns rows with `hour_start < before_ts` |
+| [x] 21.3.3 | `src/frontend/src/composables/useApi.js` | `fetchHistory(pool, metric, days, beforeTs = null)` appends `&before_ts=…` |
+| [x] 21.3.4 | `src/backend/tests/test_db.py` | Roundtrip test for the bounded range query |
+
+**Verify:** `curl '/api/history?pool=Pool&metric=temp&days=7&before_ts=1700000000'` returns rows strictly older than that timestamp.
+
+### 21.4 Rate-limit – exempt polling reads
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.4.1 | `src/backend/main.py` | New env vars `API_RATE_LIMIT_REQUESTS=60`, `API_RATE_LIMIT_WINDOW_SECONDS=60`; new `RATE_LIMIT_EXEMPT_PREFIXES = ("/api/history", "/api/pump-events", "/api/live")` – middleware skips these so chart polls + 60 s auto-refresh + pan backfill never trip 429 |
+
+**Verify:** Rapid panning/zooming in the trend chart yields no 429s; the middleware still throttles write endpoints.
+
+### 21.5 TrendChart – zoom, pan, sync, backfill, future-cap
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.5.1 | `src/frontend/src/components/TrendChart.vue` | `chartjs-plugin-zoom` options: `wheel` + `pinch` zoom, click-and-drag pan (no modifier), `Ctrl+drag` for box-zoom. `pan.modifierKey` defaults to none. `mode='x'` everywhere. `onPanComplete` and `onZoomComplete` call `syncXScale(chart, key)` to mirror `min/max` to the other two charts. Double-click listener on each canvas calls `chart.resetZoom()` and re-syncs |
+| [x] 21.5.2 | `src/frontend/src/components/TrendChart.vue` | `backfillIfNeeded()` triggered on `onPanComplete`/`onZoomComplete`. Loops over all 3 metrics, fetches `before_ts = earliestTs[metric]` whenever the visible left edge is within 2 h of the oldest loaded point. Preserves the user's visible window by re-applying `x.min/x.max` after prepending. `backfillInFlight` guard prevents recursion |
+| [x] 21.5.3 | `src/frontend/src/components/TrendChart.vue` | Module-level `capMs = Date.now()`; updated to `max(now, last_point)` after each `reload()`. Enforced as `options.plugins.zoom.limits.x.max` so panning/zooming past the latest data point (or "now") is blocked. Auto-refresh shifts the visible range left so the user never sees a jump |
+| [x] 21.5.4 | `src/frontend/src/components/TrendChart.vue` | Initial `setInterval(reload, 60_000)` with `resetWindow=false` → auto-refresh keeps current zoom/pan |
+| [x] 21.5.5 | `src/frontend/tests/TrendChart.spec.js` | Cover new props/behavior where reasonable (mock chart reset, double-click handler) |
+
+**Verify:** Panning left dynamically loads older data for all 3 metrics; panning right stops at "now"; 60 s auto-refresh doesn't reset zoom.
+
+### 21.6 LiveView UI – simplification
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.6.1 | `src/frontend/src/components/LiveView.vue` | Always-visible pool selector (even for a single pool, centred as the title). Move the "Warte auf Daten…" placeholder below the snapshot template. Show the 7-day chart independently of the snapshot so users see historical context immediately. Drop the redundant "Ø 5 M." sub-label under pH/Cl cards |
+| [x] 21.6.2 | `src/frontend/tests/LiveView.spec.js` | Adapt to the new template structure |
+
+**Verify:** LiveView renders the chart even before the first snapshot; selector is the heading.
+
+### 21.7 Infrastructure / dev
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.7.1 | `src/backend/Dockerfile` | `mkdir -p /data/history && chown appuser:appuser /data/history` before `USER appuser` so the bind-mount target is writable for the non-root user |
+| [x] 21.7.2 | `test/test_analyze-image.http` | Refresh to match the latest endpoint contract |
+
+**Verify:** Fresh `docker compose up` succeeds; no permission errors writing to `/data/history/data.db`.
+
+
+---
+
 ## File Overview
 
 ```

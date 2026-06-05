@@ -1,5 +1,5 @@
 ### Analyze pool image (no hint)
-POST http://localhost:8000/api/analyze-image
+POST http://localhost:80/api/analyze-image
 Authorization: testtoken
 Content-Type: multipart/form-data; boundary=boundary
 
@@ -12,7 +12,7 @@ Content-Disposition: form-data; name="image"; filename="test.jpg"
 ###
 
 ### Analyze pool image with hint
-POST http://localhost:8000/api/analyze-image
+POST http://localhost:80/api/analyze-image
 Authorization: Bearer testtoken
 Content-Type: multipart/form-data; boundary=boundary
 
@@ -25,4 +25,14 @@ Content-Disposition: form-data; name="data"
 
 {"intendedPoolName": "Testbecken"}
 --boundary--
+
+
+### Pool list
+GET http://localhost:80/api/pools
+Authorization: Bearer testtoken
+
+
+### History (as REST request)
+GET http://localhost:80/api/history?pool=Pool&metric=temp&days=1
+Authorization: Bearer testtoken
 

@@ -31,7 +31,6 @@ const lastUpdateText = computed(() => {
 const mainPump = computed(() => snapshot.value?.pump?.main || { running: null, since: null })
 const solarPump = computed(() => snapshot.value?.pump?.solar || { running: null, since: null })
 
-const showPoolSelector = computed(() => pools.value.length > 1)
 const hasSnapshot = computed(() => snapshot.value !== null && snapshot.value.ts > 0)
 const hasAnyPool = computed(() => pools.value.length > 0)
 const persistentError = computed(() => usingCached.value && hasSnapshot.value)
@@ -80,14 +79,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div data-testid="live-view" class="space-y-4">
-    <h1 class="text-center text-2xl font-bold text-slate-800">Live</h1>
-
-    <div v-if="showPoolSelector" class="space-y-1">
-      <label class="block text-sm font-medium text-slate-600">Pool</label>
+    <div class="flex justify-center">
       <select
+        v-if="hasAnyPool"
         v-model="selectedPool"
         data-testid="pool-selector"
-        class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        class="w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-xl font-bold text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
       >
         <option v-for="p in pools" :key="p.name" :value="p.name">{{ p.name }}</option>
       </select>
@@ -96,10 +93,6 @@ onBeforeUnmount(() => {
     <div v-if="!hasAnyPool && loadError" class="rounded-lg bg-error/10 p-4 text-sm text-error">
       <p>Verbindung fehlgeschlagen.</p>
       <button @click="retry" class="mt-2 rounded bg-primary px-3 py-1 text-sm font-medium text-white">Erneut versuchen</button>
-    </div>
-
-    <div v-if="!hasSnapshot && !loadError" class="rounded-lg bg-slate-100 p-4 text-center text-sm text-slate-500">
-      Warte auf Daten…
     </div>
 
     <template v-if="hasSnapshot">
@@ -117,14 +110,14 @@ onBeforeUnmount(() => {
         <div data-testid="ph-card" class="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div class="text-xs font-semibold uppercase text-slate-500">pH</div>
           <div class="mt-1 text-3xl font-bold text-slate-800">{{ phText }}</div>
-          <div class="mt-1 text-xs text-slate-400">Ø 5 M.</div>
+          <div class="mt-1 text-xs text-slate-400">&nbsp;</div>
         </div>
         <div data-testid="cl-card" class="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div class="text-xs font-semibold uppercase text-slate-500">Chlor</div>
           <div class="mt-1 text-3xl font-bold text-slate-800">
             {{ clText }}<span class="ml-0.5 text-sm font-normal text-slate-400">mg/l</span>
           </div>
-          <div class="mt-1 text-xs text-slate-400">Ø 5 M.</div>
+          <div class="mt-1 text-xs text-slate-400">&nbsp;</div>
         </div>
       </div>
 
@@ -132,14 +125,15 @@ onBeforeUnmount(() => {
         <PumpStatusCard pump="main" :state="mainPump.running" :running-since="mainPump.since" />
         <PumpStatusCard pump="solar" :state="solarPump.running" :running-since="solarPump.since" />
       </div>
-
-      <div v-if="selectedPool" class="rounded-xl border border-slate-200 bg-white p-4">
-        <div class="mb-2 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-slate-700">7-Tage-Verlauf</h2>
-          <span class="text-xs text-slate-400">{{ snapshot?.pump ? 'inkl. Pumpenzeiten' : '' }}</span>
-        </div>
-        <TrendChart :pool="selectedPool" :days="7" />
-      </div>
     </template>
+
+    <div v-if="!hasSnapshot && !loadError" class="rounded-lg bg-slate-100 p-4 text-center text-sm text-slate-500">
+      Warte auf Daten…
+    </div>
+
+    <div v-if="selectedPool" class="rounded-xl border border-slate-200 bg-white p-4">
+      <h2 class="mb-2 text-sm font-semibold text-slate-700">Trend</h2>
+      <TrendChart :pool="selectedPool" :days="7" />
+    </div>
   </div>
 </template>

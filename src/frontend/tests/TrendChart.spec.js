@@ -14,8 +14,6 @@ describe('TrendChart', () => {
     localStorage.clear()
     saveSettings({ token: 'test-token' })
     vi.stubGlobal('fetch', vi.fn())
-    // jsdom doesn't implement HTMLCanvasElement.getContext; Chart.js
-    // would otherwise throw. Provide a no-op stub.
     HTMLCanvasElement.prototype.getContext = function () {
       return {
         canvas: this,
@@ -48,7 +46,7 @@ describe('TrendChart', () => {
     expect(wrapper.text()).toContain('Noch keine Daten')
   })
 
-  it('fetches all three metrics and creates 3 datasets when data is present', async () => {
+  it('renders three canvas elements when data is present', async () => {
     const now = Math.floor(Date.now() / 1000)
     fetch.mockImplementation((url) => {
       const points = [{ t: now - 3600, v: 24.5 }, { t: now, v: 25.0 }]
@@ -60,23 +58,19 @@ describe('TrendChart', () => {
 
     const wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
     await flushPromises()
-    const canvas = wrapper.find('canvas')
-    expect(canvas.exists()).toBe(true)
-    // three fetch calls (one per metric)
+    expect(wrapper.find('[data-testid="trend-chart-temp"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="trend-chart-pH"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="trend-chart-cl"]').exists()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(3)
   })
 
-  it('destroys the chart instance on unmount', async () => {
+  it('destroys the chart instances on unmount', async () => {
     fetch.mockResolvedValue({ status: 200, ok: true, json: () => Promise.resolve({ pool: 'Pool', metric: 'temp', unit: '°C', points: [] }) })
 
     const wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
     await flushPromises()
-    // The component owns a Chart.js instance — verify that unmounting does
-    // not throw and tears down the canvas.
-    const canvas = wrapper.find('canvas').element
-    expect(canvas).toBeTruthy()
+    const canvases = wrapper.findAll('canvas')
+    expect(canvases).toHaveLength(3)
     wrapper.unmount()
-    // No further assertions possible in jsdom; absence of thrown errors is
-    // the contract.
   })
 })

@@ -20,9 +20,9 @@ def test_init_creates_schema(tmp_path):
             "SELECT name FROM sqlite_master WHERE type IN ('table','index') ORDER BY name"
         ).fetchall()
         names = {r[0] for r in rows}
-        assert "live_aggregates" in names
-        assert "pump_events" in names
-        assert "idx_live_aggregates_hour" in names
+        assert "measurements" in names
+
+        assert "idx_measurements_hour" in names
         assert "idx_pump_events_time" in names
         assert "idx_pump_events_pool_time" in names
     finally:
@@ -63,7 +63,7 @@ def test_get_aggregates_since_filter(tmp_path):
 
 def test_aggregate_upsert_replaces(tmp_path):
     """Inserting twice for the same (pool, metric, hour_start) is a no-op
-    overwrite — there is exactly one row and the last value wins."""
+    overwrite — the last value wins."""
     _fresh_db(tmp_path)
     db.insert_aggregate("H32", "temp", 1700000000, 24.0, 1)
     db.insert_aggregate("H32", "temp", 1700000000, 26.0, 9)

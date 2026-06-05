@@ -15,6 +15,7 @@ import logging
 import os
 import signal
 import smtplib
+import socket
 import ssl
 import threading
 import time
@@ -207,6 +208,24 @@ def format_number(value: Optional[float], decimals: int = 1) -> str:
 
 def now_local() -> datetime:
     return datetime.now().astimezone()
+
+
+def get_server_ip() -> str:
+    """Return the primary outbound IPv4 of this host. Uses a UDP "connect"
+    to a public address (no packets sent) which is the most reliable
+    way to discover the interface IP from inside a container. Falls back
+    to hostname resolution when no route is available."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return "n/a"
+    finally:
+        sock.close()
 
 
 def format_dt(dt: Optional[datetime]) -> str:
@@ -608,11 +627,13 @@ def send_email(subject: str, body: str, html_body: str = "") -> None:
 
 def send_test_email() -> None:
     subject = "Pool-Monitoring: Programm gestartet"
+    server_ip = get_server_ip()
     body = (
         "Der mqtt2mail-Dienst wurde erfolgreich gestartet.\n"
         "\n"
         "SMTP-Verbindung wurde erfolgreich getestet.\n"
         f"Startzeit: {format_dt(now_local())}\n"
+        f"Server-IP: {server_ip}\n"
         "\n"
         "Diese Mail dient nur zur Bestätigung der SMTP-Konfiguration."
     )
@@ -622,13 +643,14 @@ def send_test_email() -> None:
         "<p>Der mqtt2mail-Dienst wurde erfolgreich gestartet.</p>\n"
         "<p>SMTP-Verbindung wurde erfolgreich getestet.</p>\n"
         f"<p>Startzeit: {format_dt(now_local())}</p>\n"
+        f"<p>Server-IP: {server_ip}</p>\n"
         "<hr>\n"
         "<p>Diese Mail dient nur zur Bestätigung der SMTP-Konfiguration.</p>\n"
         "</body>\n</html>\n"
     )
     try:
         send_email(subject, body, html_body)
-        logging.info("Startup test email sent successfully")
+        logging.info("Startup test email sent successfully (server IP: %s)", server_ip)
     except Exception as exc:
         logging.error("Failed to send startup test email: %s", exc)
 

@@ -32,6 +32,6 @@ Thumbs.db
 tmp/
 temp/
 
-# History Data: local SQLite database (Phase 20)
-data/history/
+# Docker Volumes
+data/
 

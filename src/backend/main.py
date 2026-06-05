@@ -25,7 +25,24 @@ import mqtt
 
 log = logging.getLogger(__name__)
 
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 API_TOKEN = os.getenv("API_TOKEN", "")
+API_RATE_LIMIT_REQUESTS = int(os.getenv("API_RATE_LIMIT_REQUESTS", "60"))
+API_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("API_RATE_LIMIT_WINDOW_SECONDS", "60"))
+# Read-only polling endpoints (history, pump-events, live state) must stay
+# exempt — the chart reloads / backfills and the live view poll the API
+# continuously and would otherwise trip the limiter. Write endpoints
+# (measurements, chem, analyze-image) keep the per-IP throttling.
+RATE_LIMIT_EXEMPT_PREFIXES = (
+    "/api/history",
+    "/api/pump-events",
+    "/api/live",
+)
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
@@ -120,7 +137,8 @@ def _handle_ble_message(topic: str, payload: dict) -> None:
     for metric in VALID_METRICS:
         if metric in payload and payload[metric] is not None:
             try:
-                state.push_sample(pool, metric, float(payload[metric]), ts)
+                v = float(payload[metric])
+                state.push_sample(pool, metric, v, ts)
             except (TypeError, ValueError) as e:
                 log.warning("MQTT BLE payload on %s: bad %s value: %s", topic, metric, e)
 
@@ -202,7 +220,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._lock = threading.Lock()
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/") and not any(
+            path.startswith(p) for p in RATE_LIMIT_EXEMPT_PREFIXES
+        ):
             client_ip = get_client_ip(request)
             now = datetime.now()
             cutoff = now - timedelta(seconds=self.seconds)
@@ -344,7 +365,8 @@ async def lifespan(app: FastAPI):
     )
     _aggregator = aggregator.Aggregator(
         _state,
-        tick_seconds=60,
+        window_minutes=LIVE_AGGREGATION_WINDOW_MINUTES,
+        tick_seconds=30,
         retention_days=LIVE_RETENTION_DAYS,
     )
 
@@ -392,7 +414,11 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-app.add_middleware(RateLimitMiddleware, times=20, seconds=60)
+app.add_middleware(
+    RateLimitMiddleware,
+    times=API_RATE_LIMIT_REQUESTS,
+    seconds=API_RATE_LIMIT_WINDOW_SECONDS,
+)
 
 
 @app.get("/api/pools", dependencies=[Depends(verify_token)])
@@ -479,14 +505,20 @@ async def get_history(
     pool: str = Query(...),
     metric: str = Query(...),
     days: int = Query(7, ge=1, le=30),
+    before_ts: int | None = Query(None, ge=0),
 ):
     pool = _resolve_pool(pool)
     if metric not in VALID_METRICS:
         raise HTTPException(status_code=422, detail=f"Unknown metric: {metric}")
     if not db.is_configured():
         return {"pool": pool, "metric": metric, "unit": METRIC_UNITS[metric], "points": []}
-    since_ts = int(time.time()) - days * 86400
-    rows = db.get_aggregates(pool, metric, since_ts)
+    if before_ts is not None:
+        end_ts = int(before_ts)
+        start_ts = end_ts - days * 86400
+        rows = db.get_aggregates_range(pool, metric, start_ts, end_ts)
+    else:
+        since_ts = int(time.time()) - days * 86400
+        rows = db.get_aggregates(pool, metric, since_ts)
     return {
         "pool": pool,
         "metric": metric,

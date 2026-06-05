@@ -84,8 +84,8 @@ class LiveState:
     def get_snapshot(self, pool: str) -> dict:
         """Return the current snapshot for one pool.
 
-        pH and Cl are the mean of the ring buffer; temperature is the last
-        received value. ``stale`` is True when no sample has been received
+        All metrics are the mean of the ring buffer.
+        ``stale`` is True when no sample has been received
         within ``stale_after_seconds``.
         """
         now = int(time.time())
@@ -110,7 +110,7 @@ class LiveState:
 
         return {
             "ts": last_ts,
-            "temp": temp.last_value if temp is not None else None,
+            "temp": temp.mean() if temp is not None else None,
             "pH": ph.mean() if ph is not None else None,
             "cl": cl.mean() if cl is not None else None,
             "pump": {

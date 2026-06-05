@@ -144,12 +144,12 @@ export function useApi() {
     }
   }
 
-  async function fetchHistory(pool, metric, days = 7) {
+  async function fetchHistory(pool, metric, days = 7, beforeTs = null) {
     error.value = null
     try {
-      const { __status, __data } = await getJson(
-        `/api/history?pool=${encodeURIComponent(pool)}&metric=${encodeURIComponent(metric)}&days=${days}`
-      )
+      let url = `/api/history?pool=${encodeURIComponent(pool)}&metric=${encodeURIComponent(metric)}&days=${days}`
+      if (beforeTs !== null) url += `&before_ts=${beforeTs}`
+      const { __status, __data } = await getJson(url)
       if (__status === 401) error.value = '401'
       if (__status === 422) error.value = '422'
       return __status === 200 ? __data : null

@@ -74,7 +74,7 @@ describe('LiveView', () => {
     expect(cards).toHaveLength(2)
   })
 
-  it('does not show the pool selector when only one pool exists', async () => {
+  it('shows the pool selector even with only one pool', async () => {
     fetch.mockImplementation((url) => {
       if (url.startsWith('/api/pools/live')) {
         return Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve([{ name: 'Pool', hasData: true }]) })
@@ -90,7 +90,9 @@ describe('LiveView', () => {
 
     const wrapper = mount(LiveView)
     await flushPromises()
-    expect(wrapper.find('[data-testid="pool-selector"]').exists()).toBe(false)
+    const sel = wrapper.find('[data-testid="pool-selector"]')
+    expect(sel.exists()).toBe(true)
+    expect(sel.findAll('option')).toHaveLength(1)
   })
 
   it('shows the pool selector when more than one pool exists', async () => {

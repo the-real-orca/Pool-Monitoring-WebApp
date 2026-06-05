@@ -21,7 +21,7 @@ _conn: sqlite3.Connection | None = None
 _db_path: str | None = None
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS live_aggregates (
+CREATE TABLE IF NOT EXISTS measurements (
     pool          TEXT    NOT NULL,
     metric        TEXT    NOT NULL,
     hour_start    INTEGER NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS live_aggregates (
     sample_count  INTEGER NOT NULL,
     PRIMARY KEY (pool, metric, hour_start)
 );
-CREATE INDEX IF NOT EXISTS idx_live_aggregates_hour ON live_aggregates(hour_start);
+CREATE INDEX IF NOT EXISTS idx_measurements_hour ON measurements(hour_start);
 
 CREATE TABLE IF NOT EXISTS pump_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,17 +77,20 @@ def _get_conn() -> sqlite3.Connection | None:
 
 
 def insert_aggregate(pool: str, metric: str, hour_start: int, value: float, n: int) -> None:
-    """Upsert one per-hour aggregate. ``INSERT OR REPLACE`` makes duplicate
-    writes for the same (pool, metric, hour_start) a no-op for callers that
-    do not care about overwriting."""
+    """Upsert one per-hour aggregate. ``INSERT OR REPLACE`` guarantees
+    exactly one row per (pool, metric, hour_start)."""
     conn = _get_conn()
     if conn is None:
         return
     with _lock:
         conn.execute(
-            "INSERT OR REPLACE INTO live_aggregates (pool, metric, hour_start, value, sample_count) "
+            "INSERT OR REPLACE INTO measurements (pool, metric, hour_start, value, sample_count) "
             "VALUES (?, ?, ?, ?, ?)",
             (pool, metric, hour_start, value, n),
+        )
+        log.debug(
+            "DB write: measurements pool=%s metric=%s hour_start=%s value=%.4f n=%d at %s",
+            pool, metric, hour_start, value, n, int(time.time()),
         )
 
 
@@ -100,6 +103,10 @@ def insert_pump_event(pool: str, pump: str, state: bool, ts: int, received_at: i
             "INSERT INTO pump_events (pool, pump, state, time, received_at) VALUES (?, ?, ?, ?, ?)",
             (pool, pump, 1 if state else 0, ts, received_at),
         )
+        log.debug(
+            "DB write: pump_events pool=%s pump=%s state=%s ts=%s received_at=%s at %s",
+            pool, pump, state, ts, received_at, int(time.time()),
+        )
 
 
 def get_aggregates(pool: str, metric: str, since_ts: int) -> list[dict[str, Any]]:
@@ -108,9 +115,30 @@ def get_aggregates(pool: str, metric: str, since_ts: int) -> list[dict[str, Any]
         return []
     with _lock:
         cur = conn.execute(
-            "SELECT hour_start, value, sample_count FROM live_aggregates "
+            "SELECT hour_start, value, sample_count FROM measurements "
             "WHERE pool = ? AND metric = ? AND hour_start >= ? ORDER BY hour_start ASC",
             (pool, metric, since_ts),
+        )
+        return [
+            {"t": int(row[0]), "v": float(row[1]), "n": int(row[2])}
+            for row in cur.fetchall()
+        ]
+
+
+def get_aggregates_range(
+    pool: str, metric: str, start_ts: int, end_ts: int
+) -> list[dict[str, Any]]:
+    """Like ``get_aggregates`` but bounded on both ends. Used for
+    backfilling older history when the user pans into the past."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    with _lock:
+        cur = conn.execute(
+            "SELECT hour_start, value, sample_count FROM measurements "
+            "WHERE pool = ? AND metric = ? AND hour_start >= ? AND hour_start < ? "
+            "ORDER BY hour_start ASC",
+            (pool, metric, start_ts, end_ts),
         )
         return [
             {"t": int(row[0]), "v": float(row[1]), "n": int(row[2])}
@@ -149,7 +177,7 @@ def cleanup_old_rows(retention_days: int) -> int:
         return 0
     cutoff = int(time.time()) - retention_days * 86400
     with _lock:
-        cur_a = conn.execute("DELETE FROM live_aggregates WHERE hour_start < ?", (cutoff,))
+        cur_a = conn.execute("DELETE FROM measurements WHERE hour_start < ?", (cutoff,))
         cur_p = conn.execute("DELETE FROM pump_events WHERE time < ?", (cutoff,))
         return cur_a.rowcount + cur_p.rowcount
 

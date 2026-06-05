@@ -4,3 +4,4 @@ todo.txt
 /deploy
 /test/__pycache__
 /test/data
+/skills-lock.json
