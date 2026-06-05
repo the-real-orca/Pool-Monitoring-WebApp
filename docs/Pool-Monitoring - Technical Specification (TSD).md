@@ -32,7 +32,7 @@ serves a Live dashboard (current temperature, 5-sample mean of pH/Cl, pump statu
 | AI client | `openrouter` (Python SDK) | Official OpenRouter Python SDK – single key, 300+ models, type-safe |
 | Multipart | `python-multipart` | Required by FastAPI for `UploadFile` / `Form` parsing |
 | DB       | `sqlite3` (Python stdlib) + WAL | Phase 20; no ORM, no async driver, no migrations framework |
-| Charts   | `chart.js@^4.4` + `chartjs-plugin-zoom@^2.0` | Phase 20; small bundle, touch-friendly, zoom/pan out-of-the-box |
+| Charts   | `uplot@^1.6` | Phase 20; ~50 KB Canvas 2D, built-in drag-zoom/sync, custom `splits`/`values` callbacks for 0h-aligned tick labels |
 | Linting  | Ruff + ESLint | Fast, minimal configuration |
 
 **Deliberately excluded:**
@@ -77,7 +77,7 @@ src/
 │   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
 │   │   │   ├── ChemicalUpdateForm.vue # Chemistry update form (Phase 19)
 │   │   │   ├── LiveView.vue           # Live dashboard (Phase 20): default landing
-│   │   │   ├── TrendChart.vue         # Chart.js line chart, 7d, zoom/pan (Phase 20)
+│   │   │   ├── TrendChart.vue         # uPlot, 3 panels, mouse + touch zoom/pan (Phase 20, 22)
 │   │   │   ├── PumpStatusCard.vue     # Pump status card with icon (Phase 20)
 │   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
 │   │   └── composables/
@@ -132,7 +132,7 @@ frontend/tests/
 ├── useImage.spec.js      # Image compression: dimensions, MIME, size cap
 ├── useLiveData.spec.js   # 30s polling, stale detection, cleanup (Phase 20)
 ├── LiveView.spec.js      # Dashboard render, pool selector (Phase 20)
-└── TrendChart.spec.js    # Chart.js datasets, empty state, destroy on unmount (Phase 20)
+└── TrendChart.spec.js    # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
 ```
 
 ---
@@ -207,7 +207,7 @@ The app shell provides a centered card layout with a colored header bar. Primary
 | `ChemicalUpdateForm.vue` | Form for one chemical event with optional amount + unit | – | `open-form`, `open-settings` |
 | `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `mode` (String, default `'camera'`) | `close`, `applied` (payload `{pH, cl, image}`) |
 | `LiveView.vue` | Live dashboard: pool selector, temperature main card, pH/Cl side cards (5-sample mean), pump status cards, 7-day trend chart (Phase 20) | – | – |
-| `TrendChart.vue` | Chart.js line chart with 3 Y-axes (temp/pH/cl), zoom + pan via `chartjs-plugin-zoom` (Phase 20) | `pool` (String) | – |
+| `TrendChart.vue` | uPlot, 3 separate panels (temp/pH/cl) with per-metric Y-axis, custom pan + wheel-zoom + touch (pan / pinch / double-tap reset), cross-chart x-axis sync, custom `splits`/`values` callbacks align ticks to 0h midnight, infinite-scroll backfill capped at "now" (Phase 20, 21, 22) | `pool` (String) | – |
 | `PumpStatusCard.vue` | Pump status card: large icon, label, state, "läuft seit X min" (Phase 20) | `pump` ('main'\|'solar'), `state` (Boolean), `runningSince` (Number\|null) | – |
 | `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
 
@@ -1718,19 +1718,64 @@ The composable is implemented as a module-level singleton (matches `useToast.js`
 mounting `LiveView` twice (e.g., during fast view switches) does not double-poll.
 `onBeforeUnmount` calls `stop()` to release the interval when leaving the live view.
 
-### 4.11 `TrendChart.vue` (Phase 20)
+### 4.11 `TrendChart.vue` (Phase 20, 21, 22)
 
 - Fetches `fetchHistory(pool, 'temp' | 'pH' | 'cl', 7)` for all three metrics in parallel.
-- Single Chart.js `line` chart, three Y axes:
-  - Left: `temp` (°C, primary blue)
-  - Right outer: `pH` (unitless, success green, range 6–8)
-  - Right inner: `cl` (mg/l, warning amber, range 0–3)
-- X axis: 7-day time scale, day ticks, localized date format.
-- Plugins: `Legend`, `Tooltip` (touch enabled), `chartjs-plugin-zoom`
-  (`zoom: { pinch: { enabled: true }, wheel: { enabled: false } }`,
-  `pan: { enabled: true, mode: 'x' }`).
-- A `ResizeObserver` calls `chart.resize()` on container size change.
-- Chart instance is destroyed in `onBeforeUnmount` to avoid memory leaks.
+- **3 separate uPlot instances** (one per metric) for cleaner layout and per-metric
+  Y-axes (°C, pH unitless, mg/l). Chart container height 260 px, `space-y-10`
+  (40 px) between charts.
+- X axis: 7-day time scale, custom `splits` callback aligns ticks to 0h (midnight)
+  boundaries using an adaptive step (2h / 4h / 6h / 12h / 24h / 48h depending on
+  visible span). Custom `values` callback formats labels: `dd.MM` at 0h ticks,
+  `HH:mm` elsewhere, plus a `dd.MM\nHH:mm` two-line date anchor on the leftmost
+  tick when the visible span is `< 24h` so the user always knows which day they
+  are zoomed into. X-axis `rotate: 45`, `size: 60`.
+- **Custom mouse pan + wheel-zoom** via the `panZoomPlugin` factory wired into
+  uPlot's `ready` hook:
+  - `mousedown` (capture phase, `stopImmediatePropagation`) starts a pan.
+  - `mousemove` / `mouseup` are bound on `window` so the gesture is not lost
+    when the cursor leaves the chart.
+  - `wheel` zooms the X axis around the cursor with a 0.75 factor per tick.
+  - `cursor.drag: { setScale: false }` disables uPlot's built-in box-zoom
+    (which would otherwise steal the left-drag and never trigger sync).
+  - Right-edge clamp against `capSec = max(now, last_data_point)` blocks
+    panning into the future.
+- **Custom touch gestures** via `touchGestureHandler(u)` registered alongside
+  the mouse handlers on the uPlot overlay (`.u-over`):
+  - `touchstart` (1 finger) records a pan state. `touchmove` (1 finger) maps
+    horizontal delta to scale delta and updates `u.setScale('x', …)` in a
+    batch. Right-edge clamp against `capSec` applies identically.
+  - `touchstart` (≥ 2 fingers) records a pinch state with `startDist`,
+    `centerX` (px offset of the pinch midpoint), `centerVal` (the X value
+    under that midpoint via `u.posToVal`) and `leftPct`. `touchmove`
+    (≥ 2 fingers) computes `factor = dist / startDist` and uses
+    `nRange = oRange / factor` anchored at the pinch midpoint.
+  - `touchstart` (1 finger) with the previous tap < 300 ms ago and within
+    24 px of it is treated as a double-tap: `e.preventDefault()` and
+    `resetAllCharts()` (the same routine used by the desktop `dblclick`
+    listener). 1 → 2 fingers drops the pan; 2 → 1 fingers ends the
+    gesture (no resume, avoids accidental jumps).
+  - All `touchstart` (≥ 2 fingers) and `touchmove` events call
+    `e.preventDefault()` with `passive: false` so the browser does not
+    steal the gesture as a scroll or pull-to-refresh.
+- **Manual X-axis sync**: a `setScale` hook on each chart calls
+  `broadcastScale(sourceKey, min, max)`, which loops over the other two
+  charts and applies the same X range. An `isPropagating` flag suppresses
+  the recursive broadcast and the backfill trigger in the sibling hooks.
+  Replaces the old `uPlot.sync(SYNC_KEY)` approach, which only synced
+  cursors, not scale.
+- **Backfill**: the `setScale` hook also calls `backfillIfNeeded()`, which
+  loops over the 3 metrics and fetches `before_ts = earliestTs[metric]`
+  whenever the visible left edge is within 2 h of the oldest loaded point.
+  The response is filtered to points older than the current oldest (no
+  infinite refetch loops). A `backfillInFlight` guard prevents recursion.
+- **Auto-refresh**: `setInterval(reload, 60_000)` with
+  `resetWindow = false` keeps the user's current zoom/pan; only clamps
+  the right edge against the new `capSec` if it has advanced.
+- A `ResizeObserver` calls `u.setSize({ width, height })` on container
+  size change and reapplies the `splits` callback for the new span.
+- Each uPlot instance is destroyed in `onBeforeUnmount` to avoid memory
+  leaks; the auto-refresh `setInterval` is cleared at the same time.
 
 ### 4.12 `PumpStatusCard.vue` (Phase 20)
 

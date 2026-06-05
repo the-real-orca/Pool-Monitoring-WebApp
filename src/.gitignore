@@ -35,3 +35,8 @@ temp/
 # Docker Volumes
 data/
 
+# Ad-hoc dev artefacts (screenshots, scratch files dropped into test/ for triage)
+test/*.png
+test/*.jpg
+test/*.jpeg
+

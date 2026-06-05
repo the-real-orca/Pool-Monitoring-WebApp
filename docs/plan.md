@@ -495,10 +495,10 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 
 | # | File | Content |
 |---|------|---------|
-| [x] 20.8.1 | `src/frontend/package.json` | Add dependencies `chart.js@^4.4` and `chartjs-plugin-zoom@^2.0`. Update `npm install`. |
-| [x] 20.8.2 | `src/frontend/src/main.js` | Import `chartjs-plugin-zoom` once (auto-registers on `Chart.register()`). |
+| [x] 20.8.1 | `src/frontend/package.json` | Add dependency `uplot@^1.6` (replaces `chart.js` + `chartjs-plugin-zoom` + `chartjs-adapter-date-fns` + `date-fns`). Update `npm install`. |
+| [x] 20.8.2 | `src/frontend/src/main.js` | Removed Chart.js plugin registration. uPlot needs no global setup — imported per-component. |
 
-**Verify:** `npm run build` succeeds; bundle includes Chart.js.
+**Verify:** `npm run build` succeeds; bundle is ~33% smaller (168 KB vs 254 KB) and includes uPlot.
 
 ### 20.9 Frontend: API composable extensions
 
@@ -539,7 +539,7 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 
 | # | File | Content |
 |---|------|---------|
-| [x] 20.13.1 | `src/frontend/src/components/TrendChart.vue` | Props: `pool` (String). On `pool` change and on mount: fetch `fetchHistory(pool, 'temp', 7)`, `fetchHistory(pool, 'pH', 7)`, `fetchHistory(pool, 'cl', 7)` in parallel. Build a single Chart.js line chart with 3 datasets (temp → primary blue, pH → success green, cl → warning amber), 3 Y-axes (left: temp °C, right: pH, right-inner: cl), X axis = time (last 7d, day ticks). Plugins: legend, tooltip (touch enabled), `chartjs-plugin-zoom` with `pinch` + `wheel` zoom and `pan`. Empty state: "Noch keine Daten". Resize observer to redraw on container size change. |
+| [x] 20.13.1 | `src/frontend/src/components/TrendChart.vue` | Props: `pool` (String). On `pool` change and on mount: fetch `fetchHistory(pool, 'temp', 7)`, `fetchHistory(pool, 'pH', 7)`, `fetchHistory(pool, 'cl', 7)` in parallel. Build **3 separate uPlot instances** (one per metric) for cleaner layout and per-metric Y-axis. Each uPlot has its own Y-axis (unit shown as label). X axis = time (last 7d). Cross-chart X-axis sync via `uPlot.sync(SYNC_KEY)` + `cursor.sync.scales: ['x', null]`. **Custom `splits` callback** aligns ticks to 0h (midnight) boundaries using an adaptive step (2h / 4h / 6h / 12h / 24h / 48h depending on visible span). **Custom `values` callback** formats labels: date (`dd.MM`) at 0h ticks, time (`HH:mm`) elsewhere. **Custom wheel-zoom plugin** zooms the X axis around the cursor while the mouse is over the chart (no modifier key needed). `cursor.drag` for pan + box-zoom (built-in). Empty state: "Noch keine Daten". Resize observer to redraw on container size change. |
 | [x] 20.13.2 | `src/frontend/tests/TrendChart.spec.js` | Mock `fetchHistory`. Render test: 3 datasets created; empty state shown when no points; chart instance destroyed in `onBeforeUnmount` (no memory leak). |
 
 **Verify:** `npm run test` green; manual test shows 3 lines, zoom on touch works.
@@ -628,17 +628,28 @@ trend chart infinite-scroll history with synchronized zoom/pan.
 
 **Verify:** Rapid panning/zooming in the trend chart yields no 429s; the middleware still throttles write endpoints.
 
-### 21.5 TrendChart – zoom, pan, sync, backfill, future-cap
+### 21.5 TrendChart – zoom, pan, sync, backfill, future-cap (uPlot)
 
 | # | File | Content |
 |---|------|---------|
-| [x] 21.5.1 | `src/frontend/src/components/TrendChart.vue` | `chartjs-plugin-zoom` options: `wheel` + `pinch` zoom, click-and-drag pan (no modifier), `Ctrl+drag` for box-zoom. `pan.modifierKey` defaults to none. `mode='x'` everywhere. `onPanComplete` and `onZoomComplete` call `syncXScale(chart, key)` to mirror `min/max` to the other two charts. Double-click listener on each canvas calls `chart.resetZoom()` and re-syncs |
-| [x] 21.5.2 | `src/frontend/src/components/TrendChart.vue` | `backfillIfNeeded()` triggered on `onPanComplete`/`onZoomComplete`. Loops over all 3 metrics, fetches `before_ts = earliestTs[metric]` whenever the visible left edge is within 2 h of the oldest loaded point. Preserves the user's visible window by re-applying `x.min/x.max` after prepending. `backfillInFlight` guard prevents recursion |
-| [x] 21.5.3 | `src/frontend/src/components/TrendChart.vue` | Module-level `capMs = Date.now()`; updated to `max(now, last_point)` after each `reload()`. Enforced as `options.plugins.zoom.limits.x.max` so panning/zooming past the latest data point (or "now") is blocked. Auto-refresh shifts the visible range left so the user never sees a jump |
-| [x] 21.5.4 | `src/frontend/src/components/TrendChart.vue` | Initial `setInterval(reload, 60_000)` with `resetWindow=false` → auto-refresh keeps current zoom/pan |
-| [x] 21.5.5 | `src/frontend/tests/TrendChart.spec.js` | Cover new props/behavior where reasonable (mock chart reset, double-click handler) |
+| [x] 21.5.1 | `src/frontend/src/components/TrendChart.vue` | **uPlot built-in:** `cursor.drag: { x: true, y: false }` for click-and-drag pan + box-zoom, `cursor.sync: { key, scales: ['x', null] }` for cross-chart X-axis sync via `uPlot.sync(SYNC_KEY)`. **Custom wheel-zoom plugin** (`wheelZoomPlugin`): zooms X axis around cursor when mouse is over chart, no modifier needed. Double-click listener on each chart calls `u.setScale('x', { min: firstVisible, max: capSec })` to reset to 7d window. |
+| [x] 21.5.2 | `src/frontend/src/components/TrendChart.vue` | `backfillIfNeeded()` triggered on `setScale` hook. Loops over all 3 metrics, fetches `before_ts = earliestTs[metric]` whenever the visible left edge is within 2 h of the oldest loaded point. Filters response to only include points older than the current oldest (prevents infinite refetch loops). Preserves the user's visible window by passing `resetScales=false` to `setData`. `backfillInFlight` guard prevents recursion. |
+| [x] 21.5.3 | `src/frontend/src/components/TrendChart.vue` | Module-level `capSec = floor(Date.now() / 1000)`; updated to `max(now, last_point)` after each `reload()`. Enforced by clamping `u.scales.x.max` in `reload()` so panning/zooming past the latest data point (or "now") is blocked. Auto-refresh shifts the visible range left so the user never sees a jump. |
+| [x] 21.5.4 | `src/frontend/src/components/TrendChart.vue` | Initial `setInterval(reload, 60_000)` with `resetWindow=false` → auto-refresh keeps current zoom/pan. |
+| [x] 21.5.5 | `src/frontend/tests/TrendChart.spec.js` | Adapted to uPlot API: stubs `getBoundingClientRect`, `HTMLCanvasElement.getContext` (jsdom), `Path2D`, `ResizeObserver`, and `window.matchMedia` via `tests/setup.js` (global vitest setup). Tests cover: empty state, 3 chart containers rendered, clean unmount. |
 
-**Verify:** Panning left dynamically loads older data for all 3 metrics; panning right stops at "now"; 60 s auto-refresh doesn't reset zoom.
+**Verify:** Panning left dynamically loads older data for all 3 metrics; panning right stops at "now"; 60 s auto-refresh doesn't reset zoom. **0h-tick alignment guaranteed** by custom `splits` callback (no more "undefined" labels from chart.js auto-tick-rounding).
+
+### 21.5.1 TrendChart – UX polish (custom pan, manual sync, date anchor)
+
+| # | File | Content |
+|---|------|---------|
+| [x] 21.5.1.1 | `src/frontend/src/components/TrendChart.vue` | **Custom pan** via `panZoomPlugin`: mousedown (capture phase + `stopImmediatePropagation` so uPlot's own handler does not run), mousemove/mouseup on `window` so the gesture is not lost when the cursor leaves the chart. `cursor.drag: { setScale: false }` disables uPlot's box-zoom (which would otherwise steal left-drag and never trigger sync). Right-edge clamp against `capSec` so panning past "now" is blocked. |
+| [x] 21.5.1.2 | `src/frontend/src/components/TrendChart.vue` | **Manual X-axis sync** via `broadcastScale()`: setScale hook on the source chart calls it, it loops over the other two and calls `setScale('x', {min, max})`. `isPropagating` flag suppresses recursive broadcast + backfill in the sibling hooks. Replaces the old `uPlot.sync(SYNC_KEY)` approach, which only synced cursors, not scale. |
+| [x] 21.5.1.3 | `src/frontend/src/components/TrendChart.vue` | **Date anchor on the leftmost tick** when visible span `< 86400` s: label is `"dd.MM\nHH:mm"` so the user always knows which day they are zoomed into. uPlot's `values` callback splits on `\n` and renders each part on its own line. |
+| [x] 21.5.1.4 | `src/frontend/src/components/TrendChart.vue` | X-axis `rotate: 45`, `size: 60`; Y-axis `rotate: 0` (°C, pH, mg/l horizontal next to tick values). Chart container `height: 260px`, `CHART_HEIGHT = 260`. Outer template `space-y-10` (40 px between the three charts). |
+| [x] 21.5.1.5 | `src/frontend/src/components/TrendChart.vue` | dblclick resets all three charts to the 7-day window in one shot, wrapped in `isPropagating = true` so the per-chart setScale hook does not re-broadcast. |
+| [x] 21.5.1.6 | `src/.gitignore` | Ignore `test/*.png` so ad-hoc screenshots dropped into `test/` during development do not get tracked. |
 
 ### 21.6 LiveView UI – simplification
 
@@ -657,6 +668,37 @@ trend chart infinite-scroll history with synchronized zoom/pan.
 | [x] 21.7.2 | `test/test_analyze-image.http` | Refresh to match the latest endpoint contract |
 
 **Verify:** Fresh `docker compose up` succeeds; no permission errors writing to `/data/history/data.db`.
+
+
+---
+
+## Phase 22 – TrendChart: Touch Gestures
+
+Goal: Make the trend chart fully operable on touch devices (phone, tablet).
+The chart's `panZoomPlugin` only wired mouse events (`wheel`, `mousedown`,
+`mousemove`, `mouseup`); on touch, pan and zoom were completely dead. Add
+single-finger pan, two-finger pinch-zoom, and double-tap reset to the
+uPlot overlay (`.u-over`) so the chart matches the desktop behaviour.
+
+### 22.1 `TrendChart.vue` – touch handler
+
+| # | File | Content |
+|---|------|---------|
+| [x] 22.1.1 | `src/frontend/src/components/TrendChart.vue` | New `touchGestureHandler(u)` factory wired from the `ready` hook of `panZoomPlugin` after the existing mouse handlers. `touchstart`/`touchmove` are `passive: false` with `e.preventDefault()` so the browser does not steal the gesture as a scroll/pull-to-refresh. |
+| [x] 22.1.2 | `src/frontend/src/components/TrendChart.vue` | **Single-finger pan:** `touchstart` records `{ startX, startMin, startMax, rect }`. `touchmove` converts horizontal delta to a scale delta (`dVal = -(dx / rect.width) * range`) and calls `u.setScale('x', { min, max })` in a batch. The right edge is clamped against `capSec` so panning into the future is blocked, mirroring the mouse-pan clamp. |
+| [x] 22.1.3 | `src/frontend/src/components/TrendChart.vue` | **Two-finger pinch:** `touchstart` with `touches.length >= 2` records `{ startDist, centerX, centerVal, leftPct, startMin, startMax, rect }`. `touchmove` computes `factor = dist / startDist` and uses `nRange = oRange / factor` anchored at the pinch midpoint. Switching from 1 → 2 fingers drops any pending pan; the 2 → 1 transition ends the gesture (does not resume a pan, avoids accidental jumps). |
+| [x] 22.1.4 | `src/frontend/src/components/TrendChart.vue` | **Double-tap reset:** second `touchstart` within `DOUBLE_TAP_MS = 300` and within `TAP_SLOP_PX = 24` of the first tap triggers `resetAllCharts()` (the same routine used by the desktop `dblclick` listener). `lastTap` is cleared on every tap so a triple-tap does not chain into a double-tap. |
+| [x] 22.1.5 | `src/frontend/src/components/TrendChart.vue` | `resetAllCharts()` is now a module-scope helper used by both the `el.addEventListener('dblclick', …)` handler and the touch double-tap branch — single source of truth for the 7-day reset. |
+
+**Verify:** On a real phone the chart pans with one finger, zooms in/out by pinching, and double-tap returns to the 7-day window. The right edge never crosses "now".
+
+### 22.2 Tests
+
+| # | File | Content |
+|---|------|---------|
+| [x] 22.2.1 | `src/frontend/tests/TrendChart.spec.js` | New `describe('TrendChart touch gestures')` block. Uses `new Event('touchstart', …)` with a `touches` array (jsdom has no `Touch` constructor) dispatched on the chart's `.u-over` overlay. Cases: single-finger `touchstart` does not `preventDefault`; two-finger `touchstart` `preventDefault`s; second tap inside the 300 ms window at the same spot `preventDefault`s; `touchmove` `preventDefault`s for both pan and pinch; a tap far outside the 24 px slop window is treated as a fresh pan (not a double-tap). |
+
+**Verify:** `npm run test` green; 64/64 tests pass (was 59).
 
 
 ---

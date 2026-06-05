@@ -423,7 +423,7 @@ The frontend polls the backend every 30 seconds.
 | **Cl (side)** | Mean of last 5 raw samples in RAM | Number with "Ø 5 M." subtitle | Every 30 s |
 | **Main pump** | Current boolean in RAM | Large gear icon, label "HAUPTPUMPE", state "LÄUFT" (success) / "AUS" (slate) | Every 30 s |
 | **Solar pump** | Current boolean in RAM | Large sun icon, label "SOLARPUMPE", state "LÄUFT" (success) / "AUS" (slate) | Every 30 s |
-| **Trend chart** | Per-hour aggregates from SQLite | Chart.js line chart, 3 lines (temp, pH, cl), zoom/pan enabled | On pool change |
+| **Trend chart** | Per-hour aggregates from SQLite | uPlot, 3 separate panels (temp, pH, cl) with per-metric Y-axis, zoom/pan via mouse and touch (single-finger pan, two-finger pinch, double-tap reset) | On pool change |
 
 The temperature card is intentionally the visual focal point (largest number, ~64 px).
 pH and Cl side cards use the same number style at ~32 px.
@@ -472,6 +472,25 @@ No offline support: when the PWA cannot reach the backend, the last successful
 snapshot is discarded (no localStorage caching) and a red error banner is shown. The
 underlying data is always live in the backend, so reconnecting simply resumes the
 display. This avoids subtle bugs from showing stale data without a clear indicator.
+
+#### 3.7.8 Trend Chart Interaction (Mouse + Touch)
+
+The trend chart offers equivalent interaction on desktop and mobile, so a user can
+inspect historical data on the phone without losing precision to small touch targets.
+
+| Input | Desktop | Touch |
+|-------|---------|-------|
+| Zoom in / out | Mouse wheel (no modifier) over the chart | Two-finger pinch, anchored on the pinch midpoint |
+| Pan | Click + drag left / right (custom handler, cursor.drag.setScale = false) | One-finger drag |
+| Reset to 7-day window | Double-click on the chart | Double-tap on the chart (within 300 ms and 24 px of the previous tap) |
+| Cross-chart sync | The setScale hook on each chart propagates the new X range to the other two via a manual `broadcastScale()` call (sibling `setScale` hooks re-skip recursion via the `isPropagating` flag) | Same as desktop |
+
+All three charts share the same X range at all times; the Y axes are independent per
+metric (°C, pH unitless, mg/l). Panning right is clamped at "now" (the chart's right
+edge is capped at `capSec = max(now, last_data_point)`) so the user never sees an empty
+future. Panning left close to the oldest loaded point triggers a backfill fetch with
+`before_ts` for the next 7-day window; this repeats until the server returns no
+older rows.
 
 ---
 
