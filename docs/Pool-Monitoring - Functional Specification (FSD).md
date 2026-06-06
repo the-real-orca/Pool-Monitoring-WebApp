@@ -116,7 +116,7 @@ sequenceDiagram
     Caddy->>API: Forward
     API->>API: Validate token
     API->>API: Validate body (chemicalType, amount/unit)
-    API->>MQTT: Publish JSON to <pool-topic>/chem
+    API->>MQTT: Publish JSON to <base-topic>/chem
     API->>Caddy: 201 Created
     Caddy->>PWA: Success toast
 
@@ -380,7 +380,7 @@ dashboard fed by two MQTT topics per pool in `POOL_LIST`:
 - `home/<pool>/pool/pump` – pump payload `{mainPump, solarPump, time}` published by
   the ESP32 relay controller on every state change.
 
-The backend subscribes to both topics, holds a 5-sample ring buffer per metric in
+The backend subscribes to the wildcard topic `<base>/+` (which matches both the BLE sensor and pump device suffixes), holds a 5-sample ring buffer per metric in
 memory, and writes per-hour means plus pump-state changes to a local SQLite database.
 The frontend polls the backend every 30 seconds.
 
@@ -683,7 +683,7 @@ Settings are set via environment variables.
 | MQTT Server                  | text     | localhost        | MQTT server hostname                                               |
 | MQTT User                    | text     | -                | MQTT username                                                     |
 | MQTT Password                | password | -                | MQTT password                                                     |
-| POOL_LIST                    | JSON     | '[{"name":"Pool","topic":"pool/manual"}]' | JSON array mapping pool names to MQTT topics    |
+| POOL_LIST                    | JSON     | '[{"name":"Pool","topic":"pool"}]' | JSON array mapping pool names to MQTT base topics (see §4.3) |
 | AI_PROVIDER                  | text     | `""`             | One of `openrouter`, `openai`, `anthropic`, `gemini` (empty = disabled) |
 | AI_API_KEY                   | password | -                | API key for the chosen provider (kept server-side only)           |
 | AI_MODEL                     | text     | `google/gemini-3-flash-preview` | Concrete model identifier (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4`) |
@@ -706,8 +706,6 @@ Settings are set via environment variables.
 | MQTT_TOPIC_BASE              | text     | -                | Base topic for mqtt2mail fallback topic resolution                 |
 | MQTT_ALERT_TOPICS            | text     | -                | MQTT alert topics for mqtt2mail (comma-separated)                 |
 | MQTT_AVAILABILITY_TOPICS     | text     | -                | MQTT availability topics for mqtt2mail (comma-separated)         |
-| LIVE_TOPIC_BLE_TEMPLATE      | text     | `home/{pool}/pool/ble-yc01` | MQTT topic template for BLE sensor messages (`{pool}` is replaced by each `POOL_LIST` entry's `name`) |
-| LIVE_TOPIC_PUMP_TEMPLATE     | text     | `home/{pool}/pool/pump` | MQTT topic template for pump state messages                |
 | LIVE_AGGREGATION_WINDOW_MINUTES | int  | `60`             | Window in minutes for per-hour mean aggregation into SQLite     |
 | LIVE_RETENTION_DAYS          | int      | `90`             | Auto-cleanup age for `live_aggregates` and `pump_events` rows    |
 | LIVE_DB_PATH                 | path     | `/data/history/data.db` | SQLite database file location                              |
@@ -719,15 +717,21 @@ Settings are set via environment variables.
 
 ### 4.3 MQTT Integration
 
-Measurements are sent to the configured pool topic from `POOL_LIST`.
-Chemical update events are sent to the same pool topic with the suffix `/chem`.
+The `topic` field in each `POOL_LIST` entry is a **base topic** (no suffix).
+The backend publishes measurements to `<base>/manual` and chemical updates to
+`<base>/chem` (the `/chem` suffix is appended to the base topic).
+
+For inbound data, the backend subscribes to a single wildcard `<base>/+` per
+pool and inspects the JSON payload to distinguish measurement vs. pump
+messages. Devices publish on concrete suffixes under the base (e.g.
+`<base>/ble-yc01` for the BLE sensor, `<base>/pump` for the pump controller).
 
 Data is validated in the backend and a new JSON message is generated to prevent malformed data and code injection.
 
 Same validation ranges as the frontend (see frontend form field table).
-The MQTT topic is dynamically selected based on the submitted pool `name` mapping in `POOL_LIST`.
+The MQTT base topic is selected by matching the submitted pool `name` against the `name` field in `POOL_LIST`.
 
-Examples for `POOL_LIST` entry `{ "name": "Pool 1", "topic": "pool1/manual" }`:
+Examples for `POOL_LIST` entry `{ "name": "Pool 1", "topic": "pool1" }` (base topic):
 
 #### Measurement Example
 
@@ -750,7 +754,7 @@ Measurement payload example:
 
 #### Chemical update Example
 
-Chemical update topic: `pool1/manual/chem` (derived from the pool topic)
+Chemical update topic: `pool1/chem` (derived from the base topic by appending `/chem`)
 
 Chemical update payload example:
 
@@ -766,14 +770,19 @@ Chemical update payload example:
 
 #### Live-Data Subscription
 
-In addition to publishing, the backend **subscribes** to two topics per pool in
-`POOL_LIST`. The topics are derived from the templates below by substituting
-`{pool}` with the pool's `name` value.
+In addition to publishing, the backend **subscribes** to a single wildcard
+topic per pool in `POOL_LIST`: `<base>/+`, where `<base>` is the pool's base
+topic (the `topic` field in `POOL_LIST`). Devices publish on concrete suffixes
+under the base:
 
-| Purpose | Topic template (default) | Direction | QoS |
-|---------|--------------------------|-----------|-----|
-| BLE sensor | `home/{pool}/pool/ble-yc01` | inbound | 1 |
-| Pump state | `home/{pool}/pool/pump` | inbound | 1 |
+| Purpose | Concrete topic | Direction | QoS |
+|---------|----------------|-----------|-----|
+| BLE sensor | `<base>/ble-yc01` (e.g. `home/H32/pool/ble-yc01`) | inbound | 1 |
+| Pump state | `<base>/pump` (e.g. `home/H32/pool/pump`) | inbound | 1 |
+
+The backend does not dispatch on the topic suffix; it inspects the JSON payload
+to route recognised metric fields (`temp`, `pH`, `cl`) to the in-memory ring
+buffer and recognised pump fields (`mainPump`, `solarPump`) to the pump state.
 
 **BLE sensor payload** (published periodically by the ESP32 sensor, typically every
 30–60 s):

@@ -85,11 +85,11 @@ def test_flush_continues_after_failing_insert(tmp_path, monkeypatch):
     real_insert = db.insert_aggregate
     calls = {"n": 0}
 
-    def flaky(pool, metric, hour_start, value, n):
+    def flaky(pool, metric, timewindow_start, value, n):
         if metric == "temp":
             raise RuntimeError("disk full")
         calls["n"] += 1
-        return real_insert(pool, metric, hour_start, value, n)
+        return real_insert(pool, metric, timewindow_start, value, n)
 
     monkeypatch.setattr(aggregator.db, "insert_aggregate", flaky)
     a = aggregator.Aggregator(state, window_minutes=60)

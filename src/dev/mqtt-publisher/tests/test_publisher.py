@@ -21,8 +21,9 @@ SPEC.loader.exec_module(publisher)
 
 
 def test_ble_payload_has_required_fields():
+    publisher.POOL_BASE_TOPICS = {"Pool 1": "home/pool1"}
     topic, payload = publisher._ble_payload("Pool 1", tick=0)
-    assert topic == "home/Pool 1/pool/ble-yc01"
+    assert topic == "home/pool1/ble-yc01"
     for key in ("time", "name", "sensorType", "temp", "pH", "cl"):
         assert key in payload
     assert payload["name"] == "Pool 1"
@@ -37,6 +38,7 @@ def test_ble_payload_deterministic_with_seed():
     """Seeding the module-level rng must produce identical payloads."""
     import random as _random
 
+    publisher.POOL_BASE_TOPICS = {"Pool": "home/pool"}
     publisher.rng = _random.Random(42)
     _, p1 = publisher._ble_payload("Pool", tick=0)
     publisher.rng = _random.Random(42)
@@ -45,8 +47,9 @@ def test_ble_payload_deterministic_with_seed():
 
 
 def test_pump_payload_field_names():
+    publisher.POOL_BASE_TOPICS = {"Pool 1": "home/pool1"}
     topic, payload = publisher._pump_payload("Pool 1", tick=0)
-    assert topic == "home/Pool 1/pool/pump"
+    assert topic == "home/pool1/pump"
     assert set(payload.keys()) == {"time", "mainPump", "solarPump"}
     assert isinstance(payload["mainPump"], bool)
     assert isinstance(payload["solarPump"], bool)
@@ -54,15 +57,18 @@ def test_pump_payload_field_names():
 
 def test_pump_payload_toggles_with_tick():
     """PUMP_TOGGLE_EVERY=2 (set below) -> main flips every 2 ticks."""
+    publisher.POOL_BASE_TOPICS = {"Pool": "home/pool"}
     publisher.PUMP_TOGGLE_EVERY = 2
     states = [publisher._pump_payload("Pool", tick=t)[1]["mainPump"] for t in range(8)]
     assert states == [True, True, False, False, True, True, False, False]
 
 
-def test_pump_payload_uses_template_env(monkeypatch):
-    monkeypatch.setattr(publisher, "PUMP_TOPIC_TEMPLATE", "alt/{pool}/pump")
+def test_pump_payload_uses_per_pool_base_topic(monkeypatch):
+    """Override the base topic for a single pool and the published topic
+    must follow."""
+    publisher.POOL_BASE_TOPICS = {"Spa": "alt/spa"}
     topic, _ = publisher._pump_payload("Spa", tick=0)
-    assert topic == "alt/Spa/pump"
+    assert topic == "alt/spa/pump"
 
 
 # --- main loop ------------------------------------------------------------
@@ -124,6 +130,7 @@ def test_run_publishes_for_every_pool_every_tick():
     client.publish.side_effect = fake_publish
     publisher.INTERVAL_SECONDS = 1
     publisher.POOLS = ["PoolA", "PoolB"]
+    publisher.POOL_BASE_TOPICS = {"PoolA": "home/PoolA", "PoolB": "home/PoolB"}
 
     # Override run()'s internal stop dict by patching time.sleep so the loop
     # spins, then break out by raising from sleep once we have enough samples.
@@ -146,10 +153,10 @@ def test_run_publishes_for_every_pool_every_tick():
         time.sleep = orig_sleep
 
     topics = [t for t, _ in published]
-    assert topics.count("home/PoolA/pool/ble-yc01") == 3
-    assert topics.count("home/PoolA/pool/pump") == 3
-    assert topics.count("home/PoolB/pool/ble-yc01") == 3
-    assert topics.count("home/PoolB/pool/pump") == 3
+    assert topics.count("home/PoolA/ble-yc01") == 3
+    assert topics.count("home/PoolA/pump") == 3
+    assert topics.count("home/PoolB/ble-yc01") == 3
+    assert topics.count("home/PoolB/pump") == 3
     # Every published payload has the required keys.
     for _, payload in published:
         if "temp" in payload:  # BLE
@@ -161,6 +168,7 @@ def test_run_publishes_for_every_pool_every_tick():
 def test_run_calls_disconnect_on_exit():
     client = MagicMock()
     publisher.POOLS = ["Pool"]
+    publisher.POOL_BASE_TOPICS = {"Pool": "home/pool"}
     publisher.INTERVAL_SECONDS = 1
 
     orig_sleep = time.sleep

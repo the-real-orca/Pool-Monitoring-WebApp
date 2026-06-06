@@ -24,11 +24,37 @@ def _make_on_connect() -> Callable:
     return on_connect
 
 
+def _topic_matches(pattern: str, topic: str) -> bool:
+    """Match ``topic`` against a subscription ``pattern`` supporting ``+`` and ``#`` wildcards."""
+    p_parts = pattern.split("/")
+    t_parts = topic.split("/")
+    p_len = len(p_parts)
+    t_len = len(t_parts)
+    i = 0
+    while i < p_len:
+        p = p_parts[i]
+        if p == "#":
+            return True
+        if p == "+":
+            if i >= t_len:
+                return False
+            i += 1
+            continue
+        if i >= t_len or p != t_parts[i]:
+            return False
+        i += 1
+    return i == t_len
+
+
 def _on_message(c, userdata, msg):
     """Decode JSON payloads and dispatch to subscribed callbacks.
 
     Malformed payloads (non-JSON, JSON of wrong type) are logged and dropped
     so that a single bad publisher cannot take down the whole consumer.
+
+    Subscriptions may use MQTT wildcards (``+`` for a single level, ``#`` for
+    the remainder of the topic). The first matching subscription's callback
+    is invoked with the raw topic string and the decoded payload.
     """
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
@@ -40,7 +66,7 @@ def _on_message(c, userdata, msg):
         return
     logging.debug("MQTT recv: topic=%s payload=%s", msg.topic, payload)
     for topic, cb in _subscriptions:
-        if msg.topic == topic:
+        if _topic_matches(topic, msg.topic):
             try:
                 cb(msg.topic, payload)
             except Exception as e:

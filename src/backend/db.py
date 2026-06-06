@@ -22,14 +22,14 @@ _db_path: str | None = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS measurements (
-    pool          TEXT    NOT NULL,
-    metric        TEXT    NOT NULL,
-    hour_start    INTEGER NOT NULL,
-    value         REAL    NOT NULL,
-    sample_count  INTEGER NOT NULL,
-    PRIMARY KEY (pool, metric, hour_start)
+    pool            TEXT    NOT NULL,
+    metric          TEXT    NOT NULL,
+    timewindow_start INTEGER NOT NULL,
+    value           REAL    NOT NULL,
+    sample_count    INTEGER NOT NULL,
+    PRIMARY KEY (pool, metric, timewindow_start)
 );
-CREATE INDEX IF NOT EXISTS idx_measurements_hour ON measurements(hour_start);
+CREATE INDEX IF NOT EXISTS idx_measurements_window ON measurements(timewindow_start);
 
 CREATE TABLE IF NOT EXISTS pump_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS pump_events (
 CREATE INDEX IF NOT EXISTS idx_pump_events_time ON pump_events(time);
 CREATE INDEX IF NOT EXISTS idx_pump_events_pool_time ON pump_events(pool, time);
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent in-place migrations for older DB files.
+
+    - ``hour_start`` → ``timewindow_start`` rename (Phase 23.7.1).
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(measurements)").fetchall()}
+    if "hour_start" in cols and "timewindow_start" not in cols:
+        conn.execute(
+            "ALTER TABLE measurements RENAME COLUMN hour_start TO timewindow_start"
+        )
+        log.info("DB migration: renamed measurements.hour_start -> timewindow_start")
 
 
 def init_db(path: str) -> bool:
@@ -60,6 +73,7 @@ def init_db(path: str) -> bool:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        _migrate(conn)
         conn.executescript(SCHEMA)
     except Exception as e:
         log.error("init_db failed for %s: %s", path, e)
@@ -76,21 +90,21 @@ def _get_conn() -> sqlite3.Connection | None:
     return _conn
 
 
-def insert_aggregate(pool: str, metric: str, hour_start: int, value: float, n: int) -> None:
-    """Upsert one per-hour aggregate. ``INSERT OR REPLACE`` guarantees
-    exactly one row per (pool, metric, hour_start)."""
+def insert_aggregate(pool: str, metric: str, timewindow_start: int, value: float, n: int) -> None:
+    """Upsert one per-window aggregate. ``INSERT OR REPLACE`` guarantees
+    exactly one row per (pool, metric, timewindow_start)."""
     conn = _get_conn()
     if conn is None:
         return
     with _lock:
         conn.execute(
-            "INSERT OR REPLACE INTO measurements (pool, metric, hour_start, value, sample_count) "
+            "INSERT OR REPLACE INTO measurements (pool, metric, timewindow_start, value, sample_count) "
             "VALUES (?, ?, ?, ?, ?)",
-            (pool, metric, hour_start, value, n),
+            (pool, metric, timewindow_start, value, n),
         )
         log.debug(
-            "DB write: measurements pool=%s metric=%s hour_start=%s value=%.4f n=%d at %s",
-            pool, metric, hour_start, value, n, int(time.time()),
+            "DB write: measurements pool=%s metric=%s timewindow_start=%s value=%.4f n=%d at %s",
+            pool, metric, timewindow_start, value, n, int(time.time()),
         )
 
 
@@ -115,8 +129,8 @@ def get_aggregates(pool: str, metric: str, since_ts: int) -> list[dict[str, Any]
         return []
     with _lock:
         cur = conn.execute(
-            "SELECT hour_start, value, sample_count FROM measurements "
-            "WHERE pool = ? AND metric = ? AND hour_start >= ? ORDER BY hour_start ASC",
+            "SELECT timewindow_start, value, sample_count FROM measurements "
+            "WHERE pool = ? AND metric = ? AND timewindow_start >= ? ORDER BY timewindow_start ASC",
             (pool, metric, since_ts),
         )
         return [
@@ -135,9 +149,9 @@ def get_aggregates_range(
         return []
     with _lock:
         cur = conn.execute(
-            "SELECT hour_start, value, sample_count FROM measurements "
-            "WHERE pool = ? AND metric = ? AND hour_start >= ? AND hour_start < ? "
-            "ORDER BY hour_start ASC",
+            "SELECT timewindow_start, value, sample_count FROM measurements "
+            "WHERE pool = ? AND metric = ? AND timewindow_start >= ? AND timewindow_start < ? "
+            "ORDER BY timewindow_start ASC",
             (pool, metric, start_ts, end_ts),
         )
         return [
@@ -177,7 +191,7 @@ def cleanup_old_rows(retention_days: int) -> int:
         return 0
     cutoff = int(time.time()) - retention_days * 86400
     with _lock:
-        cur_a = conn.execute("DELETE FROM measurements WHERE hour_start < ?", (cutoff,))
+        cur_a = conn.execute("DELETE FROM measurements WHERE timewindow_start < ?", (cutoff,))
         cur_p = conn.execute("DELETE FROM pump_events WHERE time < ?", (cutoff,))
         return cur_a.rowcount + cur_p.rowcount
 

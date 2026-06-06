@@ -117,30 +117,26 @@ def unique_topics(topics: list[str]) -> list[str]:
 
 
 def resolve_topics() -> tuple[list[str], list[str], list[str]]:
-    data_topics = parse_topic_csv(env_str("MQTT_TOPICS"))
-    alert_topics = parse_topic_csv(env_str("MQTT_ALERT_TOPICS"))
-    availability_topics = parse_topic_csv(env_str("MQTT_AVAILABILITY_TOPICS"))
+    """Derive MQTT topic subscriptions purely from ``POOL_LIST``.
 
-    if not data_topics and not alert_topics and not availability_topics:
-        pool_topics = parse_pool_topics()
-        if pool_topics:
-            data_topics = pool_topics
-        else:
-            topic_base = normalize_topic(env_str("MQTT_TOPIC_BASE", "/esp32/sensor/ble-yc01"))
-            if topic_base:
-                data_topics = [topic_base]
-                alert_topics = [f"{topic_base}/alert"]
-                availability_topics = [f"{topic_base}/availability"]
-
-    if not alert_topics and data_topics:
-        for topic in data_topics:
-            if "#" not in topic:
-                alert_topics.append(f"{topic}/alert")
+    The ``topic`` of every pool entry is the **base** topic — the prefix of
+    every MQTT topic that pool uses. mqtt2mail subscribes once per pool
+    using the wildcard ``<base>/+`` so it sees both measurement and pump
+    messages; the ``on_message`` handler then inspects the JSON payload to
+    classify them. Alert topics are ``<base>/+/alert`` so the same
+    downstream consumer can subscribe to both. Availability topics are not
+    used in this project.
+    """
+    data_topics: list[str] = []
+    alert_topics: list[str] = []
+    for base in parse_pool_topics():
+        data_topics.append(f"{base}/+")
+        alert_topics.append(f"{base}/+/alert")
 
     return (
         unique_topics(data_topics),
         unique_topics(alert_topics),
-        unique_topics(availability_topics),
+        [],
     )
 
 
@@ -725,9 +721,9 @@ def main() -> None:
 
     if not mqtt_host:
         raise RuntimeError("MQTT_HOST must be configured")
-    if not data_topics and not alert_topics and not availability_topics:
+    if not data_topics and not alert_topics:
         raise RuntimeError(
-            "No MQTT topics configured. Set MQTT_TOPICS/MQTT_TOPIC_BASE/POOL_LIST."
+            "No MQTT topics configured. Set POOL_LIST with at least one pool entry."
         )
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=mqtt_client_id)

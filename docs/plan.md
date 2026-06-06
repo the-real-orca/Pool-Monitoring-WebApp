@@ -439,8 +439,8 @@ change. Frontend polls `GET /api/live` every 30 s; chart data comes from `GET /a
 
 | # | File | Content |
 |---|------|---------|
-| [x] 20.2.1 | `src/backend/db.py` | New module. `init_db(path)` opens SQLite, `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA foreign_keys=ON`, `check_same_thread=False`. Schema (idempotent `CREATE TABLE IF NOT EXISTS`): `live_aggregates(pool TEXT, metric TEXT, hour_start INTEGER, value REAL, sample_count INTEGER, PRIMARY KEY(pool,metric,hour_start))`; index on `hour_start`. `pump_events(id INTEGER PK AUTOINCREMENT, pool TEXT, pump TEXT, state INTEGER, time INTEGER, received_at INTEGER)`; index on `time`. Functions: `insert_aggregate(pool, metric, hour_start, value, n)`, `insert_pump_event(pool, pump, state, time, received_at)`, `get_aggregates(pool, metric, since_ts)`, `get_pump_events(pool, since_ts)`, `cleanup_old_rows(retention_days)`. A module-level `threading.Lock` serializes writes. |
-| [x] 20.2.2 | `src/backend/tests/test_db.py` | In-memory SQLite fixture (`tmp_path`); tests: schema creation idempotent, insert/get aggregate roundtrip, insert/get pump event roundtrip, cleanup deletes rows older than `retention_days`, primary-key conflict on duplicate `(pool, metric, hour_start)` is a no-op (UPSERT via `INSERT OR REPLACE`) |
+| [x] 20.2.1 | `src/backend/db.py` | New module. `init_db(path)` opens SQLite, `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA foreign_keys=ON`, `check_same_thread=False`. Schema (idempotent `CREATE TABLE IF NOT EXISTS`): `live_aggregates(pool TEXT, metric TEXT, timewindow_start INTEGER, value REAL, sample_count INTEGER, PRIMARY KEY(pool,metric,timewindow_start))`; index on `timewindow_start`. `pump_events(id INTEGER PK AUTOINCREMENT, pool TEXT, pump TEXT, state INTEGER, time INTEGER, received_at INTEGER)`; index on `time`. Functions: `insert_aggregate(pool, metric, timewindow_start, value, n)`, `insert_pump_event(pool, pump, state, time, received_at)`, `get_aggregates(pool, metric, since_ts)`, `get_pump_events(pool, since_ts)`, `cleanup_old_rows(retention_days)`. A module-level `threading.Lock` serializes writes. |
+| [x] 20.2.2 | `src/backend/tests/test_db.py` | In-memory SQLite fixture (`tmp_path`); tests: schema creation idempotent, insert/get aggregate roundtrip, insert/get pump event roundtrip, cleanup deletes rows older than `retention_days`, primary-key conflict on duplicate `(pool, metric, timewindow_start)` is a no-op (UPSERT via `INSERT OR REPLACE`) |
 
 **Verify:** `pytest -v src/backend/tests/test_db.py` green.
 
@@ -614,7 +614,7 @@ trend chart infinite-scroll history with synchronized zoom/pan.
 | # | File | Content |
 |---|------|---------|
 | [x] 21.3.1 | `src/backend/db.py` | New `get_aggregates_range(pool, metric, start_ts, end_ts)` |
-| [x] 21.3.2 | `src/backend/main.py` | `GET /api/history` accepts optional `before_ts` (ge=0); returns rows with `hour_start < before_ts` |
+| [x] 21.3.2 | `src/backend/main.py` | `GET /api/history` accepts optional `before_ts` (ge=0); returns rows with `timewindow_start < before_ts` |
 | [x] 21.3.3 | `src/frontend/src/composables/useApi.js` | `fetchHistory(pool, metric, days, beforeTs = null)` appends `&before_ts=…` |
 | [x] 21.3.4 | `src/backend/tests/test_db.py` | Roundtrip test for the bounded range query |
 
@@ -699,6 +699,145 @@ uPlot overlay (`.u-over`) so the chart matches the desktop behaviour.
 | [x] 22.2.1 | `src/frontend/tests/TrendChart.spec.js` | New `describe('TrendChart touch gestures')` block. Uses `new Event('touchstart', …)` with a `touches` array (jsdom has no `Touch` constructor) dispatched on the chart's `.u-over` overlay. Cases: single-finger `touchstart` does not `preventDefault`; two-finger `touchstart` `preventDefault`s; second tap inside the 300 ms window at the same spot `preventDefault`s; `touchmove` `preventDefault`s for both pan and pinch; a tap far outside the 24 px slop window is treated as a fresh pan (not a double-tap). |
 
 **Verify:** `npm run test` green; 64/64 tests pass (was 59).
+
+
+---
+
+## Phase 23 – MQTT Base-Topic Consolidation
+
+Goal: Replace the brittle topic-template model (`LIVE_TOPIC_BLE_TEMPLATE`,
+`LIVE_TOPIC_PUMP_TEMPLATE`, configurable `LIVE_PUMP_FIELD_*` field names, two
+separate handlers per pool) with a clean **base-topic model** where
+`POOL_LIST[].topic` is the **base** topic, the backend subscribes once per pool
+with a wildcard (`<base>/+`), and a single JSON-content-analysis handler
+dispatches measurements, pump state, and chem-data. mqtt2mail derives its
+subscriptions from `POOL_LIST` only; the mqtt-publisher uses a
+`POOL_BASE_TOPICS` dict with hard-coded suffixes. Pump field names
+(`mainPump`, `solarPump`, `time`) become hard-coded constants — no env
+override. One source of truth, one subscription per pool, one handler.
+
+### 23.1 Backend: Base-topic model + JSON content analysis
+
+Goal: Collapse BLE + pump handlers into a single content-driven dispatcher.
+`POOL_LIST[].topic` becomes the **base** (e.g. `home/H32/pool`); subscribe
+once to `<base>/+`; inspect the JSON payload to decide whether it is a
+measurement snapshot, a pump-state event, or chem-data (ignored on inbound).
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.1.1 | `src/backend/main.py` | Build `_base_to_pool_map: dict[str, str]` at startup from `POOL_LIST` (`base -> name`). Replace the two per-pool subscriptions with one `<base>/+` subscribe per pool, and drop `_handle_ble_message` / `_handle_pump_message`. New single handler `_handle_pool_message(client, userdata, msg)` looks up the pool by base prefix, then JSON-content-analyzes the payload: presence of `temp`/`pH`/`cl` → `live_state.push_sample(...)`; presence of `mainPump`/`solarPump` → `live_state.set_pump(...)` (+ `db.insert_pump_event(...)` on change); presence of `chem` data → log + ignore (chem is backend → outbound only). |
+| [x] 23.1.2 | `src/backend/main.py` | Pump field names hard-coded as module constants `PUMP_FIELD_MAIN = "mainPump"`, `PUMP_FIELD_SOLAR = "solarPump"`, `PUMP_FIELD_TIME = "time"`. Remove `LIVE_PUMP_FIELD_*` env reads. |
+| [x] 23.1.3 | `src/backend/main.py` | Publish topic for measurements becomes `<base>/manual` (was the full topic stored in `POOL_LIST[i].topic`); chemistry publish becomes `<base>/chem`. Both built from the same `POOL_LIST[i].topic` base + a fixed suffix. |
+| [x] 23.1.4 | `src/backend/main.py` | `MQTT_KEEPALIVE` moved to the General section (global, single value) — no longer pool-scoped. |
+
+**Verify:** `POOL_LIST=[{"name":"Pool","topic":"pool"}]` makes the backend
+subscribe to `pool/+` only; publishing to `pool/ble-yc01`, `pool/pump`, or
+any other sub-topic is dispatched by content, not by topic name. Chem-data
+payloads on inbound are logged and dropped. Measurement + chemistry POST
+endpoints publish to `pool/manual` and `pool/chem` respectively.
+
+### 23.2 Backend: Wildcard dispatch in `mqtt.py`
+
+Goal: Make the MQTT layer explicitly support per-pool wildcard
+subscriptions (`+`, `#`) and deliver only matching messages to handlers.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.2.1 | `src/backend/mqtt.py` | Add `_topic_matches(pattern: str, topic: str) -> bool` implementing MQTT wildcard semantics: exact match; `+` matches a single level; `#` matches zero or more trailing levels and must be the last token. Use it in `on_message` to filter incoming messages against all registered `(pattern, handler)` subscriptions, dispatching only on a match. |
+| [x] 23.2.2 | `src/backend/mqtt.py` | Keep `subscribe(pattern, on_message)` API: patterns are stored verbatim (including `+` / `#`) and re-subscribed on reconnect. Multiple handlers may register overlapping patterns; first-match-wins dispatch. |
+| [x] 23.2.3 | `src/backend/tests/test_mqtt.py` | Wildcard tests: `+` matches one level only (rejects deeper); `#` matches the rest; `#` not at the end is rejected; exact-match still works; non-matching topic is dropped. |
+
+**Verify:** `pytest -v src/backend/tests/test_mqtt.py` green; a publish to
+`pool/ble-yc01` is delivered to the pool handler, a publish to
+`pool/some/unknown/deeper/topic` matches `#` and is delivered, but a
+publish to `other/ble-yc01` is dropped.
+
+### 23.3 Backend: Validations (pool name + base topic, `RESERVED_SUFFIXES`)
+
+Goal: Harden the base-topic model against malformed `POOL_LIST` entries
+and topic-injection at the L3 boundary.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.3.1 | `src/backend/main.py` | New `_is_valid_pool_name(name: str) -> bool`: non-empty, length ≤ 50, matches `^[A-Za-z0-9 _.-]+$` (mirrors the FSD/TSD identifier rules). |
+| [x] 23.3.2 | `src/backend/main.py` | New `_is_valid_base_topic(topic: str) -> bool`: non-empty, no whitespace, no MQTT wildcards (`+`, `#`), no `$` (system-topic prefix), no leading `/`, no trailing `/`. Rejects anything that could be used to subscribe to unintended topics. |
+| [x] 23.3.3 | `src/backend/main.py` | Module constant `RESERVED_SUFFIXES = ("manual", "chem", "pump")`. Pool names are rejected if they equal a reserved suffix (case-insensitive). This guarantees `<base>/manual`, `<base>/chem`, `<base>/pump` are always unambiguous publish/subscribe targets. |
+| [x] 23.3.4 | `src/backend/main.py` | `POOL_LIST` parsing: on any invalid entry, log a clear error and **skip** the entry (do not crash startup). The summary log line lists accepted and rejected pools with reasons. |
+| [x] 23.3.5 | `src/backend/tests/test_handlers.py` | Rewritten for JSON content analysis: one handler covers BLE + pump payloads; cases: measurement (temp/pH/cl) → `push_sample` called once per metric; pump (mainPump/solarPump) → `set_pump` called with correct field name; chem payload → ignored; unknown payload shape → ignored with warning; handler errors do not break the MQTT loop. |
+| [x] 23.3.6 | `src/backend/tests/test_api.py` (or new `test_validators.py`) | Validators: valid pool name passes; empty / too long / special chars rejected; valid base topic passes; base topic with `+`, `#`, `$`, whitespace, leading/trailing `/` rejected; reserved-suffix name rejected. |
+
+**Verify:** `POOL_LIST=[{"name":"manual","topic":"home/x/pool"}]` is rejected
+at startup with a clear log line; `POOL_LIST=[{"name":"Pool","topic":"home/
+pool/+"}]` is rejected. Valid configs pass through untouched.
+
+### 23.4 mqtt2mail: Single `POOL_LIST` source of truth
+
+Goal: Remove the redundant topic-override env vars
+(`MQTT_TOPICS`, `MQTT_ALERT_TOPICS`, `MQTT_AVAILABILITY_TOPICS`,
+`MQTT_TOPIC_BASE`). Subscriptions are derived from `POOL_LIST` only.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.4.1 | `src/mqtt2mail/app/mqtt2mail.py` | New `resolve_topics(pool_list: list[dict]) -> dict` returns `{data: [...], alerts: [...], availability: [...]}`. Data topics: each `<base>/+`. Alert topics: each `<base>/+/alert`. Availability: empty list (kept as a key for future use, e.g. `<base>/+/availability`). Wildcard `+` is supported by paho `subscribe`. |
+| [x] 23.4.2 | `src/mqtt2mail/app/mqtt2mail.py` | Remove the priority chain `MQTT_TOPICS*` → `POOL_LIST` → `MQTT_TOPIC_BASE`. Only `POOL_LIST` is consulted. Remove the related env reads and fallback logic. |
+| [x] 23.4.3 | `src/mqtt2mail/.env.example` | Delete `MQTT_TOPICS`, `MQTT_ALERT_TOPICS`, `MQTT_AVAILABILITY_TOPICS`, `MQTT_TOPIC_BASE`. Document the new contract: "subscriptions are derived from `POOL_LIST` only — one `<base>/+` and one `<base>/+/alert` per pool". |
+
+**Verify:** With `POOL_LIST=[{"name":"Pool","topic":"home/H32/pool"}]`,
+mqtt2mail subscribes to `home/H32/pool/+` and `home/H32/pool/+/alert`; an
+alert published to `home/H32/pool/pump/alert` is delivered; a message on
+`home/other/pool/+` is not.
+
+### 23.5 mqtt-publisher: `POOL_BASE_TOPICS` dict
+
+Goal: Replace the template-based publisher config
+(`BLE_TOPIC_TEMPLATE`, `PUMP_TOPIC_TEMPLATE`, `POOLS`) with a clean
+`POOL_BASE_TOPICS` dict and hard-coded suffixes.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.5.1 | `src/dev/mqtt-publisher/publisher.py` | New env `POOL_BASE_TOPICS` parsed as a dict `{"<name>": "<base>"}` (e.g. `Pool=home/H32/pool`). Internal `BLE_SUFFIX = "ble-yc01"`, `PUMP_SUFFIX = "pump"` — no env override. Publish functions take a pool name and select the matching base, then build `<base>/ble-yc01` or `<base>/pump`. |
+| [x] 23.5.2 | `src/dev/mqtt-publisher/publisher.py` | Remove `BLE_TOPIC_TEMPLATE` and `PUMP_TOPIC_TEMPLATE` env reads. CLI / one-shot publish paths now use the dict. |
+| [x] 23.5.3 | `src/dev/mqtt-publisher/tests/test_publisher.py` | Updated for the new dict input: `POOL_BASE_TOPICS={"Pool":"home/H32/pool"}` resolves to `home/H32/pool/ble-yc01` and `home/H32/pool/pump`; unknown pool name is rejected; malformed dict (missing `=`) raises a clear error. |
+| [x] 23.5.4 | `src/dev/mqtt-publisher/README.md` | (Updated by parallel sub-agent) Documents the new `POOL_BASE_TOPICS` env format and the fixed suffixes. |
+
+**Verify:** `python publisher.py --pool Pool --kind ble` publishes to
+`home/H32/pool/ble-yc01`; `--kind pump` publishes to `home/H32/pool/pump`.
+`pytest -v` in the publisher dir is green (11/11).
+
+### 23.6 Infrastructure: docker-compose, .env.example consolidation
+
+Goal: Align the runtime configuration files with the new model. Remove
+the working-comment file, drop the override block from mqtt2mail_pool,
+and have mqtt-publisher consume `POOL_LIST` instead of its own template
+envs.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 23.6.1 | `src/.env.example` | Consolidated: `POOL_LIST` entries now use the **base** form (e.g. `{"name":"Pool","topic":"home/H32/pool"}`); `MQTT_KEEPALIVE` lives in the General block; old `LIVE_TOPIC_*_TEMPLATE` and `LIVE_PUMP_FIELD_*` lines removed. |
+| [x] 23.6.2 | `src/.env.example-comment` | **Deleted** — the long inline working comment was promoted into the real `.env.example` and is no longer needed. |
+| [x] 23.6.3 | `src/.env` | Updated structure to match `.env.example`. Local test `POOL_LIST` keeps `topic=pool/manual` for backward compat with existing test data on the broker. |
+| [x] 23.6.4 | `src/.env_production` | Updated to the new base-topic format: `POOL_LIST=[{"name":"Pool","topic":"home/H32/pool"}]`. |
+| [x] 23.6.5 | `src/docker-compose.yml` | mqtt2mail_pool service: `MQTT_TOPICS`/`MQTT_ALERT_TOPICS`/`MQTT_AVAILABILITY_TOPICS` env override removed — it now reads `POOL_LIST` from the shared `.env` like every other service. |
+| [x] 23.6.6 | `src/docker-compose.yml` | mqtt-publisher service: drop `BLE_TOPIC_TEMPLATE` / `PUMP_TOPIC_TEMPLATE` env entries; add `POOL_LIST` so the publisher uses the shared pool config. |
+
+**Verify:** `docker compose config` clean (no warnings about unset
+variables, no orphan env entries); `grep -R 'LIVE_TOPIC_\|LIVE_PUMP_FIELD_\|
+BLE_TOPIC_TEMPLATE\|PUMP_TOPIC_TEMPLATE' src/` returns zero hits.
+
+### 23.7 Tests (backend 165, frontend 64, publisher 11)
+
+Goal: Keep all three test suites green after the refactor and document
+the new totals.
+
+| # | Suite | Result |
+|---|-------|--------|
+| [x] 23.7.1 | Backend (`src/backend`) | `pytest -v` → **165/165** green (was 132; new: wildcard dispatch, validator cases, content-analysis handler cases, no broken old BLE/pump tests). |
+| [x] 23.7.2 | Frontend (`src/frontend`) | `npm run test` → **64/64** green (unchanged from Phase 22; no frontend code touched in this refactor). |
+| [x] 23.7.3 | Publisher (`src/dev/mqtt-publisher`) | `pytest -v` → **11/11** green (new dict-based config cases). |
+
+**Verify:** `cd src/backend && pytest -v` → 165 passed, 0 failed.
+`cd src/frontend && npm run test` → 64 passed, 0 failed.
+`cd src/dev/mqtt-publisher && pytest -v` → 11 passed, 0 failed.
 
 
 ---

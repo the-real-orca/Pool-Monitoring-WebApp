@@ -12,10 +12,11 @@ Every file, abstraction, and dependency must justify its place.
 
 **v1 scope:** Measurement form + chemistry update form -> MQTT publish. No database access, no dashboard.
 
-**Phase 20 scope (Live Data):** Backend additionally subscribes to BLE sensor + pump
-MQTT topics for every pool in `POOL_LIST`, aggregates per-hour means into SQLite, and
-serves a Live dashboard (current temperature, 5-sample mean of pH/Cl, pump status,
-7-day trend chart) via new REST endpoints.
+**Phase 20 scope (Live Data):** For every pool in `POOL_LIST` the backend subscribes
+to a single wildcard `<base>/+` derived from each pool's base topic, dispatches
+incoming messages by JSON content (measurement / pump / chemistry), aggregates
+per-hour means into SQLite, and serves a Live dashboard (current temperature,
+5-sample mean of pH/Cl, pump status, 7-day trend chart) via new REST endpoints.
 
 ---
 
@@ -1447,14 +1448,14 @@ _conn: sqlite3.Connection | None = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS live_aggregates (
-    pool         TEXT NOT NULL,
-    metric       TEXT NOT NULL,
-    hour_start   INTEGER NOT NULL,
-    value        REAL NOT NULL,
-    sample_count INTEGER NOT NULL,
-    PRIMARY KEY (pool, metric, hour_start)
+    pool             TEXT NOT NULL,
+    metric           TEXT NOT NULL,
+    timewindow_start INTEGER NOT NULL,
+    value            REAL NOT NULL,
+    sample_count     INTEGER NOT NULL,
+    PRIMARY KEY (pool, metric, timewindow_start)
 );
-CREATE INDEX IF NOT EXISTS idx_live_agg_time ON live_aggregates(hour_start);
+CREATE INDEX IF NOT EXISTS idx_live_agg_time ON live_aggregates(timewindow_start);
 
 CREATE TABLE IF NOT EXISTS pump_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1476,16 +1477,18 @@ def init_db(path: str) -> None:
     _conn.executescript(SCHEMA)
     _conn.commit()
 
-def insert_aggregate(pool, metric, hour_start, value, sample_count) -> None: ...
+def insert_aggregate(pool, metric, timewindow_start, value, sample_count) -> None: ...
 def insert_pump_event(pool, pump, state, time, received_at) -> None: ...
 def get_aggregates(pool, metric, since_ts) -> list[dict]: ...
 def get_pump_events(pool, since_ts) -> list[dict]: ...
 def cleanup_old_rows(retention_days: int) -> int: ...
 ```
 
-The `INSERT OR REPLACE` upsert on the composite primary key `(pool, metric, hour_start)`
-makes the hourly rollup idempotent – a re-run of an already-aggregated hour overwrites
-the previous row.
+The `INSERT OR REPLACE` upsert on the composite primary key `(pool, metric, timewindow_start)`
+makes the window rollup idempotent – a re-run of an already-aggregated window overwrites
+the previous row. The window length is `LIVE_AGGREGATION_WINDOW_MINUTES` (default 60), so
+with the default config the values are still full-hour aligned; with shorter windows the
+column holds HH:00 / HH:15 / HH:30 / HH:45 etc. — hence the more precise name.
 
 ### 5.12 `live_state.py` – In-Memory State (Phase 20)
 
@@ -1566,11 +1569,53 @@ def _on_connect(client, userdata, flags, rc, properties=None) -> None:
         log.info("MQTT connected, re-subscribed to %d topics", len(_subscriptions))
 ```
 
-Topic strings are constructed once at startup via
-`LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)` and
-`LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)` for every name in `POOL_LIST`. No wildcards
-are used – explicit subscriptions keep broker-side diagnostics simple and prevent
-unintended cross-traffic.
+Topic strings are constructed once at startup from each pool's `topic` field in
+`POOL_LIST`, which is now treated as a **base topic** (e.g. `home/pool1`).
+The backend subscribes to exactly one wildcard per pool — `<base>/+` — and
+registers a single callback `_handle_pool_message(topic, payload)` that
+distinguishes measurement, pump-state, and chemistry messages by inspecting
+the JSON payload (see 5.14.1). Wildcard matching is performed by
+`mqtt._topic_matches(pattern, topic)`, which supports the `+` (single-level) and
+`#` (multi-level) MQTT wildcards. Reconnect re-subscribes the same set via
+`_on_connect`, so the subscription set survives a broker bounce.
+
+#### 5.14.1 Handler Dispatch Logic
+
+Because the backend subscribes with a single wildcard per pool, the same
+`_handle_pool_message` callback receives **all** messages on `<base>/+`
+(measurements, pump state, and chemistry events from the application
+backend). Dispatch is therefore content-driven, not topic-driven:
+
+- **Pool resolution.** `_resolve_pool_for_topic(topic)` walks the
+  `_base_to_pool_map` (built once in lifespan from `POOL_LIST`) and returns
+  the pool name whose base topic is a prefix of the incoming topic. The
+  map keys are concrete base topics (no wildcards) and the values are
+  validated pool names. A topic that matches no known base, or whose
+  resolved pool is not in `POOL_NAMES`, is dropped.
+- **Measurement payload.** If the JSON contains any of `VALID_METRICS`
+  (`temp`, `pH`, `cl`) with a non-null value, the value is coerced to
+  `float` and pushed into `LiveState` via `push_sample`. Unknown numeric
+  fields are silently ignored.
+- **Pump payload.** Pump state is identified by the **hard-coded** field
+  names `mainPump` and `solarPump` (declared as `PUMP_FIELDS` constants in
+  `main.py`). A `time` field is used as the event timestamp when present,
+  otherwise `int(time.time())` is substituted. The booleans go through
+  `_strict_bool`, which rejects values other than `0`/`1`/`true`/`false`
+  (and the obvious aliases) so a single bad publisher cannot poison state.
+- **Chemistry payload.** A payload containing `chemicalType`, `amount`,
+  `unit` originates from this same backend (POST `/api/chem`) and is
+  ignored at the live-data layer — the ring buffer does not store
+  chemistry events.
+- **Throttling.** A real boolean change in pump state writes a
+  `pump_events` row, but only if at least `LIVE_PUMP_MIN_EVENT_INTERVAL`
+  seconds have passed since the last persisted event for that pool. The
+  in-memory `LiveState` is updated on **every** publish, so the UI is
+  always current; only the DB write is throttled (M2).
+
+The field names are intentionally hard-coded rather than env-configurable:
+they are part of the wire protocol between the ESP firmware and the backend
+and must match in lock-step, so making them configurable would just add
+configuration drift without benefit.
 
 ### 5.15 New Live-Data Endpoints (Phase 20)
 
@@ -1846,7 +1891,8 @@ services:
       - mosquitto
     environment:
       TZ: ${TZ:-Europe/Vienna}
-      MQTT_TOPICS: "home/H32/pool/+"
+      # MQTT_TOPICS is no longer set explicitly — mqtt2mail derives
+      # its subscription set from POOL_LIST (<base>/+ per pool).
     deploy:
       resources:
         limits:
@@ -1985,31 +2031,27 @@ Caddy automatically obtains and renews a Let's Encrypt certificate for `pool.io1
 ### 6.4 `.env.example`
 
 ```env
+# === General ===
+LOG_LEVEL=INFO
+TZ=Europe/Vienna
+FRONTEND_URL=https://pool.example.org
 API_TOKEN=change-me-to-a-secure-random-token
+# POOL_LIST: list of {name, topic}. ``topic`` is the BASE topic for the pool;
+# the backend publishes <base>/manual and <base>/chem, the backend + mqtt2mail
+# subscribe to <base>/+ and inspect the JSON payload to distinguish
+# measurement / pump / chemistry messages.
+POOL_LIST=[{"name":"Pool 1","topic":"home/pool1"}, {"name":"Pool 2","topic":"home/pool2"}]
 
+# === MQTT Broker ===
 MQTT_HOST=mosquitto
 MQTT_PORT=1883
 MQTT_TLS=false
+MQTT_TLS_INSECURE=false
 MQTT_USER=
 MQTT_PASS=
+MQTT_KEEPALIVE=60
 
-POOL_LIST=[{"name":"Pool 1","topic":"pool1/manual"}, {"name":"Pool 2","topic":"pool2/manual"}]
-
-FRONTEND_URL=https://pool.example.org
-
-# === Live Data (Phase 20) ===
-# Subscription topics are built from POOL_LIST by .format(pool=<name>).
-LIVE_TOPIC_BLE_TEMPLATE=home/{pool}/pool/ble-yc01
-LIVE_TOPIC_PUMP_TEMPLATE=home/{pool}/pool/pump
-LIVE_AGGREGATION_WINDOW_MINUTES=60
-LIVE_RETENTION_DAYS=90
-LIVE_DB_PATH=/data/history/data.db
-LIVE_SAMPLE_RING_SIZE=5
-LIVE_STALE_AFTER_SECONDS=600
-LIVE_PUMP_FIELD_MAIN=mainPump
-LIVE_PUMP_FIELD_SOLAR=solarPump
-LIVE_PUMP_FIELD_TIME=time
-
+# === AI Image Analytics ===
 AI_PROVIDER=openrouter
 AI_API_KEY=
 AI_MODEL=google/gemini-3-flash-preview
@@ -2019,30 +2061,41 @@ AI_IMAGE_STORAGE_PATH=/data/ai
 AI_IMAGE_RETENTION_DAYS=30
 AI_MAX_IMAGE_BYTES=10485760
 
-# mqtt2mail (optional report service)
+# === mqtt2mail (optional report service) ===
 # Entweder REPORT_TIMES (fixe Uhrzeiten) oder REPORT_INTERVAL_MINUTES (Intervall):
 REPORT_TIMES=09:00,12:00,16:00
-# REPORT_INTERVAL_MINUTES=15  # nur als Fallback wenn REPORT_TIMES leer
-SEND_EMPTY_REPORT=false
-MAIL_SUBJECT=Pool Overview
-MAIL_TO=
+# REPORT_INTERVAL_MINUTES=15  # als Fallback wenn REPORT_TIMES leer
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_STARTTLS=true
 SMTP_USERNAME=
 SMTP_PASSWORD=
+MAIL_SUBJECT="Pool Overview"
 MAIL_FROM=
+MAIL_TO=
+SEND_EMPTY_REPORT=false
 
-# Optional MQTT overrides for mqtt2mail.
-# If MQTT_TOPICS is empty, mqtt2mail derives topics from POOL_LIST.
-MQTT_TOPICS=
-MQTT_ALERT_TOPICS=
-MQTT_AVAILABILITY_TOPICS=
+# === Live Data (Phase 20) ===
+# The backend subscribes to <base>/+ for every entry in POOL_LIST; concrete
+# topic suffixes are: <base>/ble-yc01 (sensor), <base>/pump (pump status),
+# <base>/manual + <base>/chem (publish-only). Pump field names are fixed:
+# mainPump, solarPump, time.
+LIVE_AGGREGATION_WINDOW_MINUTES=60
+LIVE_RETENTION_DAYS=90
+LIVE_DB_PATH=/data/history/data.db
+LIVE_SAMPLE_RING_SIZE=5
+LIVE_STALE_AFTER_SECONDS=600
+LIVE_PUMP_MIN_EVENT_INTERVAL=5
 ```
 
 **Note:** `MQTT_PORT=1883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
 `FRONTEND_URL` is used by the backend CORS middleware – set to the production domain.
-`LIVE_TOPIC_*_TEMPLATE` placeholders are expanded at startup; `{pool}` is replaced by each `POOL_LIST` entry's `name` value.
+All MQTT topics are derived from `POOL_LIST` at startup: the publish targets are
+`<base>/manual` (measurements) and `<base>/chem` (chemistry); the subscription
+pattern is `<base>/+` (single wildcard per pool). mqtt2mail subscribes to the
+same `<base>/+` set automatically — there is no `MQTT_TOPICS` override any
+more. Pump field names (`mainPump`, `solarPump`, `time`) are part of the wire
+protocol and are therefore hard-coded in `main.py`, not env-configurable.
 
 ---
 
@@ -2200,8 +2253,10 @@ Topic resolution reuses pool mapping from `POOL_LIST` and appends `/chem`.
 
 Example:
 
-- pool topic: `pool1/manual`
-- chemistry topic: `pool1/manual/chem`
+- base topic: `pool1` (from `POOL_LIST`)
+- measurement topic: `pool1/manual` (publish only)
+- chemistry topic:   `pool1/chem`   (publish only)
+- subscription:      `pool1/+`      (single wildcard, shared with mqtt2mail)
 
 Payload example (no `sensorType`):
 

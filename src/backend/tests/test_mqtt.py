@@ -125,6 +125,66 @@ def test_on_message_routes_to_correct_topic_only():
     assert b_received == []
 
 
+def test_on_message_dispatches_wildcard_plus():
+    """``+`` matches a single topic level (MQTT wildcard)."""
+    mqtt.clear_subscriptions()
+    received = []
+    mqtt.subscribe("home/Pool/+", lambda t, p: received.append((t, p)))
+    msg = MagicMock()
+    msg.topic = "home/Pool/ble-yc01"
+    msg.payload = b'{"temp": 1.0}'
+    mqtt._on_message(None, None, msg)
+    msg.topic = "home/Pool/pump"
+    msg.payload = b'{"mainPump": true}'
+    mqtt._on_message(None, None, msg)
+    msg.topic = "home/Other/pool/ble-yc01"
+    msg.payload = b'{"temp": 2.0}'
+    mqtt._on_message(None, None, msg)
+    assert received == [
+        ("home/Pool/ble-yc01", {"temp": 1.0}),
+        ("home/Pool/pump", {"mainPump": True}),
+    ]
+
+
+def test_on_message_dispatches_wildcard_hash():
+    """``#`` matches the remainder of the topic."""
+    mqtt.clear_subscriptions()
+    received = []
+    mqtt.subscribe("home/Pool/#", lambda t, p: received.append(t))
+    for topic, payload in [
+        ("home/Pool/ble-yc01", b'{"temp": 1.0}'),
+        ("home/Pool/pump", b'{"mainPump": true}'),
+        ("home/Pool/chem", b'{"chemicalType": "chlorine"}'),
+    ]:
+        msg = MagicMock()
+        msg.topic = topic
+        msg.payload = payload
+        mqtt._on_message(None, None, msg)
+    assert received == ["home/Pool/ble-yc01", "home/Pool/pump", "home/Pool/chem"]
+
+
+def test_on_message_wildcard_does_not_match_unrelated_prefix():
+    mqtt.clear_subscriptions()
+    received = []
+    mqtt.subscribe("home/Pool/+", lambda t, p: received.append(t))
+    msg = MagicMock()
+    msg.topic = "home/Other/pool/ble-yc01"
+    msg.payload = b'{"temp": 1.0}'
+    mqtt._on_message(None, None, msg)
+    assert received == []
+
+
+def test_on_message_concrete_subscription_does_not_match_unrelated_topic():
+    mqtt.clear_subscriptions()
+    received = []
+    mqtt.subscribe("home/Pool/pump", lambda t, p: received.append(t))
+    msg = MagicMock()
+    msg.topic = "home/Pool/ble-yc01"
+    msg.payload = b'{"temp": 1.0}'
+    mqtt._on_message(None, None, msg)
+    assert received == []
+
+
 def test_disconnect_does_not_raise_unbound_local_error():
     """Regression: disconnect() must declare ``global _client``, otherwise
     the ``_client = None`` assignment makes the earlier ``if _client:``

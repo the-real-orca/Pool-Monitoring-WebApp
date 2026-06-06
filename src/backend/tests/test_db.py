@@ -22,7 +22,7 @@ def test_init_creates_schema(tmp_path):
         names = {r[0] for r in rows}
         assert "measurements" in names
 
-        assert "idx_measurements_hour" in names
+        assert "idx_measurements_window" in names
         assert "idx_pump_events_time" in names
         assert "idx_pump_events_pool_time" in names
     finally:
@@ -34,6 +34,62 @@ def test_init_is_idempotent(tmp_path):
     # Calling init_db again must not raise and must leave schema intact.
     assert db.init_db(str(tmp_path / "data.db"))
     assert db.is_configured()
+
+
+def test_migrates_hour_start_to_timewindow_start(tmp_path):
+    """An older DB with the legacy ``hour_start`` column must be migrated
+    in place: the column is renamed, existing rows preserved, and the
+    new index installed. Re-running init_db must be a no-op."""
+    db_path = str(tmp_path / "data.db")
+    db.close()
+    # Hand-craft the old schema and seed one row, bypassing db.init_db.
+    legacy = sqlite3.connect(db_path)
+    legacy.executescript(
+        """
+        CREATE TABLE measurements (
+            pool          TEXT    NOT NULL,
+            metric        TEXT    NOT NULL,
+            hour_start    INTEGER NOT NULL,
+            value         REAL    NOT NULL,
+            sample_count  INTEGER NOT NULL,
+            PRIMARY KEY (pool, metric, hour_start)
+        );
+        CREATE INDEX idx_measurements_hour ON measurements(hour_start);
+
+        CREATE TABLE pump_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool        TEXT    NOT NULL,
+            pump        TEXT    NOT NULL,
+            state       INTEGER NOT NULL,
+            time        INTEGER NOT NULL,
+            received_at INTEGER NOT NULL
+        );
+        """
+    )
+    legacy.execute(
+        "INSERT INTO measurements VALUES (?, ?, ?, ?, ?)",
+        ("H32", "temp", 1700000000, 24.6, 5),
+    )
+    legacy.commit()
+    legacy.close()
+
+    assert db.init_db(db_path)
+    cols = {row[1] for row in
+            sqlite3.connect(db_path).execute("PRAGMA table_info(measurements)").fetchall()}
+    assert "timewindow_start" in cols
+    assert "hour_start" not in cols
+
+    # Existing row must still be readable via the new column name.
+    rows = db.get_aggregates("H32", "temp", 0)
+    assert rows == [{"t": 1700000000, "v": 24.6, "n": 5}]
+
+    # And the new aggregate upsert path must keep working.
+    db.insert_aggregate("H32", "temp", 1700003600, 25.1, 6)
+    rows = db.get_aggregates("H32", "temp", 0)
+    assert len(rows) == 2
+
+    # Idempotent: second init_db() call must not fail.
+    assert db.init_db(db_path)
 
 
 def test_insert_and_get_aggregate_roundtrip(tmp_path):
@@ -62,7 +118,7 @@ def test_get_aggregates_since_filter(tmp_path):
 
 
 def test_aggregate_upsert_replaces(tmp_path):
-    """Inserting twice for the same (pool, metric, hour_start) is a no-op
+    """Inserting twice for the same (pool, metric, timewindow_start) is a no-op
     overwrite — the last value wins."""
     _fresh_db(tmp_path)
     db.insert_aggregate("H32", "temp", 1700000000, 24.0, 1)

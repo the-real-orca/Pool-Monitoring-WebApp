@@ -51,7 +51,6 @@ services:
     # Optional: set timezone inside the container for local timestamps
     environment:
       TZ: ${TZ:-Europe/Vienna}
-      MQTT_TOPICS: "home/H32/pool/+"
     deploy:
       resources:
         limits:
@@ -74,9 +73,8 @@ services:
 #      MQTT_PASS: ${MQTT_PASS:-}
 #      MQTT_TLS: ${MQTT_TLS:-false}
 #      MQTT_TLS_INSECURE: ${MQTT_TLS_INSECURE:-false}
-      BLE_TOPIC_TEMPLATE: ${LIVE_TOPIC_BLE_TEMPLATE:-home/{pool}/pool/ble-yc01}
-      PUMP_TOPIC_TEMPLATE: ${LIVE_TOPIC_PUMP_TEMPLATE:-home/{pool}/pool/pump}
-      POOLS: ${DEBUG_PUBLISHER_POOLS:-["Pool 1", "Pool 2"]}
+      POOL_LIST: ${POOL_LIST:-}
+      POOLS: ${POOLS:-["Pool 1", "Pool 2"]}
       INTERVAL_SECONDS: ${DEBUG_PUBLISHER_INTERVAL:-5}
       PUMP_TOGGLE_EVERY: ${DEBUG_PUBLISHER_PUMP_TOGGLE_EVERY:-12}
       RANDOM_SEED: ${DEBUG_PUBLISHER_SEED:-}

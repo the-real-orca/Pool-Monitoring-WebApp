@@ -140,7 +140,7 @@ def test_post_chemical_update_201(client):
     publish_call = __import__("mqtt").publish.call_args
     topic = publish_call[0][0]
     payload = publish_call[0][1]
-    assert topic == "pool/manual/chem"
+    assert topic == "pool/chem"
     assert payload == {
         "time": 1755724982,
         "name": "Pool",

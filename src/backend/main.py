@@ -47,7 +47,7 @@ MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PASS = os.getenv("MQTT_PASS", "")
-POOL_LIST = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool/manual"}]'))
+POOL_LIST = json.loads(os.getenv("POOL_LIST", '[{"name": "Pool", "topic": "pool"}]'))
 POOL_NAMES = {pool["name"] for pool in POOL_LIST}
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
@@ -64,17 +64,12 @@ ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
 _ai_counter: dict[str, int] = {}
 _ai_counter_date: str = ""
 
-# Live-Data configuration (Phase 20)
-LIVE_TOPIC_BLE_TEMPLATE = os.getenv("LIVE_TOPIC_BLE_TEMPLATE", "home/{pool}/pool/ble-yc01")
-LIVE_TOPIC_PUMP_TEMPLATE = os.getenv("LIVE_TOPIC_PUMP_TEMPLATE", "home/{pool}/pool/pump")
+# Live-Data configuration (Phase 20+)
 LIVE_AGGREGATION_WINDOW_MINUTES = int(os.getenv("LIVE_AGGREGATION_WINDOW_MINUTES", "60"))
 LIVE_RETENTION_DAYS = int(os.getenv("LIVE_RETENTION_DAYS", "90"))
 LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "/data/history/data.db")
 LIVE_SAMPLE_RING_SIZE = int(os.getenv("LIVE_SAMPLE_RING_SIZE", "5"))
 LIVE_STALE_AFTER_SECONDS = int(os.getenv("LIVE_STALE_AFTER_SECONDS", "600"))
-LIVE_PUMP_FIELD_MAIN = os.getenv("LIVE_PUMP_FIELD_MAIN", "mainPump")
-LIVE_PUMP_FIELD_SOLAR = os.getenv("LIVE_PUMP_FIELD_SOLAR", "solarPump")
-LIVE_PUMP_FIELD_TIME = os.getenv("LIVE_PUMP_FIELD_TIME", "time")
 # Minimum seconds between two persisted pump events for the same pool.
 # State still updates in memory so the UI stays current, but we throttle
 # DB writes to keep the pump_events table from being flooded by a
@@ -84,14 +79,40 @@ _pump_event_throttle: dict[str, int] = {}
 
 VALID_METRICS = ("temp", "pH", "cl")
 METRIC_UNITS = {"temp": "°C", "pH": "", "cl": "mg/l"}
+PUMP_FIELDS = ("mainPump", "solarPump")
 # Pool names must not contain MQTT wildcards (+, #, $) because they are
 # substituted into subscribe topics. Anything outside this allow-list would
 # let a misconfigured POOL_LIST match foreign pools.
 _POOL_NAME_RE = re.compile(r"^[A-Za-z0-9 _\-]{1,32}$")
+# Base topic must end with a normal segment (no wildcards) and must not be
+# empty. It is the prefix of every MQTT topic the pool uses.
+_BASE_TOPIC_RE = re.compile(r"^[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*$")
 
 
 def _is_valid_pool_name(name: str) -> bool:
     return bool(_POOL_NAME_RE.match(name))
+
+
+def _is_valid_base_topic(topic: str) -> bool:
+    return bool(topic) and bool(_BASE_TOPIC_RE.match(topic))
+
+
+def _base_topic_for(pool: dict) -> str | None:
+    """Return the configured base topic for a pool, or None if invalid."""
+    topic = pool.get("topic")
+    if not isinstance(topic, str) or not _is_valid_base_topic(topic):
+        return None
+    return topic
+
+
+# Reserved topic suffixes under a pool's base topic.
+# - ``/manual``  : measurement form publish target (back-end → MQTT)
+# - ``/chem``    : chemistry form publish target (back-end → MQTT)
+# - ``/pump``    : pump status publisher (ESP firmware → back-end)
+# - ``/alert``   : any alert publisher (intermediate ``+`` is allowed for
+#                  downstream services like mqtt2mail)
+# - ``/+`` (wildcard) : catch-all subscription for back-end + mqtt2mail
+RESERVED_SUFFIXES = ("manual", "chem", "pump")
 
 
 def ai_rate_check_and_increment() -> tuple[bool, int]:
@@ -120,27 +141,70 @@ def _get_state() -> live_state.LiveState:
     return _state
 
 
-def _topic_to_pool() -> dict[str, str]:
-    return _topic_to_pool_map
+def _base_to_pool() -> dict[str, str]:
+    """Map base topic (no wildcards) → pool name. Populated in lifespan."""
+    return _base_to_pool_map
 
 
-_topic_to_pool_map: dict[str, str] = {}
+# base topic → pool name; built once in lifespan from POOL_LIST.
+_base_to_pool_map: dict[str, str] = {}
 
 
-def _handle_ble_message(topic: str, payload: dict) -> None:
-    pool = _topic_to_pool_map.get(topic)
+def _resolve_pool_for_topic(topic: str) -> str | None:
+    """Find the pool name matching a concrete incoming topic.
+
+    Walks the configured base topics and returns the pool whose base topic
+    is a prefix of ``topic``. Wildcards are intentionally not expanded here:
+    the MQTT client already filters, so the topic is always concrete.
+    """
+    for base, pool in _base_to_pool_map.items():
+        if topic == base or topic.startswith(base + "/"):
+            return pool
+    return None
+
+
+def _handle_pool_message(topic: str, payload: dict) -> None:
+    """Single dispatcher for every subscribed ``<base>/+`` topic.
+
+    The handler inspects the JSON payload rather than the topic suffix, so
+    an ESP firmware can publish BLE values, pump state, or both on the same
+    topic without a per-topic subscription. Anything that is neither a
+    recognised metric nor a known pump field is logged at debug level and
+    silently ignored (e.g. chemistry events from the application backend).
+    """
+    pool = _resolve_pool_for_topic(topic)
     if pool is None or pool not in POOL_NAMES:
         return
     ts_raw = payload.get("time")
     ts = int(ts_raw) if ts_raw is not None else int(time.time())
     state = _get_state()
+
+    metrics_seen = False
     for metric in VALID_METRICS:
         if metric in payload and payload[metric] is not None:
+            metrics_seen = True
             try:
                 v = float(payload[metric])
                 state.push_sample(pool, metric, v, ts)
             except (TypeError, ValueError) as e:
-                log.warning("MQTT BLE payload on %s: bad %s value: %s", topic, metric, e)
+                log.warning("MQTT payload on %s: bad %s value: %s", topic, metric, e)
+
+    pumps_seen = False
+    for pump_name, field in (("main", "mainPump"), ("solar", "solarPump")):
+        if field not in payload:
+            continue
+        pumps_seen = True
+        try:
+            new_state = _strict_bool(payload[field], field)
+        except ValueError as e:
+            log.warning("MQTT payload on %s: %s", topic, e)
+            continue
+        if state.set_pump(pool, pump_name, new_state, ts) and db.is_configured():
+            if _should_persist_pump_event(pool, int(time.time())):
+                db.insert_pump_event(pool, pump_name, new_state, ts, int(time.time()))
+
+    if not metrics_seen and not pumps_seen:
+        log.debug("MQTT payload on %s ignored: no recognised fields", topic)
 
 
 _TRUTHY = {"1", "true", "on", "yes"}
@@ -178,26 +242,6 @@ def _should_persist_pump_event(pool: str, now: int) -> bool:
         return False
     _pump_event_throttle[pool] = now
     return True
-
-
-def _handle_pump_message(topic: str, payload: dict) -> None:
-    pool = _topic_to_pool_map.get(topic)
-    if pool is None or pool not in POOL_NAMES:
-        return
-    ts_raw = payload.get(LIVE_PUMP_FIELD_TIME)
-    ts = int(ts_raw) if ts_raw is not None else int(time.time())
-    state = _get_state()
-    for pump_name, field in (("main", LIVE_PUMP_FIELD_MAIN), ("solar", LIVE_PUMP_FIELD_SOLAR)):
-        if field not in payload:
-            continue
-        try:
-            new_state = _strict_bool(payload[field], field)
-        except ValueError as e:
-            log.warning("MQTT pump payload on %s: %s", topic, e)
-            continue
-        if state.set_pump(pool, pump_name, new_state, ts) and db.is_configured():
-            if _should_persist_pump_event(pool, int(time.time())):
-                db.insert_pump_event(pool, pump_name, new_state, ts, int(time.time()))
 
 
 if not FRONTEND_URL:
@@ -312,7 +356,8 @@ class ChemicalUpdate(BaseModel):
 
 
 def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
-    topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == m.name), "pool/manual")
+    base = next((_base_topic_for(p) for p in POOL_LIST if p["name"] == m.name), None)
+    topic = f"{base}/manual" if base else "pool/manual"
     payload = {
         "time": m.time,
         "name": m.name,
@@ -335,8 +380,8 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
 
 
 def build_chemical_payload(c: ChemicalUpdate) -> tuple[str, dict]:
-    base_topic = next((pool["topic"] for pool in POOL_LIST if pool["name"] == c.name), "pool/manual")
-    topic = f"{base_topic}/chem"
+    base = next((_base_topic_for(p) for p in POOL_LIST if p["name"] == c.name), None)
+    topic = f"{base}/chem" if base else "pool/chem"
     payload = {
         "time": c.time,
         "name": c.name,
@@ -356,7 +401,7 @@ async def verify_token(authorization: str = Header(alias="Authorization")):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _state, _aggregator, _topic_to_pool_map
+    global _state, _aggregator, _base_to_pool_map
 
     db.init_db(LIVE_DB_PATH)
     _state = live_state.LiveState(
@@ -370,28 +415,30 @@ async def lifespan(app: FastAPI):
         retention_days=LIVE_RETENTION_DAYS,
     )
 
-    # Build the topic→pool map from POOL_LIST using the configured templates
-    _topic_to_pool_map = {}
+    # Build the base-topic→pool map from POOL_LIST and subscribe to a
+    # single wildcard per pool (``<base>/+``). The handler inspects the
+    # JSON payload to distinguish BLE samples from pump-state messages
+    # (and silently ignore chemistry events).
+    _base_to_pool_map = {}
     for pool in POOL_LIST:
         name = pool["name"]
+        base = _base_topic_for(pool)
         if not _is_valid_pool_name(name):
             log.error("Pool name %r rejected: only A-Z a-z 0-9 _ - space allowed, max 32 chars (would inject MQTT wildcards)", name)
             continue
-        try:
-            ble_topic = LIVE_TOPIC_BLE_TEMPLATE.format(pool=name)
-            pump_topic = LIVE_TOPIC_PUMP_TEMPLATE.format(pool=name)
-        except KeyError as e:
-            log.error("LIVE topic template missing placeholder %s for pool %s", e, name)
+        if base is None:
+            log.error("Pool %r has invalid base topic %r, skipping subscription", name, pool.get("topic"))
             continue
-        if "+" in ble_topic or "#" in ble_topic or "$" in ble_topic or \
-           "+" in pump_topic or "#" in pump_topic or "$" in pump_topic:
-            log.error("LIVE topic for pool %s contains MQTT wildcard after substitution, skipping", name)
+        if "+" in base or "#" in base or "$" in base:
+            log.error("Base topic %r for pool %s contains MQTT wildcard, skipping", base, name)
             continue
-        _topic_to_pool_map[ble_topic] = name
-        _topic_to_pool_map[pump_topic] = name
-        mqtt.subscribe(ble_topic, _handle_ble_message)
-        mqtt.subscribe(pump_topic, _handle_pump_message)
-        log.info("Subscribed to live topics for %s: %s, %s", name, ble_topic, pump_topic)
+        if name in _base_to_pool_map.values():
+            log.error("Duplicate pool name %r in POOL_LIST, ignoring", name)
+            continue
+        _base_to_pool_map[base] = name
+        sub = f"{base}/+"
+        mqtt.subscribe(sub, _handle_pool_message)
+        log.info("Subscribed to live data for %s: %s", name, sub)
 
     mqtt.connect(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS)
     await ai.get_client().startup()

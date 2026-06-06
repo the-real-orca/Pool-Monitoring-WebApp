@@ -11,9 +11,11 @@ Configuration via environment variables:
 * ``MQTT_TLS``                ``true`` to enable TLS
 * ``MQTT_TLS_INSECURE``       ``true`` to skip TLS certificate verification
                               (accepts self-signed certs — debug only)
-* ``POOLS``                   JSON list of pool names
-* ``BLE_TOPIC_TEMPLATE``      default: ``home/{pool}/pool/ble-yc01``
-* ``PUMP_TOPIC_TEMPLATE``     default: ``home/{pool}/pool/pump``
+* ``POOL_LIST``               JSON list of ``{"name","topic"}`` pairs; the
+                              ``topic`` is the base topic (used for both
+                              ``<base>/ble-yc01`` and ``<base>/pump``)
+* ``POOLS``                   *legacy* JSON list of pool names (used only
+                              when ``POOL_LIST`` is not set)
 * ``INTERVAL_SECONDS``        publish period (default: ``5``)
 * ``PUMP_TOGGLE_EVERY``       flip pump state every N ticks (default: ``12``)
 * ``RANDOM_SEED``             optional int seed for deterministic output
@@ -53,19 +55,49 @@ MQTT_TLS_INSECURE = os.getenv("MQTT_TLS_INSECURE", "false").lower() == "true"
 INTERVAL_SECONDS = max(1, int(os.getenv("INTERVAL_SECONDS", "5")))
 PUMP_TOGGLE_EVERY = max(1, int(os.getenv("PUMP_TOGGLE_EVERY", "12")))
 
-DEFAULT_BLE_TEMPLATE = "home/{pool}/pool/ble-yc01"
-DEFAULT_PUMP_TEMPLATE = "home/{pool}/pool/pump"
-BLE_TOPIC_TEMPLATE = os.getenv("BLE_TOPIC_TEMPLATE", DEFAULT_BLE_TEMPLATE)
-PUMP_TOPIC_TEMPLATE = os.getenv("PUMP_TOPIC_TEMPLATE", DEFAULT_PUMP_TEMPLATE)
+# Pool/base-topic configuration. Prefer the canonical ``POOL_LIST`` (same
+# format as the main app); fall back to a legacy ``POOLS`` list of names
+# with a hard-coded default base topic for the demo.
+_default_pool_list = (
+    '[{"name": "Pool 1", "topic": "home/pool1"},'
+    ' {"name": "Pool 2", "topic": "home/pool2"}]'
+)
+_raw_pool_list = os.getenv("POOL_LIST", "").strip()
+_pools: list[dict[str, str]] = []
+if _raw_pool_list:
+    try:
+        parsed = json.loads(_raw_pool_list)
+    except json.JSONDecodeError as e:
+        log.error("POOL_LIST env var is not valid JSON: %s (%r)", e, _raw_pool_list)
+        sys.exit(1)
+    if not isinstance(parsed, list) or not all(
+        isinstance(p, dict) and isinstance(p.get("name"), str) and isinstance(p.get("topic"), str)
+        for p in parsed
+    ):
+        log.error("POOL_LIST must be a JSON array of {name, topic} objects: %r", parsed)
+        sys.exit(1)
+    _pools = [{"name": p["name"], "topic": p["topic"]} for p in parsed]
+else:
+    _raw_pools = os.getenv("POOLS", '["Pool 1", "Pool 2"]')
+    try:
+        names = json.loads(_raw_pools)
+        if not isinstance(names, list) or not all(isinstance(p, str) for p in names):
+            raise ValueError
+    except (ValueError, json.JSONDecodeError):
+        log.error("POOLS env var is not a JSON list of strings: %r", _raw_pools)
+        sys.exit(1)
+    _DEFAULT_BASE = "home/{pool}"
+    for name in names:
+        _pools.append({"name": name, "topic": _DEFAULT_BASE.format(pool=name)})
 
-_raw_pools = os.getenv("POOLS", '["Pool 1", "Pool 2"]')
-try:
-    POOLS: list[str] = json.loads(_raw_pools)
-    if not isinstance(POOLS, list) or not all(isinstance(p, str) for p in POOLS):
-        raise ValueError
-except ValueError:
-    log.error("POOLS env var is not a JSON list of strings: %r", _raw_pools)
-    sys.exit(1)
+# Backwards-compatible list of pool names (used by tests / log lines).
+POOLS: list[str] = [p["name"] for p in _pools]
+# Per-pool base topic. Tests can monkey-patch this.
+POOL_BASE_TOPICS: dict[str, str] = {p["name"]: p["topic"] for p in _pools}
+
+# Default concrete topic suffixes (not configurable in the live stack).
+BLE_TOPIC_SUFFIX = "ble-yc01"
+PUMP_TOPIC_SUFFIX = "pump"
 
 _seed_raw = os.getenv("RANDOM_SEED", "").strip()
 if _seed_raw:
@@ -75,6 +107,20 @@ else:
 
 
 # --- payload generation ----------------------------------------------------
+
+
+def _ble_topic(pool: str) -> str:
+    base = POOL_BASE_TOPICS.get(pool)
+    if not base:
+        raise KeyError(f"No base topic configured for pool {pool!r}")
+    return f"{base}/{BLE_TOPIC_SUFFIX}"
+
+
+def _pump_topic(pool: str) -> str:
+    base = POOL_BASE_TOPICS.get(pool)
+    if not base:
+        raise KeyError(f"No base topic configured for pool {pool!r}")
+    return f"{base}/{PUMP_TOPIC_SUFFIX}"
 
 
 def _ble_payload(pool: str, tick: int) -> tuple[str, dict[str, Any]]:
@@ -92,7 +138,7 @@ def _ble_payload(pool: str, tick: int) -> tuple[str, dict[str, Any]]:
         "pH": ph,
         "cl": cl,
     }
-    return BLE_TOPIC_TEMPLATE.format(pool=pool), payload
+    return _ble_topic(pool), payload
 
 
 def _pump_payload(pool: str, tick: int) -> tuple[str, dict[str, Any]]:
@@ -107,7 +153,7 @@ def _pump_payload(pool: str, tick: int) -> tuple[str, dict[str, Any]]:
         "mainPump": bool(main),
         "solarPump": bool(solar),
     }
-    return PUMP_TOPIC_TEMPLATE.format(pool=pool), payload
+    return _pump_topic(pool), payload
 
 
 # --- mqtt plumbing ---------------------------------------------------------
