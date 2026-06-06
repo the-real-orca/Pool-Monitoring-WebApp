@@ -65,18 +65,19 @@ export function useApi() {
     }
   }
 
-  async function postChemicalUpdate(form) {
+  async function postEvent(form) {
     loading.value = true
     error.value = null
     const payload = {
       time: form.time,
       name: form.name,
-      chemicalType: form.chemicalType,
+      eventType: form.eventType,
     }
     if (form.amount != null) payload.amount = form.amount
     if (form.unit) payload.unit = form.unit
+    if (form.note) payload.note = form.note
     try {
-      const res = await fetch(`/api/chem`, {
+      const res = await fetch(`/api/event`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
@@ -176,7 +177,7 @@ export function useApi() {
 
   return {
     loading, error,
-    postMeasurement, postChemicalUpdate, fetchPools, analyzeImage,
+    postMeasurement, postEvent, fetchPools, analyzeImage,
     fetchPoolsLive, fetchLive, fetchHistory, fetchPumpEvents,
   }
 }

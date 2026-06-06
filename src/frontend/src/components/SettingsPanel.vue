@@ -7,7 +7,7 @@ const emit = defineEmits(['close'])
 
 const { settings } = useSettings()
 const { show: showToast } = useToast()
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '2.0'
 
 const original = reactive({ ...settings })
 const tokenVisible = ref(false)
@@ -26,7 +26,7 @@ const save = () => {
 
 <template>
   <div class="relative space-y-5">
-    <h1 class="text-center text-2xl font-bold text-slate-800">Settings</h1>
+    <h1 class="text-center text-2xl font-bold text-slate-800">Einstellungen</h1>
 
     <div class="space-y-4">
       <div class="space-y-1">

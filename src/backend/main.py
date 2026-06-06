@@ -37,7 +37,7 @@ API_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("API_RATE_LIMIT_WINDOW_SECONDS", "
 # Read-only polling endpoints (history, pump-events, live state) must stay
 # exempt — the chart reloads / backfills and the live view poll the API
 # continuously and would otherwise trip the limiter. Write endpoints
-# (measurements, chem, analyze-image) keep the per-IP throttling.
+# (measurements, event, analyze-image) keep the per-IP throttling.
 RATE_LIMIT_EXEMPT_PREFIXES = (
     "/api/history",
     "/api/pump-events",
@@ -107,12 +107,12 @@ def _base_topic_for(pool: dict) -> str | None:
 
 # Reserved topic suffixes under a pool's base topic.
 # - ``/manual``  : measurement form publish target (back-end → MQTT)
-# - ``/chem``    : chemistry form publish target (back-end → MQTT)
+# - ``/event``   : event form publish target (back-end → MQTT)
 # - ``/pump``    : pump status publisher (ESP firmware → back-end)
 # - ``/alert``   : any alert publisher (intermediate ``+`` is allowed for
 #                  downstream services like mqtt2mail)
 # - ``/+`` (wildcard) : catch-all subscription for back-end + mqtt2mail
-RESERVED_SUFFIXES = ("manual", "chem", "pump")
+RESERVED_SUFFIXES = ("manual", "event", "pump")
 
 
 def ai_rate_check_and_increment() -> tuple[bool, int]:
@@ -128,7 +128,7 @@ def ai_rate_check_and_increment() -> tuple[bool, int]:
     return True, AI_MAX_REQUESTS_PER_DAY - _ai_counter[today]
 
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0"
 _start_time = time.time()
 
 # Module-level live state (initialised in lifespan)
@@ -170,7 +170,7 @@ def _handle_pool_message(topic: str, payload: dict) -> None:
     an ESP firmware can publish BLE values, pump state, or both on the same
     topic without a per-topic subscription. Anything that is neither a
     recognised metric nor a known pump field is logged at debug level and
-    silently ignored (e.g. chemistry events from the application backend).
+    silently ignored (e.g. event payloads from the application backend).
     """
     pool = _resolve_pool_for_topic(topic)
     if pool is None or pool not in POOL_NAMES:
@@ -314,25 +314,31 @@ class Measurement(BaseModel):
         return round(v, 1)
 
 
-class ChemicalType(str, Enum):
+class EventType(str, Enum):
     CHLORINE = "chlorine"
     PH = "ph"
     FLOCCULANT = "flocculant"
+    REFILL = "refill"
+    BACKWASH = "backwash"
+    WINTER = "winter"
 
 
-class ChemicalUnit(str, Enum):
+class EventUnit(str, Enum):
     ML = "ml"
     G = "g"
+    KG = "kg"
     TABS = "tabs"
     L = "l"
+    MIN = "min"
 
 
-class ChemicalUpdate(BaseModel):
+class Event(BaseModel):
     time: int
     name: str = Field(min_length=1, max_length=50)
-    chemicalType: ChemicalType
+    eventType: EventType
     amount: float | None = Field(default=None)
-    unit: ChemicalUnit | None = None
+    unit: EventUnit | None = None
+    note: str | None = Field(default=None, max_length=500)
 
     @field_validator("name")
     @classmethod
@@ -349,7 +355,7 @@ class ChemicalUpdate(BaseModel):
         return round(v, 1)
 
     @model_validator(mode="after")
-    def validate_amount_unit_pair(self) -> "ChemicalUpdate":
+    def validate_amount_unit_pair(self) -> "Event":
         if (self.amount is None) != (self.unit is None):
             raise ValueError("amount and unit must be set together")
         return self
@@ -379,17 +385,19 @@ def build_mqtt_payload(m: Measurement) -> tuple[str, dict]:
     return topic, payload
 
 
-def build_chemical_payload(c: ChemicalUpdate) -> tuple[str, dict]:
-    base = next((_base_topic_for(p) for p in POOL_LIST if p["name"] == c.name), None)
-    topic = f"{base}/chem" if base else "pool/chem"
+def build_event_payload(e: Event) -> tuple[str, dict]:
+    base = next((_base_topic_for(p) for p in POOL_LIST if p["name"] == e.name), None)
+    topic = f"{base}/event" if base else "pool/event"
     payload = {
-        "time": c.time,
-        "name": c.name,
-        "chemicalType": c.chemicalType.value,
+        "time": e.time,
+        "name": e.name,
+        "eventType": e.eventType.value,
     }
-    if c.amount is not None:
-        payload["amount"] = c.amount
-        payload["unit"] = c.unit.value
+    if e.amount is not None:
+        payload["amount"] = e.amount
+        payload["unit"] = e.unit.value
+    if e.note:
+        payload["note"] = e.note
     return topic, payload
 
 
@@ -418,7 +426,7 @@ async def lifespan(app: FastAPI):
     # Build the base-topic→pool map from POOL_LIST and subscribe to a
     # single wildcard per pool (``<base>/+``). The handler inspects the
     # JSON payload to distinguish BLE samples from pump-state messages
-    # (and silently ignore chemistry events).
+    # (and silently ignore event payloads).
     _base_to_pool_map = {}
     for pool in POOL_LIST:
         name = pool["name"]
@@ -481,12 +489,12 @@ async def post_measurement(m: Measurement):
     return {"status": "success", "message": "Measurement published to MQTT"}
 
 
-@app.post("/api/chem", status_code=201, dependencies=[Depends(verify_token)])
-async def post_chemical_update(c: ChemicalUpdate):
-    topic, payload = build_chemical_payload(c)
+@app.post("/api/event", status_code=201, dependencies=[Depends(verify_token)])
+async def post_event(e: Event):
+    topic, payload = build_event_payload(e)
     if not mqtt.publish(topic, payload):
         raise HTTPException(status_code=503, detail="MQTT unavailable")
-    return {"status": "success", "message": "Chemical update published to MQTT"}
+    return {"status": "success", "message": "Event published to MQTT"}
 
 
 @app.post("/api/analyze-image", dependencies=[Depends(verify_token)])

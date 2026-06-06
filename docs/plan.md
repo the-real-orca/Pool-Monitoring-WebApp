@@ -1,6 +1,6 @@
 # Implementation Plan: Pool-Monitoring PWA
 
-**Version:** 1.0 | **Based on:** TSD 1.0, FSD 1.0 | **Date:** 2026-05-28
+**Version:** 2.0 | **Based on:** TSD 2.0, FSD 2.0 | **Date:** 2026-06-06
 **Legend:** `[ ]` open · `[x]` done
 
 ---
@@ -923,6 +923,119 @@ valid token → 201; `docker stats` shows all containers within their limits.
 
 ---
 
+
+## Phase 25 – Refactor: Chemieupdate → Ereignis (Event Page)
+
+Goal: Rename the chemistry-only page to a generic Event page that also
+covers operational events (refill, backwash, winter chemical). Renames
+the API (`/api/chem` → `/api/event`), MQTT topic suffix (`/chem` →
+`/event`), backend enums (`ChemicalType` → `EventType`, +`refill`,
+`backwash`, `winter`; `ChemicalUnit` → `EventUnit`, +`min`), and the
+frontend form. Adds a default-unit map per event type and a collapsible
+note field that is persisted to MQTT. Hard cut — no `/api/chem`
+backwards compatibility.
+
+| # | File | Change |
+|---|------|--------|
+| [x] 25.1 | `src/backend/main.py` | `ChemicalType` → `EventType` enum: add `REFILL`, `BACKWASH`, `WINTER`. `ChemicalUnit` → `EventUnit`: add `MIN`. `ChemicalUpdate` → `Event` model (field `chemicalType` → `eventType`, new optional `note: str | None` with `max_length=500`, identical amount/unit pair-rule). `build_chemical_payload` → `build_event_payload` publishes to `<base>/event` and includes `note` when set. `POST /api/chem` → `POST /api/event`. `RESERVED_SUFFIXES = ("manual", "chem", "pump")` → `("manual", "event", "pump")`. Handler comment + `RATE_LIMIT_EXEMPT_PREFIXES` doc-comment refer to `event` instead of `chem`. |
+| [x] 25.2 | `src/backend/tests/test_models.py` | Replace `ChemicalUpdate` tests with `Event` tests; cover all 6 event types, the new `min` unit, the `note` field (default, max length 500, > 500 rejected), and the `ph_minus → negative amount` workflow (model only stores signed value). |
+| [x] 25.3 | `src/backend/tests/test_api.py` | Replace `/api/chem` tests with `/api/event`: happy path with `eventType=chlorine`, without amount/unit, 422 on invalid pair, 503 on MQTT down, refill/backwash/winter coverage, note round-trip, 422 on unknown `eventType` / unknown `unit`, and a regression test that the old `/api/chem` endpoint returns 404 (hard cut). |
+| [x] 25.4 | `src/backend/tests/test_handlers.py`, `src/backend/tests/test_mqtt.py` | Rename `test_handle_pool_message_ignores_chemistry_payload` → `..._ignores_event_payload` (topic `/chem` → `/event`, field `chemicalType` → `eventType`). Update `test_on_message_dispatches_wildcard_hash` fixture topic + payload. |
+| [x] 25.5 | `src/frontend/src/components/ChemicalUpdateForm.vue` → `EventForm.vue` | `git mv` to preserve history. New options list (Chlor, pH-Plus, pH-Minus, Flockungsmittel, Wintermittel, Nachfüllen, Rückspülen). `DEFAULT_UNIT` map: chlorine→tabs, ph_plus/minus→g, flocculant→l, winter→l, refill→min, backwash→min. `watch(form.eventType)` sets `form.unit = DEFAULT_UNIT[newType]` on every type change (amount is preserved). New `min` (`Min.`) option in the unit `<select>`. Collapsible "Notiz" section (mirrors MeasurementForm status field) with `maxlength=500`. Toast text "Ereignis gespeichert" / "Ereignis konnte nicht gesendet werden". Heading "Ereignis". |
+| [x] 25.6 | `src/frontend/src/App.vue` | `import ChemicalUpdateForm` → `import EventForm`. `navigationEntries` label "Chemieupdate" → "Ereignisse", view key `chemistry` → `event`. Template view block updated accordingly. |
+| [x] 25.7 | `src/frontend/src/composables/useApi.js` | `postChemicalUpdate` → `postEvent`. Endpoint `/api/chem` → `/api/event`. Payload field `chemicalType` → `eventType`. New optional `note` propagated when truthy. Export list updated. |
+| [x] 25.8 | `src/frontend/tests/useApi.spec.js` | Replace `describe('postChemicalUpdate')` with `describe('postEvent')`: happy path, omit amount+unit, include `note` when present, omit `note` when empty string, 401 → false + error='401'. |
+| [x] 25.9 | `docs/plan.md` | This entry. |
+
+**Verify:** `cd src/backend && pytest -v` → **184/184** green (was 173 before the refactor, +14 new event tests, -3 removed chemical tests). `cd src/frontend && npm run test` → **66/66** green (was 64, +5 new postEvent tests, -3 removed postChemicalUpdate tests). `cd src/frontend && npm run build` clean. `ruff check src/backend/` reports **33 pre-existing warnings, zero new** — diff vs main shows the refactor introduces no lint regressions. Manual flow: open the Ereignis page → select "Nachfüllen" → unit auto-jumps to "Min." → enter 30 → toggle Notiz "Wasserstand niedrig" → SEND → MQTT broker shows `{"time":...,"name":"Pool","eventType":"refill","amount":30.0,"unit":"min","note":"Wasserstand niedrig"}` on topic `<base>/event`. The previous `/api/chem` endpoint returns 404.
+
+
+---
+
+
+## Phase 26 – Event Form Stepper Polish + UI Germanization + v2.0
+
+Goal: Tighten the EventForm's amount stepper to match real-world dosing
+values (add `kg` unit, add a 10-unit threshold, asymmetric step at
+boundaries so − always nudges to the next-finer grid), complete the
+Germanization of the UI (MeasurementForm labels, menu entries, settings
+panel), and bump the app version to 2.0 to mark the post-Phase-25 era.
+
+### 26.1 EventForm – stepper grid for `l` / `kg`
+
+The valid amount grid is no longer uniform; the step grows with the value
+and the `−` direction is asymmetric at thresholds so the user can always
+nudge one finer step down:
+
+| Unit   | Range          | Step |
+|--------|----------------|------|
+| `l`    | 0 – 1          | 0.1  |
+| `l`    | > 1 – < 10     | 1    |
+| `l`    | ≥ 10           | 10   |
+| `kg`   | same as `l`    |      |
+| other  | < 10           | 1    |
+| other  | ≥ 10           | 10   |
+
+At boundary values (1 for l/kg, 10 for all units), `−` uses the
+finer-grained step of the range one tick below: `1.0 l −` → `0.9 l`
+(not 0), `10 −` → `9` (not 0). `+` always uses the current range's step.
+
+| # | File | Change |
+|---|------|--------|
+| [x] 26.1.1 | `src/backend/main.py` | `EventUnit` enum: add `KG = "kg"`. |
+| [x] 26.1.2 | `src/backend/tests/test_models.py` | New `test_event_accepts_kg_unit`; existing `test_event_rejects_unknown_unit` switched from `kg` to `oz`. |
+| [x] 26.1.3 | `src/backend/tests/test_api.py` | `test_post_event_422_unknown_unit` body `unit` changed from `kg` to `oz`. |
+| [x] 26.1.4 | `src/frontend/src/utils/eventStep.js` (new) | Pure helpers `stepFor(unit, value, dir)`, `amountDecimals(unit)`, `amountEmptyValue(unit, value)`, `snapAmount(unit, value)` — no Vue dependency, fully unit-testable. |
+| [x] 26.1.5 | `src/frontend/src/components/EventForm.vue` | Drop the old `useFineStep` heuristic; use `stepFor` for both directions. Remove `ml` from the unit `<select>`; reorder to `Tabs, g, kg, l, Min.`. "Menge" label becomes `"Menge (optional)"` (the floating "optional" span over the unit `<select>` is removed). Watcher on `form.amount` simplified — only snaps drag / manual-entry values; the stepper itself never produces off-grid values. |
+| [x] 26.1.6 | `src/frontend/src/components/ValueSliderInput.vue` | New optional prop `stepDown: Number` (default `null` → falls back to `step`). In the internal `step(dir)` helper, use `stepDown` when `dir === -1` and the prop is set. Backwards-compatible with `MeasurementForm` (no caller passes it). |
+| [x] 26.1.7 | `src/frontend/tests/eventStep.spec.js` (new) | Covers `stepFor` for both directions across the threshold matrix, `amountDecimals`, `amountEmptyValue`, and `snapAmount` for drag/manual entry (l/kg sub-1, 1–9, ≥10, non-fraction units). |
+| [x] 26.1.8 | `src/frontend/tests/ValueSliderInput.spec.js` (new) | 5 cases: regular step for `+`, regular step for `−` when `stepDown` is absent, `stepDown` honoured on `−`, `stepDown` ignored on `+`, `emptyValue` used when `+` is pressed on a null value. |
+
+**Verify:** `pytest -v` → **185/185** green. `npm run test` → **94/94** green (was 66, +28 new). `npm run build` clean. Manual: in the Ereignis page, selecting `Flockungsmittel` defaults the unit to `l`; the slider steps `0.1 → 0.2 → … → 0.9 → 1.0 → 2.0 → 3.0 → … → 9.0 → 10 → 20 → 30`; pressing `−` at 10 l lands on 9 l, not 0 l; switching the unit to `kg` reuses the same grid; `Chlor` keeps `Tabs` and shows 1-tab granularity from 1 to 100.
+
+### 26.2 UI Germanization + Dashboard rename + Settings version
+
+Pure display string changes; no variable, route, or API renames.
+
+| # | File | Change |
+|---|------|--------|
+| [x] 26.2.1 | `src/frontend/src/App.vue` | `navigationEntries`: `Live` → `Dashboard`, `Measurements` → `Messungen`. View key (`'live'` / `'form'`) and component imports unchanged. |
+| [x] 26.2.2 | `src/frontend/src/components/MeasurementForm.vue` | All user-facing strings translated: `Date/Time` → `Datum/Uhrzeit`, `Please select` → `Bitte auswählen`, `Temperature` → `Temperatur`, `pH Value` → `pH-Wert`, `Chlorine` → `Chlor`, `Notes / Status` → `Notizen / Status`, `Enter status...` → `Status eingeben...`, `Sending...` → `Wird gesendet...`, `SEND` → `SENDEN`. Toasts: `Measurement saved` → `Messung gespeichert`, `Unauthorized – check your token in settings` → `Nicht autorisiert – Token in den Einstellungen prüfen`, `Failed to send measurement` → `Messung konnte nicht gesendet werden`, `Values extracted – please verify` → `Werte extrahiert – bitte überprüfen`. Validation messages likewise. |
+| [x] 26.2.3 | `src/frontend/src/components/SettingsPanel.vue` | Heading `Settings` → `Einstellungen`; `APP_VERSION` bumped from `1.0.0` → `2.0`. Burger-menu entry in `App.vue` also reads `Einstellungen` for consistency. |
+
+**Verify:** `npm run test` still **94/94** green. `npm run build` clean. Manual: each visible label is German (except the page heading `Pool Monitor` and the menu entry `Settings` which were already part of the chrome and are now also German).
+
+### 26.3 Verify summary
+
+| Suite | Result |
+|-------|--------|
+| Backend (`src/backend`) | `pytest -v` → **185/185** green |
+| Frontend (`src/frontend`) | `npm run test` → **94/94** green (was 66 in Phase 25) |
+| Frontend build | `npm run build` clean |
+| Ruff | No new warnings (pre-existing baseline only) |
+
+
+---
+
+## Phase 27 – Documentation Sync (FSD + TSD + backend `APP_VERSION`)
+
+Goal: bring FSD and TSD in line with the implemented Phase 25 + 26 reality so
+docs and code agree on the public surface (endpoint name, MQTT suffix, event
+type enum, unit enum, `note` field, view state, navigation labels, app
+version, step grid). No behaviour change.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 27.1 | `docs/Pool-Monitoring - Functional Specification (FSD).md` | §1.1/1.2 "Chemieupdate" / chemical feature → "Event" / operational event; §2.2 sequence diagram `POST /api/chem` → `POST /api/event`, `<base>/chem` → `<base>/event`; §3.3 navigation labels DE (Dashboard, Messungen, Ereignisse, Einstellungen); §3.3.2-3.3.4 "Chemieupdate" page → "Ereignis (Event) Page" wireframe, field def and UI label mapping extended to all 7 event types (chlorine, ph_plus, ph_minus, flocculant, refill, backwash, winter) with default unit per event, step grid (l/kg 0.1/1/10, others 1/10), "Menge (optional)" label, asymmetric `−` step, collapsible "Notiz"; §4.1 `POST /api/event` (eventType enum, units `g`/`kg`/`l`/`tabs`/`min`, optional `note` ≤ 500, `ph_minus` negation on wire); §4.2 `LIVE_PUMP_FIELD_*` env rows removed (Phase 23); §4.3 event example incl. pH-Minus signed payload; §7.1 "Chem amount/unit mismatch" → "Event amount/unit mismatch"; `/api/status` example version `1.0.0` → `2.0`. |
+| [x] 27.2 | `docs/Pool-Monitoring - Technical Specification (TSD).md` | Header version `1.0` → `2.0`, FSD baseline `1.0` → `2.0`; §1 "chemistry update" → "event" + Phase 25/26 scope paragraphs; §2 excluded table view set; §3 directory tree `ChemicalUpdateForm.vue` → `EventForm.vue`, added `utils/eventStep.js`, added `tests/ValueSliderInput.spec.js` + `tests/eventStep.spec.js`, added `tests/MeasurementForm.spec.js`, added backend Phase 20/25 test files; §4.1 view state `form | chemistry` → `form | event`; German `navigationEntries`; §4.2 components table `ChemicalUpdateForm` → `EventForm` (note + default unit), `ValueSliderInput` gains `stepDown` prop, `SettingsPanel` heading `Einstellungen`, `MeasurementForm` Germanised; §4.3 useApi `postChemicalUpdate` → `postEvent` against `/api/event` with `note`; §4.4 added subsection `utils/eventStep.js`; §5.6 live-data dispatch "chemistry" → "event" with `(Phase 25: renamed from chemicalType / /api/chem)`; §4.13 navigation entries in German with view keys unchanged; §6.4 `.env.example` block `<base>/chem` → `<base>/event`; §7 not affected; §8.1 backend test files (added Phase 20 + Phase 25); §8.2 frontend test files (added Phase 20 + Phase 26); §9 implementation order: added rows 20-26 for Phases 20-26, fixed step wording for event row; §10 "Chemieupdate Specification" → "Event Specification" (rewritten for Phase 25/26), added §10.5 step grid; APP_VERSION constants `1.0.0` → `2.0` in §4.2 SettingsPanel example and §5 backend example. Toasts: `Measurement saved` → `Messung gespeichert`, `Values extracted – please verify` → `Werte extrahiert – bitte prüfen`. |
+| [x] 27.3 | `src/backend/main.py` | `APP_VERSION` `1.0.0` → `2.0` to match the frontend SettingsPanel and the bumped FSD example response. |
+| [x] 27.4 | `src/backend/tests/test_api.py` | `test_get_status_200`: assert `version == "2.0"` (was `"1.0.0"`). |
+
+**Verify:** `pytest -v` 185/185 green, `npm run test` 94/94 green, `npm run build` clean. `grep -RnE 'chem|chemical|Chemikalie|chemistry|Chemieupdate|ChemicalUpdateForm|chemicalType' docs/Pool-Monitoring\ -\ Functional\ Specification\ \(FSD\).md` and same against the TSD return only contextually correct occurrences (Phase 25/26 refactor history, `/api/chem` 404 regression test description, `/chem` legacy-removal note). `git diff --stat` shows only `docs/*.md`, `src/backend/main.py`, `src/backend/tests/test_api.py` and a reasonable line count.
+
+
+---
+
 ## File Overview
 
 ```
@@ -980,25 +1093,29 @@ src/
         │   │   ├── ValueSliderInput.vue   # Phase 7
         │   │   ├── MeasurementForm.vue
         │   │   ├── ImageCaptureModal.vue  # Phase 16
-        │   │   ├── ChemicalUpdateForm.vue # Phase 19
+        │   │   ├── EventForm.vue          # Phase 19 (renamed in Phase 25)
         │   │   ├── LiveView.vue           # Phase 20
         │   │   ├── TrendChart.vue         # Phase 20
         │   │   ├── PumpStatusCard.vue     # Phase 20
         │   │   └── SettingsPanel.vue
-        │   └── composables/
-        │       ├── useSettings.js
-        │       ├── useApi.js
-        │       ├── useCamera.js           # Phase 16
-        │       ├── useImage.js            # Phase 16
-        │       ├── useToast.js
-        │       └── useLiveData.js         # Phase 20
+        │   ├── composables/
+        │   │   ├── useSettings.js
+        │   │   ├── useApi.js
+        │   │   ├── useCamera.js           # Phase 16
+        │   │   ├── useImage.js            # Phase 16
+        │   │   ├── useToast.js
+        │   │   └── useLiveData.js         # Phase 20
+        │   └── utils/
+        │       └── eventStep.js           # Phase 26 (pure step/snap helpers for EventForm)
         └── tests/
             ├── validation.spec.js
             ├── useSettings.spec.js
             ├── StepperInput.spec.js
+            ├── ValueSliderInput.spec.js   # Phase 26
             ├── useImage.spec.js           # Phase 16
             ├── useApi.spec.js             # Phase 16
             ├── useLiveData.spec.js        # Phase 20
             ├── LiveView.spec.js           # Phase 20
-            └── TrendChart.spec.js         # Phase 20
+            ├── TrendChart.spec.js         # Phase 20
+            └── eventStep.spec.js          # Phase 26
     ```

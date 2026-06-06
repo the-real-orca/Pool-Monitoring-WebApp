@@ -9,16 +9,16 @@
 Progressive Web App (PWA) for:
 
 - manual entry of pool measurements (pH, chlorine, temperature),
-- manual logging of chemical additions (chlorine, pH product, flocculant),
+- manual logging of operational events (chemical additions, refill, backwash, winter care) with optional amount and unit,
 - transmission via Python backend bridge to an MQTT broker,
 - and comparison with automatic sensor data.
 
 ### 1.2 Core Features
 
 - Manual data entry at the pool via smartphone
-- **Chemical Update Page:** Log one chemical addition event (`chlorine`, `ph`, `flocculant`) with date/time and optional amount
+- **Event Page (default menu entry "Ereignisse"):** Log one operational event per entry — `chlorine`, `ph_plus`, `ph_minus`, `flocculant`, `refill`, `backwash`, `winter` — with date/time, optional amount + unit, and an optional note
 - **Automatic Image Analysis:** Capture a photo of test strips + reference scale, extract pH/chlorine via multimodal AI, prefill form fields
-- **Live View (default landing):** Real-time dashboard fed by BLE sensor and pump MQTT topics – main temperature, 5-sample means for pH/Cl, pump status icons, 7-day zoomable trend chart
+- **Dashboard (default landing, menu entry "Dashboard"):** Real-time data dashboard fed by BLE sensor and pump MQTT topics – main temperature, 5-sample means for pH/Cl, pump status icons, 7-day zoomable trend chart
 - Comparison of manual vs. automatic measurements (data foundation)
 - Sensor drift analysis and calibration (prepared, not part of this project)
 
@@ -103,7 +103,7 @@ sequenceDiagram
 
 ```
 
-**Log Chemical Addition**
+**Log Operational Event**
 
 ```mermaid
 sequenceDiagram
@@ -112,11 +112,11 @@ sequenceDiagram
     participant API as API-Bridge (FastAPI)
     participant MQTT as Mosquitto
 
-    PWA->>Caddy: POST /api/chem (HTTPS)
+    PWA->>Caddy: POST /api/event (HTTPS)
     Caddy->>API: Forward
     API->>API: Validate token
-    API->>API: Validate body (chemicalType, amount/unit)
-    API->>MQTT: Publish JSON to <base-topic>/chem
+    API->>API: Validate body (eventType, amount/unit, note)
+    API->>MQTT: Publish JSON to <base-topic>/event
     API->>Caddy: 201 Created
     Caddy->>PWA: Success toast
 
@@ -205,23 +205,28 @@ the AI result. Manual correction remains possible before submitting.
 
 ### 3.3 Navigation
 
-- **Measurement page:**
-  - Primary action button "SEND"
+- **Dashboard page (default landing):**
+  - No primary action button (read-only view of live data + history)
   - Burger menu (top-left) opens navigation dropdown
   - Gear icon (top-right) opens Settings
 
-- **Chemieupdate page:**
-  - Primary action button "SEND"
-  - Same burger menu behavior as measurement page
+- **Measurement page:**
+  - Primary action button "SENDEN"
+  - Same burger menu behavior as dashboard
   - Gear icon (top-right) opens Settings
-  - Switching between Measurement and Chemieupdate preserves entered values until submit/reset
+
+- **Event page:**
+  - Primary action button "SENDEN"
+  - Same burger menu behavior as dashboard
+  - Gear icon (top-right) opens Settings
+  - Switching between Measurement and Event preserves entered values until submit/reset
 
 - **Navigation dropdown (burger menu):**
-  - Live *(default landing)*
-  - Measurements
-  - Chemieupdate
+  - Dashboard *(default landing)*
+  - Messungen
+  - Ereignisse
   - separator
-  - Settings
+  - Einstellungen
 
 - **Settings page:**
   - "Abbrechen" (Cancel) and "Speichern" (Save) buttons at the bottom
@@ -255,23 +260,24 @@ the AI result. Manual correction remains possible before submitting.
 Numeric fields combine a stepper `[-] [24.0°C] [+]` with a popover slider on value click for touch-friendly adjustment.
 On mobile with camera: "Foto" + "Datei" buttons shown side-by-side. On desktop or no camera: only "Datei" button.
 
-### 3.3.2 Chemieupdate Page (Wireframe)
+### 3.3.2 Ereignis (Event) Page (Wireframe)
 
 ```
 ┌─────────────────────────────┐
 │ ≡ Pool Monitor          [⚙️] │
 ├─────────────────────────────┤
-│ Chemieupdate                │
-│  📅 Date/Time (editable)    │
+│ Ereignis                    │
+│  📅 Datum/Uhrzeit (editable)│
 │  [2026-06-04 18:45    ]     │
 │  🏊 Pool                    │
 │  [Pool 1              ▼]    │
-│  🧪 Chemikalie              │
-│  [Chlor ▼]                  │
+│  🧪 Ereignis                │
+│  [Chlor           ▼]        │
 │  🔢 Menge (optional)        │
-│  [ - ] [10.0 ] [ + ]  [ml ▼] │
+│  [ - ] [10.0 ] [ + ]  [g ▼] │
+│  ▼ Notiz (optional)         │
 │  ┌─────────────────────┐    │
-│  │     SEND            │    │
+│  │     SENDEN          │    │
 │  └─────────────────────┘    │
 └─────────────────────────────┘
 ```
@@ -279,31 +285,53 @@ On mobile with camera: "Foto" + "Datei" buttons shown side-by-side. On desktop o
 Amount uses the same stepper + popover-slider interaction pattern as other numeric inputs.
 Unit is selected via dropdown.
 Setting the amount to `0` clears the optional amount and unit selection in the UI.
+The "Notiz" block is collapsed by default and can be expanded for an optional free-text note (max 500 chars).
 
 
-### 3.3.3 Chemieupdate Field Definition
+### 3.3.3 Ereignis (Event) Field Definition
 
 | Field              | Type                                           | Default         | Validation |
 | ------------------ | ---------------------------------------------- | --------------- | ---------- |
-| **Date/Time**      | datetime-local (UI) / Unix timestamp (API)    | <Current Time>  | Required, valid date |
+| **Datum/Uhrzeit**  | datetime-local (UI) / Unix timestamp (API)    | <Current Time>  | Required, valid date |
 | **Pool**           | select                                         | 1st Item        | Must exist in backend list |
-| **Chemikalie**     | select                                         | `chlorine`      | Required enum: `chlorine`, `ph`, `flocculant` |
-| **Menge**          | number                                         | empty           | Optional, UI range `0.0-100.0`, API value > 0, max 1 decimal |
-| **Einheit**        | select                                         | empty           | Required when `Menge` is set; enum: `ml`, `g`, `tabs`, `l` |
+| **Ereignis**       | select                                         | `chlorine`      | Required enum: `chlorine`, `ph_plus`, `ph_minus`, `flocculant`, `refill`, `backwash`, `winter` |
+| **Menge**          | number                                         | empty           | Optional, UI range `0.0-100.0`, API value > 0, step grid below |
+| **Einheit**        | select                                         | per event type  | Required when `Menge` is set; enum: `g`, `kg`, `l`, `tabs`, `min` |
+| **Notiz**          | textarea (collapsible)                         | empty           | Optional, max 500 chars |
+
+Step grid (UI stepper):
+
+- `g`, `kg`, `l`: `0.1` for values `< 1`, `1` for values `1-9`, `10` for values `≥ 10`.
+- `tabs`, `min`: `1` for values `< 10`, `10` for values `≥ 10`.
+- Decrement button uses the previous range's step to allow stepping off thresholds (e.g. `10 g` − → `9 g`, `1 l` − → `0.9 l`).
+- Increment uses the current range's step.
+
+Default unit per event type:
+
+| Event | Default unit |
+| ----- | ------------ |
+| `chlorine`, `ph_plus`, `ph_minus`, `flocculant` | `g` |
+| `refill` | `l` |
+| `backwash` | `min` |
+| `winter` | `min` |
 
 Consistency rules:
 
 - If `amount` is set, `unit` must be set.
 - If `unit` is set, `amount` must be set.
+- `pH-Minus` events negate the `amount` field before publishing to MQTT (the wire payload carries the signed value).
 
 ### 3.3.4 UI Label Mapping (DE -> API enum)
 
-| UI label | API value | amount sign |
-| -------- | --------- | ----------- |
-| Chlor | `chlorine` | positive |
-| pH-Plus | `ph` | positive |
-| pH-Minus | `ph` | negative |
-| Flockungsmittel | `flocculant` | positive |
+| UI label          | API value    | default unit | amount sign |
+| ----------------- | ------------ | ------------ | ----------- |
+| Chlor             | `chlorine`   | `g`          | positive    |
+| pH-Plus           | `ph_plus`    | `g`          | positive    |
+| pH-Minus          | `ph_minus`   | `g`          | negative    |
+| Flockungsmittel   | `flocculant` | `g`          | positive    |
+| Nachfüllen        | `refill`     | `l`          | positive    |
+| Rückspülung       | `backwash`   | `min`        | positive    |
+| Einwinterung      | `winter`     | `min`        | positive    |
 
 ### 3.3.5 Image Analysis Flow (Measurement Page)
 
@@ -558,9 +586,9 @@ Analyzes a photo of a pool test strip + reference scale and returns extracted va
 | 502    | AI service returned an unrecoverable error (auth)                    |
 | 503    | AI service unreachable / timeout                                     |
 
-#### POST /api/chem
+#### POST /api/event
 
-Logs exactly one chemical addition event.
+Logs exactly one operational event (chemical addition, refill, backwash, winter care).
 
 **Request:** `Authorization: Bearer <token>`, JSON body
 
@@ -568,27 +596,28 @@ Logs exactly one chemical addition event.
 {
   "time": 1780577400,
   "name": "Pool 1",
-  "chemicalType": "chlorine",
+  "eventType": "chlorine",
   "amount": 120.0,
-  "unit": "ml"
+  "unit": "g",
+  "note": "Chlortabletten 200g Dose"
 }
 ```
 
-`amount` and `unit` are both optional, but must be set together.
+`amount` and `unit` are both optional, but must be set together when present. `note` is optional (max 500 chars). For `ph_minus` events the backend negates the `amount` field on the wire payload (so the JSON above already carries the signed value, e.g. `-120.0` for `pH-Minus`).
 
-**Response 201:** `{ "status": "success", "message": "Chemical update published to MQTT" }`
+**Response 201:** `{ "status": "success", "message": "Event published to MQTT" }`
 
 **Errors:**
 
 | Status | Cause |
 | ------ | ----- |
 | 401    | Invalid / missing token |
-| 422    | Validation error (pool name, chemicalType enum, amount/unit consistency) |
+| 422    | Validation error (pool name, eventType enum, amount/unit consistency, note length) |
 | 503    | MQTT unavailable |
 
 #### GET /api/status
 
-**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "liveDataConfigured": true, "uptime": 3600, "version": "1.0.0" }`
+**Response 200:** `{ "status": "healthy", "mqttConnected": true, "aiConfigured": true, "imageAnalysisRequestsToday": 3, "liveDataConfigured": true, "uptime": 3600, "version": "2.0" }`
 
 #### GET /api/pools/live
 
@@ -711,15 +740,14 @@ Settings are set via environment variables.
 | LIVE_DB_PATH                 | path     | `/data/history/data.db` | SQLite database file location                              |
 | LIVE_SAMPLE_RING_SIZE        | int      | `5`              | Number of most recent raw samples kept in RAM per metric        |
 | LIVE_STALE_AFTER_SECONDS     | int      | `600`            | After this many seconds without a new sample, the snapshot is marked `stale` |
-| LIVE_PUMP_FIELD_MAIN         | text     | `mainPump`       | Field name for the main-pump boolean in the pump topic payload  |
-| LIVE_PUMP_FIELD_SOLAR        | text     | `solarPump`      | Field name for the solar-pump boolean in the pump topic payload |
-| LIVE_PUMP_FIELD_TIME         | text     | `time`           | Field name for the optional timestamp in the pump topic payload |
 
 ### 4.3 MQTT Integration
 
 The `topic` field in each `POOL_LIST` entry is a **base topic** (no suffix).
-The backend publishes measurements to `<base>/manual` and chemical updates to
-`<base>/chem` (the `/chem` suffix is appended to the base topic).
+The backend publishes measurements to `<base>/manual` and operational events to
+`<base>/event` (the `/event` suffix is appended to the base topic). The
+backend never publishes to the legacy `/chem` suffix — that endpoint and
+suffix were renamed in Phase 25.
 
 For inbound data, the backend subscribes to a single wildcard `<base>/+` per
 pool and inspects the JSON payload to distinguish measurement vs. pump
@@ -752,19 +780,32 @@ Measurement payload example:
 ```
 
 
-#### Chemical update Example
+#### Event Example
 
-Chemical update topic: `pool1/chem` (derived from the base topic by appending `/chem`)
+Event topic: `pool1/event` (derived from the base topic by appending `/event`)
 
-Chemical update payload example:
+Event payload example (chlorine addition with note):
 
 ```json
 {
   "time": 1780577400,
   "name": "Pool 1",
-  "chemicalType": "chlorine",
+  "eventType": "chlorine",
   "amount": 120.0,
-  "unit": "ml"
+  "unit": "g",
+  "note": "Chlortabletten 200g Dose"
+}
+```
+
+Event payload example (pH-Minus — backend negates `amount` before publish):
+
+```json
+{
+  "time": 1780577400,
+  "name": "Pool 1",
+  "eventType": "ph_minus",
+  "amount": -150.0,
+  "unit": "g"
 }
 ```
 
@@ -811,9 +852,9 @@ of the ring (to smooth single-sample noise).
 }
 ```
 
-Field names are configurable via `LIVE_PUMP_FIELD_MAIN`, `LIVE_PUMP_FIELD_SOLAR`, and
-`LIVE_PUMP_FIELD_TIME`. The backend only writes a `pump_events` row when the boolean
-state actually changes; identical re-publishes are ignored.
+Field names are hard-coded as part of the wire protocol (`mainPump`, `solarPump`, `time`).
+The backend only writes a `pump_events` row when the boolean state actually changes;
+identical re-publishes are ignored.
 
 **Per-hour aggregation**: at the end of every full hour, the backend computes the
 mean of the values received during that hour for each (pool, metric) and stores the
@@ -857,7 +898,7 @@ Via Docker Compose.
 | ------------------ | ------------------------------------------- |
 | Network error      | Error message, manual retry                 |
 | Invalid input      | Inline validation, form blocked             |
-| Chem amount/unit mismatch | Inline validation, form blocked       |
+| Event amount/unit mismatch | Inline validation, form blocked       |
 | API 401            | Error toast with token hint, user navigates to settings manually |
 | API 429            | Toast: daily limit reached, fall back to manual entry |
 | API 422 (AI refusal / no values) | Toast: "AI could not analyze the image", form unchanged |

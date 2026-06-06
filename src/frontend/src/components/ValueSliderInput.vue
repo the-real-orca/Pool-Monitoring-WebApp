@@ -6,6 +6,7 @@ const props = defineProps({
   min: { type: Number, required: true },
   max: { type: Number, required: true },
   step: { type: Number, required: true },
+  stepDown: { type: Number, default: null },
   decimals: { type: Number, required: true },
   unit: { type: String, default: '' },
   emptyValue: { type: Number, default: null },
@@ -91,7 +92,8 @@ function step(dir) {
     return
   }
 
-  const next = parseFloat((props.modelValue + dir * props.step).toFixed(props.decimals))
+  const stepSize = dir < 0 && props.stepDown != null ? props.stepDown : props.step
+  const next = parseFloat((props.modelValue + dir * stepSize).toFixed(props.decimals))
   if (next >= props.min && next <= props.max) {
     emit('update:modelValue', next)
   }

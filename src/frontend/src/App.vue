@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import LiveView from './components/LiveView.vue'
 import MeasurementForm from './components/MeasurementForm.vue'
-import ChemicalUpdateForm from './components/ChemicalUpdateForm.vue'
+import EventForm from './components/EventForm.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { useToast } from './composables/useToast.js'
 
@@ -13,9 +13,9 @@ const menuRef = ref(null)
 const { toast } = useToast()
 
 const navigationEntries = [
-  { label: 'Live', view: 'live' },
-  { label: 'Measurements', view: 'form' },
-  { label: 'Chemieupdate', view: 'chemistry' },
+  { label: 'Dashboard', view: 'live' },
+  { label: 'Messungen', view: 'form' },
+  { label: 'Ereignisse', view: 'event' },
 ]
 
 function showView(nextView) {
@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
                 @click="openSettings"
                 class="flex w-full items-center px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
-                Settings
+                Einstellungen
               </button>
             </div>
           </Transition>
@@ -121,8 +121,8 @@ onBeforeUnmount(() => {
           <div v-show="view === 'form'">
             <MeasurementForm />
           </div>
-          <div v-show="view === 'chemistry'">
-            <ChemicalUpdateForm />
+          <div v-show="view === 'event'">
+            <EventForm />
           </div>
         </div>
         <SettingsPanel v-if="view === 'settings'" @close="closeSettings" />

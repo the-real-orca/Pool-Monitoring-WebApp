@@ -1,22 +1,37 @@
 # Technical Specification: Pool-Monitoring PWA
 
-**Version:** 1.0 | **Based on:** FSD 1.0 | **Date:** 2026-05-28
+**Version:** 2.0 | **Based on:** FSD 2.0 | **Date:** 2026-06-06
 
 ---
 
 ## 1. Purpose & Scope
 
-This document describes the concrete technical implementation of FSD v1.0.
+This document describes the concrete technical implementation of FSD v2.0.
 Guiding principle: **As flat and simple as possible – as modular as necessary.**
 Every file, abstraction, and dependency must justify its place.
 
-**v1 scope:** Measurement form + chemistry update form -> MQTT publish. No database access, no dashboard.
+**v1 scope:** Measurement form + event form -> MQTT publish. No database access, no dashboard.
 
 **Phase 20 scope (Live Data):** For every pool in `POOL_LIST` the backend subscribes
 to a single wildcard `<base>/+` derived from each pool's base topic, dispatches
-incoming messages by JSON content (measurement / pump / chemistry), aggregates
+incoming messages by JSON content (measurement / pump / event), aggregates
 per-hour means into SQLite, and serves a Live dashboard (current temperature,
 5-sample mean of pH/Cl, pump status, 7-day trend chart) via new REST endpoints.
+
+**Phase 25 scope (Event refactor):** The chemistry update feature was generalised
+into an "operational event" feature. The endpoint moved from `POST /api/chem` to
+`POST /api/event`, the MQTT topic suffix from `/chem` to `/event`, the wire field
+`chemicalType` to `eventType`, and the event type enum was extended with
+`refill`, `backwash`, `winter`. The component was renamed
+`ChemicalUpdateForm.vue` → `EventForm.vue` and gained an optional `note` field
+and a per-event default unit. UI labels are German; enum values remain English.
+
+**Phase 26 scope (UX polish):** Added `kg` unit, asymmetric stepper steps at
+range boundaries (1 l − → 0.9, 10 g − → 9), reordered unit dropdown
+(Tabs, g, kg, l, Min.), relabelled the menu (Live → Dashboard,
+Measurements → Messungen, Chemieupdate → Ereignisse, Settings → Einstellungen),
+fully Germanised `MeasurementForm` and `SettingsPanel`, and bumped
+`APP_VERSION` to `2.0`.
 
 ---
 
@@ -40,9 +55,9 @@ per-hour means into SQLite, and serves a Live dashboard (current temperature,
 
 | Excluded | Rationale |
 | -------- | --------- |
-| Vue Router | A small fixed set of views (`form`, `chemistry`, `settings`) is handled via `ref` state in `App.vue` |
+| Vue Router | A small fixed set of views (`live`, `form`, `event`, `settings`) is handled via `ref` state in `App.vue` |
 | Pinia / Vuex | Composable-level `reactive()` is enough for this scope |
-| DB / ORM | v1 is stateless; extension prepared in Future Enhancements |
+| DB / ORM | v1 is stateless (Live Data uses SQLite directly, no ORM); extension prepared in Future Enhancements |
 | Separate `config.py` | `os.getenv()` directly in `main.py` – 6 lines instead of a module |
 | Axios | Native `fetch()` is sufficient; one less dependency |
 | Separate `middleware/` | FastAPI `Depends()` inline on the route – 5 lines instead of a module |
@@ -57,7 +72,7 @@ per-hour means into SQLite, and serves a Live dashboard (current temperature,
 ```
 src/
 ├── backend/
-│   ├── main.py              # FastAPI app, all routes, Pydantic models, auth, rate-limit
+│   ├── main.py              # FastAPI app, all routes, Pydantic models (incl. Event), auth, rate-limit
 │   ├── mqtt.py              # MQTT client (connect, publish, subscribe, reconnect)
 │   ├── ai.py                # AI client (provider-agnostic, structured output, image storage)
 │   ├── db.py                # SQLite layer (Phase 20): schema, WAL, insert, query, retention
@@ -68,21 +83,23 @@ src/
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── main.js          # App mount, PWA registration, Chart.js plugin registration
-│   │   ├── App.vue          # Root: view toggle (live|form|chemistry|settings), toast display
+│   │   ├── main.js          # App mount, PWA registration
+│   │   ├── App.vue          # Root: view toggle (live|form|event|settings), navigationEntries, toast display
 │   │   ├── validation.js    # Field constants (min, max, step, default, unit)
+│   │   ├── utils/
+│   │   │   └── eventStep.js # Step grid + direction-aware stepper logic for EventForm (Phase 26)
 │   │   ├── components/
-│   │   │   ├── StepperInput.vue       # Reusable +/- input stepper (no longer used by MeasurementForm)
-│   │   │   ├── ValueSliderInput.vue   # [+] [Wert] [+] Stepper + Popover-Slider-Kombo
-│   │   │   ├── MeasurementForm.vue    # Measurement form with submit flow + photo button
+│   │   │   ├── StepperInput.vue       # Generic +/- input stepper (used by TrendChart, not by forms)
+│   │   │   ├── ValueSliderInput.vue   # [-] [Wert] [+] Stepper + Popover-Slider combo (supports `stepDown` prop, Phase 26)
+│   │   │   ├── MeasurementForm.vue    # Measurement form (German labels, Phase 26)
 │   │   │   ├── ImageCaptureModal.vue  # Camera capture, compression, preview, AI call
-│   │   │   ├── ChemicalUpdateForm.vue # Chemistry update form (Phase 19)
+│   │   │   ├── EventForm.vue          # Event form (Phase 25, refactored from ChemicalUpdateForm.vue)
 │   │   │   ├── LiveView.vue           # Live dashboard (Phase 20): default landing
 │   │   │   ├── TrendChart.vue         # uPlot, 3 panels, mouse + touch zoom/pan (Phase 20, 22)
 │   │   │   ├── PumpStatusCard.vue     # Pump status card with icon (Phase 20)
-│   │   │   └── SettingsPanel.vue      # Settings (URL, token, name)
+│   │   │   └── SettingsPanel.vue      # Settings (URL, token, name); German heading (Phase 26)
 │   │   └── composables/
-│   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. live + history)
+│   │       ├── useApi.js      # fetch wrapper with Bearer auth (incl. live, history, postEvent)
 │   │       ├── useSettings.js # localStorage read/write (reactive)
 │   │       ├── useImage.js    # Canvas-based image compression utility
 │   │       ├── useToast.js    # Toast state (module-level singleton)
@@ -115,25 +132,30 @@ src/
 
 ```
 backend/tests/
-├── test_models.py
-├── test_api.py
-├── test_auth.py
-├── test_ai.py            # AI client: structured output, refusal, timeout, rate limit
-├── test_db.py            # SQLite: schema, insert, query, retention (Phase 20)
-├── test_live_state.py    # Ring buffer, pump state change detection (Phase 20)
-├── test_mqtt.py          # Subscribe + reconnect re-subscribe (Phase 20)
-├── test_aggregator.py    # Hourly rollup, retention cleanup (Phase 20)
-└── test_api_live.py      # /api/live, /api/history, /api/pump-events, /api/pools/live (Phase 20)
+├── test_models.py       # Pydantic: Measurement, Event (incl. EventType, EventUnit, note)
+├── test_api.py          # HTTP endpoints via TestClient (MQTT + AI mocked); 404 regression for /api/chem
+├── test_auth.py         # verify_token: valid, missing, wrong
+├── test_ai.py           # ai.analyze_pool_image: structured-output happy path,
+│                        #   refusal -> AIRefusalError, schema mismatch -> AISchemaError,
+│                        #   timeout -> AITimeoutError, rate-limit counter rollover
+├── test_db.py           # SQLite: schema, insert, query, retention (Phase 20)
+├── test_live_state.py   # Ring buffer, pump state change detection (Phase 20)
+├── test_mqtt.py         # Subscribe + reconnect re-subscribe (Phase 20); event topic dispatch (Phase 25)
+├── test_aggregator.py   # Hourly rollup, retention cleanup (Phase 20)
+└── test_api_live.py     # /api/live, /api/history, /api/pump-events, /api/pools/live (Phase 20)
 
 frontend/tests/
-├── validation.spec.js
-├── useSettings.spec.js
-├── StepperInput.spec.js
-├── useApi.spec.js         # API calls: success, 401, network error (incl. live/history)
-├── useImage.spec.js      # Image compression: dimensions, MIME, size cap
-├── useLiveData.spec.js   # 30s polling, stale detection, cleanup (Phase 20)
-├── LiveView.spec.js      # Dashboard render, pool selector (Phase 20)
-└── TrendChart.spec.js    # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
+├── validation.spec.js           # FIELD_CONFIG boundaries and NAME_CONFIG pattern
+├── useSettings.spec.js          # localStorage read/write, defaults, token encoding
+├── StepperInput.spec.js         # Stepper logic: steps, min/max boundaries, emit
+├── ValueSliderInput.spec.js     # step / stepDown prop, empty value (Phase 26)
+├── useApi.spec.js               # API calls: success, 401, network error (incl. postEvent, live, history)
+├── useImage.spec.js             # Compression: max edge clamp, JPEG output, byte cap
+├── useLiveData.spec.js          # 30s polling, stale detection, cleanup (Phase 20)
+├── LiveView.spec.js             # Dashboard render, pool selector (Phase 20)
+├── TrendChart.spec.js           # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
+├── MeasurementForm.spec.js      # German labels, submit, photo button (Phase 26)
+└── eventStep.spec.js            # stepFor (both directions), amountDecimals, amountEmptyValue, snapAmount (Phase 26)
 ```
 
 ---
@@ -142,23 +164,28 @@ frontend/tests/
 
 ### 4.1 View Switching (No Router)
 
-`App.vue` holds `const view = ref('form')` and renders conditionally.
-Target state set: `form | chemistry | settings`.
+`App.vue` holds `const view = ref('live')` and renders conditionally.
+Target state set: `live | form | event | settings`.
 `useToast` is a module-level singleton, callable from any component.
+The default landing is `'live'` (Dashboard); the burger menu is the
+only navigation entry, defined as a flat `navigationEntries` array.
+The Settings shortcut remains top-right (gear icon).
+
+Menu labels are in German; the view key (`'live'`, `'form'`, `'event'`,
+`'settings'`) is English and not user-visible.
+
+```js
+const navigationEntries = [
+  { key: 'live',      label: 'Dashboard' },
+  { key: 'form',      label: 'Messungen' },
+  { key: 'event',     label: 'Ereignisse' },
+  { key: 'settings',  label: 'Einstellungen', separator: true },
+]
+```
+
+Rendered top-level structure:
 
 ```vue
-<!-- App.vue -->
-<script setup>
-import { ref } from 'vue'
-import MeasurementForm from './components/MeasurementForm.vue'
-import ChemicalUpdateForm from './components/ChemicalUpdateForm.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
-import { useToast } from './composables/useToast.js'
-
-const view = ref('form')
-const { toast } = useToast()
-</script>
-
 <template>
   <div class="flex min-h-svh items-center justify-center bg-slate-50 p-4">
     <div class="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-lg">
@@ -166,17 +193,10 @@ const { toast } = useToast()
         <h1 class="text-2xl font-bold text-white">Pool Monitor</h1>
       </div>
       <div class="p-6">
-        <MeasurementForm
-          v-if="view === 'form'"
-          @open-chemistry="view = 'chemistry'"
-          @open-settings="view = 'settings'"
-        />
-        <ChemicalUpdateForm
-          v-else-if="view === 'chemistry'"
-          @open-form="view = 'form'"
-          @open-settings="view = 'settings'"
-        />
-        <SettingsPanel v-else @close="view = 'form'" />
+        <LiveView        v-if="view === 'live'" />
+        <MeasurementForm v-else-if="view === 'form'" />
+        <EventForm       v-else-if="view === 'event'" />
+        <SettingsPanel   v-else-if="view === 'settings'" @close="view = 'live'" />
       </div>
     </div>
 
@@ -189,12 +209,12 @@ const { toast } = useToast()
     </Transition>
   </div>
 </template>
-
-<style>
-.toast-enter-active, .toast-leave-active { transition: opacity 0.3s, transform 0.3s; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(1rem); }
-</style>
 ```
+
+`v-if` is used throughout (not `v-show`) — switching between views unmounts the
+previous form, which is acceptable because switching from a form back to
+`Settings` is rare and form state can be re-entered. The Live dashboard
+re-fetches on every mount via the `useLiveData` composable.
 
 The app shell provides a centered card layout with a colored header bar. Primary page navigation is opened via a burger menu in the top-left area (FSD 3.3), while the settings shortcut remains top-right.
 
@@ -203,14 +223,14 @@ The app shell provides a centered card layout with a colored header bar. Primary
 | File | Responsibility | Props | Emits |
 | ---- | -------------- | ----- | ----- |
 | `StepperInput.vue` | Number input +/- stepper *(ersetzt durch ValueSliderInput)* | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
-| `ValueSliderInput.vue` | `[-] [Wert] [+]` Stepper + Popover-Slider, v-model compatible | `modelValue`, `min`, `max`, `step`, `decimals`, `unit` | `update:modelValue` |
-| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal` | – | `open-chemistry`, `open-settings` |
-| `ChemicalUpdateForm.vue` | Form for one chemical event with optional amount + unit | – | `open-form`, `open-settings` |
+| `ValueSliderInput.vue` | `[-] [Wert] [+]` Stepper + Popover-Slider, v-model compatible. Optional `stepDown` prop (default `null` → fallback to `step`) for asymmetric step on `−` (Phase 26) | `modelValue`, `min`, `max`, `step`, `stepDown`, `decimals`, `unit` | `update:modelValue` |
+| `MeasurementForm.vue` | Form, validation, submit flow, title, settings gear icon, opens `ImageCaptureModal`. UI fully Germanised (Phase 26) | – | – |
+| `EventForm.vue` | Form for one operational event with optional amount + unit + collapsible note (Phase 25; renamed from `ChemicalUpdateForm.vue`) | – | – |
 | `ImageCaptureModal.vue` | Camera capture, client-side compression, AI request, result preview | `mode` (String, default `'camera'`) | `close`, `applied` (payload `{pH, cl, image}`) |
 | `LiveView.vue` | Live dashboard: pool selector, temperature main card, pH/Cl side cards (5-sample mean), pump status cards, 7-day trend chart (Phase 20) | – | – |
 | `TrendChart.vue` | uPlot, 3 separate panels (temp/pH/cl) with per-metric Y-axis, custom pan + wheel-zoom + touch (pan / pinch / double-tap reset), cross-chart x-axis sync, custom `splits`/`values` callbacks align ticks to 0h midnight, infinite-scroll backfill capped at "now" (Phase 20, 21, 22) | `pool` (String) | – |
 | `PumpStatusCard.vue` | Pump status card: large icon, label, state, "läuft seit X min" (Phase 20) | `pump` ('main'\|'solar'), `state` (Boolean), `runningSince` (Number\|null) | – |
-| `SettingsPanel.vue` | Read/write API token + version display | – | `close` |
+| `SettingsPanel.vue` | Read/write API token + version display. Heading `Einstellungen` (Phase 26) | – | `close` |
 
 **`ValueSliderInput.vue`** – kombiniert `[-] [Wert] [+]` Stepper mit Popover-Slider:
 
@@ -332,17 +352,17 @@ async function submit() {
   const timestamp = Math.floor(new Date(form.time).getTime() / 1000)
   const ok = await postMeasurement({ ...form, time: timestamp })
   if (ok) {
-    showToast('Measurement saved', 'success')
+    showToast('Messung gespeichert', 'success')
     resetForm()
   } else if (error.value === '401') {
-    showToast('Unauthorized – check your token in settings', 'error')
+    showToast('Nicht autorisiert – Token in den Einstellungen prüfen', 'error')
   } else {
-    showToast('Failed to send measurement', 'error')
+    showToast('Senden der Messung fehlgeschlagen', 'error')
   }
 }
 ```
 
-The form title ("Measurements") is rendered inside `MeasurementForm.vue` (matching the FSD wireframe), not in `App.vue`.
+The form title ("Messungen") is rendered inside `MeasurementForm.vue` (matching the FSD wireframe), not in `App.vue`.
 
 **`SettingsPanel.vue`** – Cancel/Save pattern with token visibility toggle:
 
@@ -356,7 +376,7 @@ const emit = defineEmits(['close'])
 
 const { settings } = useSettings()
 const { show: showToast } = useToast()
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '2.0'
 
 const original = reactive({ ...settings })
 const tokenVisible = ref(false)
@@ -535,23 +555,24 @@ export function useApi() {
     }
   }
 
-  return { loading, error, postMeasurement, postChemicalUpdate, fetchPools, analyzeImage }
+  return { loading, error, postMeasurement, postEvent, fetchPools, fetchPoolsLive, fetchLive, fetchHistory, fetchPumpEvents, analyzeImage }
 }
 ```
 
-Target chemistry call in `useApi.js`:
+Target event call in `useApi.js` (Phase 25):
 
 ```js
-async function postChemicalUpdate(form) {
+async function postEvent(form) {
   const payload = {
     time: form.time,
     name: form.name,
-    chemicalType: form.chemicalType,
+    eventType: form.eventType,
   }
   if (form.amount != null) payload.amount = form.amount
   if (form.unit) payload.unit = form.unit
+  if (form.note) payload.note = form.note
 
-  const res = await fetch('/api/chem', {
+  const res = await fetch('/api/event', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -610,7 +631,7 @@ export function useToast() {
 }
 ```
 
-### 4.4 Validation Constants (`validation.js`)
+### 4.4 Validation Constants (`validation.js` + `utils/eventStep.js`)
 
 Central source for all field boundaries. Used by `MeasurementForm.vue` and `StepperInput.vue`.
 Backend validation (Pydantic `Field()`) uses the same values.
@@ -624,6 +645,23 @@ export const FIELD_CONFIG = {
 
 export const NAME_CONFIG = { minLength: 1, maxLength: 50, pattern: /^[a-zA-Z0-9 ]+$/ }
 ```
+
+#### `utils/eventStep.js` (Phase 26)
+
+Pure, framework-agnostic helpers for the Event form stepper. No Vue
+imports — fully testable with `vitest`.
+
+```js
+// Amount grid: l/kg = 0, 0.1..0.9, 1..9, 10, 20, .., 100; others = 0, 1..9, 10, 20, .., 100
+export function stepFor(unit, value, dir) { /* ... */ }
+export function amountDecimals(unit) { /* 1 for l/kg, 0 otherwise */ }
+export function amountEmptyValue(unit) { /* '' when not entered, else toFixed(decimals) */ }
+export function snapAmount(unit, value) { /* coerce typed value to grid */ }
+```
+
+Used by `EventForm.vue` to drive `ValueSliderInput` with a direction-aware
+`step` and `stepDown` prop pair (e.g. for `g` at value `10`, `step = 10` and
+`stepDown = 1`, so `−` goes to `9` and `+` goes to `20`).
 
 ### 4.5 Build Configuration (`vite.config.js`)
 
@@ -717,7 +755,7 @@ function openCapture(mode) {
 function onCaptureApplied({ pH, cl }) {
   if (pH != null) form.pH = pH
   if (cl != null) form.cl = cl
-  showToast('Values extracted – please verify', 'success')
+  showToast('Werte extrahiert – bitte prüfen', 'success')
   showCapture.value = false
 }
 ```
@@ -913,7 +951,7 @@ AI_IMAGE_STORAGE_PATH   = os.getenv("AI_IMAGE_STORAGE_PATH", "/data/ai")
 AI_IMAGE_RETENTION_DAYS = int(os.getenv("AI_IMAGE_RETENTION_DAYS", "30"))
 AI_MAX_IMAGE_BYTES      = int(os.getenv("AI_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0"
 _start_time = time.time()
 ```
 
@@ -1573,7 +1611,7 @@ Topic strings are constructed once at startup from each pool's `topic` field in
 `POOL_LIST`, which is now treated as a **base topic** (e.g. `home/pool1`).
 The backend subscribes to exactly one wildcard per pool — `<base>/+` — and
 registers a single callback `_handle_pool_message(topic, payload)` that
-distinguishes measurement, pump-state, and chemistry messages by inspecting
+distinguishes measurement, pump-state, and event messages by inspecting
 the JSON payload (see 5.14.1). Wildcard matching is performed by
 `mqtt._topic_matches(pattern, topic)`, which supports the `+` (single-level) and
 `#` (multi-level) MQTT wildcards. Reconnect re-subscribes the same set via
@@ -1583,7 +1621,7 @@ the JSON payload (see 5.14.1). Wildcard matching is performed by
 
 Because the backend subscribes with a single wildcard per pool, the same
 `_handle_pool_message` callback receives **all** messages on `<base>/+`
-(measurements, pump state, and chemistry events from the application
+(measurements, pump state, and event messages from the application
 backend). Dispatch is therefore content-driven, not topic-driven:
 
 - **Pool resolution.** `_resolve_pool_for_topic(topic)` walks the
@@ -1602,10 +1640,11 @@ backend). Dispatch is therefore content-driven, not topic-driven:
   otherwise `int(time.time())` is substituted. The booleans go through
   `_strict_bool`, which rejects values other than `0`/`1`/`true`/`false`
   (and the obvious aliases) so a single bad publisher cannot poison state.
-- **Chemistry payload.** A payload containing `chemicalType`, `amount`,
-  `unit` originates from this same backend (POST `/api/chem`) and is
-  ignored at the live-data layer — the ring buffer does not store
-  chemistry events.
+- **Event payload.** A payload containing `eventType`, `amount`, `unit`
+  (and optionally `note`) originates from this same backend
+  (POST `/api/event`) and is ignored at the live-data layer — the ring
+  buffer does not store events. (Phase 25: renamed from `chemicalType` /
+  `/api/chem`.)
 - **Throttling.** A real boolean change in pump state writes a
   `pump_events` row, but only if at least `LIVE_PUMP_MIN_EVENT_INTERVAL`
   seconds have passed since the last persisted event for that pool. The
@@ -1829,22 +1868,26 @@ Pure presentational component. Props: `pump: 'main' | 'solar'`, `state: boolean`
 running, `bg-slate-100` for idle). Icons are inline SVGs (gear for `main`, sun for
 `solar`) – no icon font dependency. Touch target ≥ 44×44 px.
 
-### 4.13 `App.vue` View State (Phase 20)
+### 4.13 `App.vue` View State (Phase 20, 26)
 
-The view state enum is extended:
+The view state enum is:
 
 ```js
-const view = ref('live') // 'live' | 'form' | 'chemistry' | 'settings'
+const view = ref('live') // 'live' | 'form' | 'event' | 'settings'
 const navigationEntries = [
-  { label: 'Live', view: 'live' },
-  { label: 'Measurements', view: 'form' },
-  { label: 'Chemieupdate', view: 'chemistry' },
+  { key: 'live',     label: 'Dashboard' },
+  { key: 'form',     label: 'Messungen' },
+  { key: 'event',    label: 'Ereignisse' },
+  { key: 'settings', label: 'Einstellungen', separator: true },
 ]
 ```
 
-`Live` becomes the default landing. The burger menu and gear icon pattern are reused
-unchanged. `LiveView` is rendered via `v-show` (so internal state survives temporary
-view switches), wrapped next to `MeasurementForm` and `ChemicalUpdateForm`.
+`live` (Dashboard) is the default landing. The burger menu and gear icon
+pattern are reused unchanged. Phase 26 relabelled all menu items in German
+while keeping the internal view keys (`'live'`, `'form'`, `'event'`,
+`'settings'`) English, and renamed the chemistry view key `'chemistry'` →
+`'event'`. Views are rendered with `v-if` (each form is unmounted on
+switch); the Live dashboard re-fetches on every mount via `useLiveData`.
 
 ---
 
@@ -2037,9 +2080,9 @@ TZ=Europe/Vienna
 FRONTEND_URL=https://pool.example.org
 API_TOKEN=change-me-to-a-secure-random-token
 # POOL_LIST: list of {name, topic}. ``topic`` is the BASE topic for the pool;
-# the backend publishes <base>/manual and <base>/chem, the backend + mqtt2mail
+# the backend publishes <base>/manual and <base>/event, the backend + mqtt2mail
 # subscribe to <base>/+ and inspect the JSON payload to distinguish
-# measurement / pump / chemistry messages.
+# measurement / pump / event messages.
 POOL_LIST=[{"name":"Pool 1","topic":"home/pool1"}, {"name":"Pool 2","topic":"home/pool2"}]
 
 # === MQTT Broker ===
@@ -2078,7 +2121,7 @@ SEND_EMPTY_REPORT=false
 # === Live Data (Phase 20) ===
 # The backend subscribes to <base>/+ for every entry in POOL_LIST; concrete
 # topic suffixes are: <base>/ble-yc01 (sensor), <base>/pump (pump status),
-# <base>/manual + <base>/chem (publish-only). Pump field names are fixed:
+# <base>/manual + <base>/event (publish-only). Pump field names are fixed:
 # mainPump, solarPump, time.
 LIVE_AGGREGATION_WINDOW_MINUTES=60
 LIVE_RETENTION_DAYS=90
@@ -2091,11 +2134,13 @@ LIVE_PUMP_MIN_EVENT_INTERVAL=5
 **Note:** `MQTT_PORT=1883` matches the dev Mosquitto listener. For production with an external broker, change `MQTT_HOST` to the external address and `MQTT_PORT` to the broker's port (typically `1883`).
 `FRONTEND_URL` is used by the backend CORS middleware – set to the production domain.
 All MQTT topics are derived from `POOL_LIST` at startup: the publish targets are
-`<base>/manual` (measurements) and `<base>/chem` (chemistry); the subscription
-pattern is `<base>/+` (single wildcard per pool). mqtt2mail subscribes to the
-same `<base>/+` set automatically — there is no `MQTT_TOPICS` override any
-more. Pump field names (`mainPump`, `solarPump`, `time`) are part of the wire
-protocol and are therefore hard-coded in `main.py`, not env-configurable.
+`<base>/manual` (measurements) and `<base>/event` (operational events);
+the subscription pattern is `<base>/+` (single wildcard per pool). mqtt2mail
+subscribes to the same `<base>/+` set automatically — there is no
+`MQTT_TOPICS` override any more. Pump field names (`mainPump`,
+`solarPump`, `time`) are part of the wire protocol and are therefore
+hard-coded in `main.py`, not env-configurable. The legacy `/chem` suffix
+is no longer published (Phase 25).
 
 ---
 
@@ -2125,12 +2170,17 @@ protocol and are therefore hard-coded in `main.py`, not env-configurable.
 
 ```
 backend/tests/
-├── test_models.py   # Pydantic: valid values, boundaries, invalid values, rounding
-├── test_api.py      # HTTP endpoints via TestClient (MQTT + AI mocked)
+├── test_models.py   # Pydantic: Measurement, Event (EventType, EventUnit, note); valid values, boundaries, invalid values, rounding
+├── test_api.py      # HTTP endpoints via TestClient (MQTT + AI mocked); 404 regression for /api/chem
 ├── test_auth.py     # verify_token: valid, missing, wrong
-└── test_ai.py       # ai.analyze_pool_image: structured-output happy path,
-                     #   refusal -> AIRefusalError, schema mismatch -> AISchemaError,
-                     #   timeout -> AITimeoutError, rate-limit counter rollover
+├── test_ai.py       # ai.analyze_pool_image: structured-output happy path,
+│                    #   refusal -> AIRefusalError, schema mismatch -> AISchemaError,
+│                    #   timeout -> AITimeoutError, rate-limit counter rollover
+├── test_db.py       # SQLite: schema, insert, query, retention (Phase 20)
+├── test_live_state.py  # Ring buffer, pump state change detection (Phase 20)
+├── test_mqtt.py     # Subscribe + reconnect re-subscribe; event topic dispatch (Phase 25)
+├── test_aggregator.py  # Hourly rollup, retention cleanup (Phase 20)
+└── test_api_live.py # /api/live, /api/history, /api/pump-events, /api/pools/live (Phase 20)
 ```
 
 Base fixture in `conftest.py`:
@@ -2162,11 +2212,17 @@ def client():
 
 ```
 frontend/tests/
-├── validation.spec.js      # FIELD_CONFIG boundaries and NAME_CONFIG pattern
-├── useSettings.spec.js     # localStorage read/write, defaults, token encoding
-├── StepperInput.spec.js    # Stepper logic: steps, min/max boundaries, emit
-├── useApi.spec.js          # API calls: success, 401, network error
-└── useImage.spec.js        # Compression: max edge clamp, JPEG output, byte cap
+├── validation.spec.js           # FIELD_CONFIG boundaries and NAME_CONFIG pattern
+├── useSettings.spec.js          # localStorage read/write, defaults, token encoding
+├── StepperInput.spec.js         # Stepper logic: steps, min/max boundaries, emit
+├── ValueSliderInput.spec.js     # step / stepDown prop, empty value (Phase 26)
+├── useApi.spec.js               # API calls: success, 401, network error (incl. postEvent, live, history)
+├── useImage.spec.js             # Compression: max edge clamp, JPEG output, byte cap
+├── useLiveData.spec.js          # 30s polling, stale detection, cleanup (Phase 20)
+├── LiveView.spec.js             # Dashboard render, pool selector (Phase 20)
+├── TrendChart.spec.js           # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
+├── MeasurementForm.spec.js      # German labels, submit, photo button (Phase 26)
+└── eventStep.spec.js            # stepFor (both directions), amountDecimals, amountEmptyValue, snapAmount (Phase 26)
 ```
 
 ---
@@ -2190,49 +2246,65 @@ frontend/tests/
 | 13 | Frontend: Image capture flow | `useImage.js`, `ImageCaptureModal.vue`, `useApi.analyzeImage`, button in `MeasurementForm.vue` |
 | 14 | Frontend tests | `tests/useImage.spec.js` |
 | 15 | Integration | End-to-end photo capture → AI → form prefill |
-| 16 | Backend: chemistry endpoint `/api/chem` | `main.py`, validators for `chemicalType` + `amount/unit` |
-| 17 | Frontend: chemistry form + burger navigation | `App.vue`, `ChemicalUpdateForm.vue`, `useApi.postChemicalUpdate` |
-| 18 | Tests: chemistry flow | `backend/tests/test_models.py`, `backend/tests/test_api.py`, `frontend/tests/useApi.spec.js` |
-| 19 | Integration: chemistry MQTT publish | manual check for topic suffix `/chem` and payload without `sensorType` |
+| 16 | Backend: event endpoint `/api/event` (Phase 19, refactored Phase 25) | `main.py`, validators for `eventType` + `amount/unit` + `note` |
+| 17 | Frontend: event form + burger navigation | `App.vue`, `EventForm.vue` (renamed from `ChemicalUpdateForm.vue`), `useApi.postEvent` |
+| 18 | Tests: event flow | `backend/tests/test_models.py`, `backend/tests/test_api.py`, `frontend/tests/useApi.spec.js`, `frontend/tests/eventStep.spec.js`, `frontend/tests/ValueSliderInput.spec.js` |
+| 19 | Integration: event MQTT publish | manual check for topic suffix `/event` and payload without `sensorType` |
+| 20 | Backend: live data, SQLite, REST endpoints | `db.py`, `live_state.py`, `aggregator.py`, `main.py` (routes), `tests/test_db.py`, `tests/test_live_state.py`, `tests/test_mqtt.py`, `tests/test_aggregator.py`, `tests/test_api_live.py` |
+| 21 | Frontend: live dashboard | `useLiveData.js`, `LiveView.vue`, `PumpStatusCard.vue`, `TrendChart.vue`, `useApi.fetchPoolsLive/fetchLive/fetchHistory/fetchPumpEvents`; add live view to `App.vue` as default landing |
+| 22 | Frontend tests | `useLiveData.spec.js`, `LiveView.spec.js`, `TrendChart.spec.js` |
+| 23 | Live data consolidation | Hard-code pump field names, drop `LIVE_TOPIC_*_TEMPLATE` and `LIVE_PUMP_FIELD_*` env vars, consolidate `POOL_LIST` to base-topic form |
+| 24 | Image capture / live data / image capture integration | end-to-end verification |
+| 25 | Event refactor (Phase 25) | Rename `chemicalType` → `eventType`, add `ph_plus`/`ph_minus` separation, add `refill`/`backwash`/`winter` event types, add `note` field, switch endpoint to `POST /api/event`, switch topic suffix to `/event` (hard cut, no `/api/chem` compat) |
+| 26 | Event form UX polish (Phase 26) | Add `kg` unit, add asymmetric stepper steps at thresholds, reorder unit dropdown (Tabs, g, kg, l, Min.), rename menu (Dashboard/Messungen/Ereignisse/Einstellungen), Germanise `MeasurementForm` + `SettingsPanel`, bump `APP_VERSION` to `2.0`. New util `utils/eventStep.js` (pure), `ValueSliderInput` gains `stepDown` prop |
 
 ---
 
-## 10. Chemieupdate Specification (Phase 19)
+## 10. Event Specification (Phase 19, refactored Phase 25)
 
-This section defines the approved target implementation for the chemistry update feature.
+This section defines the approved target implementation of the operational
+event feature. The feature was originally introduced in Phase 19 as the
+"Chemieupdate" chemistry-update form and generalised in Phase 25 to cover
+refill / backwash / winter events too. The legacy `/api/chem` endpoint
+and `/chem` MQTT suffix were removed in Phase 25 (hard cut — no
+backwards-compat layer).
 
 ### 10.1 Scope
 
-- Add dedicated endpoint `POST /api/chem` for chemistry events.
-- Add dedicated frontend view `chemistry` (no Vue Router).
-- One event contains exactly one chemical type (`B1` mode).
-- Publish chemistry events to `<pool-topic>/chem`.
-- Chemistry MQTT payload must not contain `sensorType`.
+- One dedicated endpoint `POST /api/event` for operational events.
+- One dedicated frontend view key `event` (no Vue Router).
+- One event contains exactly one event type.
+- Publish events to `<pool-topic>/event`.
+- Event MQTT payload must not contain `sensorType`.
+- Optional `note` field, max 500 chars, persisted to backend/MQTT.
+- `pH-Minus` events negate `amount` before publish (signed value on the wire).
 
-### 10.2 API Contract (`POST /api/chem`)
+### 10.2 API Contract (`POST /api/event`)
 
 | Field | Type | Required | Rules |
 | ----- | ---- | -------- | ----- |
 | `time` | int | yes | Unix timestamp (seconds) |
 | `name` | string | yes | Must match pool name in `POOL_LIST` |
-| `chemicalType` | enum | yes | `chlorine`, `ph`, `flocculant` |
-| `amount` | float | no | Must be `> 0` when present |
-| `unit` | enum | no | `ml`, `g`, `tabs`, `l` |
+| `eventType` | enum | yes | `chlorine`, `ph_plus`, `ph_minus`, `flocculant`, `refill`, `backwash`, `winter` |
+| `amount` | float | no | Must be `> 0` when present; `pH-Minus` carries negative value on the wire |
+| `unit` | enum | no | `g`, `kg`, `l`, `tabs`, `min` |
+| `note` | string | no | Free text, max 500 chars |
 
 Pair-consistency validation:
 
 - `amount` set -> `unit` must be set
 - `unit` set -> `amount` must be set
 
-Request example:
+Request example (chlorine addition with note):
 
 ```json
 {
   "time": 1780577400,
   "name": "Pool 1",
-  "chemicalType": "chlorine",
+  "eventType": "chlorine",
   "amount": 120.0,
-  "unit": "ml"
+  "unit": "g",
+  "note": "Chlortabletten 200g Dose"
 }
 ```
 
@@ -2241,7 +2313,7 @@ Response `201`:
 ```json
 {
   "status": "success",
-  "message": "Chemical update published to MQTT"
+  "message": "Event published to MQTT"
 }
 ```
 
@@ -2249,24 +2321,25 @@ Status codes: `201`, `401`, `422`, `503`.
 
 ### 10.3 MQTT Topic and Payload
 
-Topic resolution reuses pool mapping from `POOL_LIST` and appends `/chem`.
+Topic resolution reuses pool mapping from `POOL_LIST` and appends `/event`.
 
 Example:
 
 - base topic: `pool1` (from `POOL_LIST`)
 - measurement topic: `pool1/manual` (publish only)
-- chemistry topic:   `pool1/chem`   (publish only)
-- subscription:      `pool1/+`      (single wildcard, shared with mqtt2mail)
+- event topic:        `pool1/event`  (publish only)
+- subscription:       `pool1/+`      (single wildcard, shared with mqtt2mail)
 
-Payload example (no `sensorType`):
+Payload example (chlorine addition, no `sensorType`):
 
 ```json
 {
   "time": 1780577400,
   "name": "Pool 1",
-  "chemicalType": "chlorine",
+  "eventType": "chlorine",
   "amount": 120.0,
-  "unit": "ml"
+  "unit": "g",
+  "note": "Chlortabletten 200g Dose"
 }
 ```
 
@@ -2275,65 +2348,82 @@ Payload example (no `sensorType`):
 `App.vue` target state handling:
 
 ```js
-const view = ref('form') // 'form' | 'chemistry' | 'settings'
+const view = ref('live') // 'live' | 'form' | 'event' | 'settings'
+const navigationEntries = [
+  { key: 'live',     label: 'Dashboard' },
+  { key: 'form',     label: 'Messungen' },
+  { key: 'event',    label: 'Ereignisse' },
+  { key: 'settings', label: 'Einstellungen', separator: true },
+]
 ```
 
 Expected rendering pattern:
 
 ```vue
-<div v-show="view !== 'settings'">
-  <div v-show="view === 'form'"><MeasurementForm /></div>
-  <div v-show="view === 'chemistry'"><ChemicalUpdateForm /></div>
-</div>
-<SettingsPanel v-if="view === 'settings'" @close="view = 'form'" />
+<LiveView        v-if="view === 'live'" />
+<MeasurementForm v-else-if="view === 'form'" />
+<EventForm       v-else-if="view === 'event'" />
+<SettingsPanel   v-else-if="view === 'settings'" @close="view = 'live'" />
 ```
 
-`v-show` is used for the measurement/chemistry pages so both form states remain mounted and preserve entered values when switching via the burger menu.
-
-Navigation behavior (burger menu):
-
-| Current view | Burger entries |
-| ------------ | -------------- |
-| Measurement | Measurements, Chemieupdate, separator, Settings |
-| Chemieupdate | Measurements, Chemieupdate, separator, Settings |
-
-Settings remains directly accessible via gear icon in the header.
+`v-if` is used so each form unmounts on switch; the Live dashboard
+re-fetches on every mount via `useLiveData`. Menu labels are German;
+view keys are English.
 
 UI labels are German; API enum values are English.
 
-| UI label | API value | amount sign |
-| -------- | --------- | ----------- |
-| Chlor | `chlorine` | positive |
-| pH-Plus | `ph` | positive |
-| pH-Minus | `ph` | negative |
-| Flockungsmittel | `flocculant` | positive |
+| UI label          | API value    | default unit | amount sign |
+| ----------------- | ------------ | ------------ | ----------- |
+| Chlor             | `chlorine`   | `g`          | positive    |
+| pH-Plus           | `ph_plus`    | `g`          | positive    |
+| pH-Minus          | `ph_minus`   | `g`          | negative    |
+| Flockungsmittel   | `flocculant` | `g`          | positive    |
+| Nachfüllen        | `refill`     | `l`          | positive    |
+| Rückspülung       | `backwash`   | `min`        | positive    |
+| Einwinterung      | `winter`     | `min`        | positive    |
 
-Amount entry uses `ValueSliderInput` with UI range `0.0-100.0` and one decimal place. `0` acts as a UI reset value: the optional amount is cleared and the selected unit is removed. The API still only receives `amount` when it is `> 0`.
+Amount entry uses `ValueSliderInput` with UI range `0.0-100.0`. `0` acts
+as a UI reset value: the optional amount is cleared and the selected
+unit is removed. The API still only receives `amount` when it is `> 0`
+(after the `ph_minus` sign flip, where applicable).
 
-### 10.5 Sequence Diagram
+### 10.5 Step Grid (Phase 26)
+
+`utils/eventStep.js` provides pure helpers used by `EventForm.vue` to
+drive `ValueSliderInput`:
+
+- For unit in `g`, `kg`, `l`: step = `0.1` for values `< 1`, `1` for `1..9`, `10` for `≥ 10`.
+- For unit in `tabs`, `min`: step = `1` for values `< 10`, `10` for `≥ 10`.
+- `−` uses the previous range's step (asymmetric via `stepDown` prop on `ValueSliderInput`).
+- `+` uses the current range's step.
+
+### 10.6 Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant UI as ChemicalUpdateForm
-    participant API as FastAPI /api/chem
+    participant UI as EventForm
+    participant API as FastAPI /api/event
     participant MQTT as Mosquitto
 
-    UI->>API: POST /api/chem (Bearer + JSON)
+    UI->>API: POST /api/event (Bearer + JSON)
     API->>API: Validate token and body
     API->>API: Resolve pool topic from POOL_LIST
-    API->>MQTT: Publish to <pool-topic>/chem
+    API->>MQTT: Publish to <pool-topic>/event
     API-->>UI: 201 success
 ```
 
-### 10.6 UI Example (Target)
+### 10.7 UI Example (Target)
 
 ```
 ┌─────────────────────────────┐
 │ ≡ Pool Monitor          [⚙] │
-│ Date/Time  [..............] │
-│ Pool       [Pool 1      ▼]  │
-│ Chemikalie [Chlor       ▼]  │
-│ Menge      [-][10.0][+] [ml▼]│
-│ [ SEND ]                    │
+│ Datum/Uhrzeit [...........] │
+│ Pool         [Pool 1    ▼]  │
+│ Ereignis     [Chlor     ▼]  │
+│ Menge        [-][10.0][+] [g▼]│
+│ ▼ Notiz (optional)          │
+│ ┌─────────────────────┐     │
+│ │      SENDEN         │     │
+│ └─────────────────────┘     │
 └─────────────────────────────┘
 ```

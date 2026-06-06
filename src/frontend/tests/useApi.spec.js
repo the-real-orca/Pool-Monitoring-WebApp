@@ -167,7 +167,7 @@ describe('postMeasurement', () => {
   })
 })
 
-describe('postChemicalUpdate', () => {
+describe('postEvent', () => {
   beforeEach(() => {
     vi.resetModules()
     localStorage.clear()
@@ -175,21 +175,21 @@ describe('postChemicalUpdate', () => {
     vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('posts chemical updates with amount and unit', async () => {
+  it('posts events with amount and unit', async () => {
     fetch.mockResolvedValue({ status: 201, ok: true })
 
     const { useApi } = await import('../src/composables/useApi.js')
-    const { postChemicalUpdate } = useApi()
-    const ok = await postChemicalUpdate({
+    const { postEvent } = useApi()
+    const ok = await postEvent({
       time: 1755724982,
       name: 'Pool',
-      chemicalType: 'chlorine',
+      eventType: 'chlorine',
       amount: 250.0,
       unit: 'ml',
     })
 
     expect(ok).toBe(true)
-    expect(fetch).toHaveBeenCalledWith('/api/chem', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('/api/event', expect.objectContaining({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -201,7 +201,7 @@ describe('postChemicalUpdate', () => {
     expect(payload).toEqual({
       time: 1755724982,
       name: 'Pool',
-      chemicalType: 'chlorine',
+      eventType: 'chlorine',
       amount: 250,
       unit: 'ml',
     })
@@ -211,30 +211,73 @@ describe('postChemicalUpdate', () => {
     fetch.mockResolvedValue({ status: 201, ok: true })
 
     const { useApi } = await import('../src/composables/useApi.js')
-    const { postChemicalUpdate } = useApi()
-    await postChemicalUpdate({
+    const { postEvent } = useApi()
+    await postEvent({
       time: 1755724982,
       name: 'Pool',
-      chemicalType: 'ph',
+      eventType: 'ph',
     })
 
     const payload = JSON.parse(fetch.mock.calls[0][1].body)
     expect(payload).toEqual({
       time: 1755724982,
       name: 'Pool',
-      chemicalType: 'ph',
+      eventType: 'ph',
     })
+  })
+
+  it('includes note when present', async () => {
+    fetch.mockResolvedValue({ status: 201, ok: true })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postEvent } = useApi()
+    await postEvent({
+      time: 1755724982,
+      name: 'Pool',
+      eventType: 'refill',
+      amount: 30,
+      unit: 'min',
+      note: 'opened valve halfway',
+    })
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(payload).toEqual({
+      time: 1755724982,
+      name: 'Pool',
+      eventType: 'refill',
+      amount: 30,
+      unit: 'min',
+      note: 'opened valve halfway',
+    })
+  })
+
+  it('omits note when empty string', async () => {
+    fetch.mockResolvedValue({ status: 201, ok: true })
+
+    const { useApi } = await import('../src/composables/useApi.js')
+    const { postEvent } = useApi()
+    await postEvent({
+      time: 1,
+      name: 'Pool',
+      eventType: 'backwash',
+      amount: 5,
+      unit: 'min',
+      note: '',
+    })
+
+    const payload = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(payload.note).toBeUndefined()
   })
 
   it('returns false and sets error for unauthorized requests', async () => {
     fetch.mockResolvedValue({ status: 401, ok: false })
 
     const { useApi } = await import('../src/composables/useApi.js')
-    const { postChemicalUpdate, error } = useApi()
-    const ok = await postChemicalUpdate({
+    const { postEvent, error } = useApi()
+    const ok = await postEvent({
       time: 1755724982,
       name: 'Pool',
-      chemicalType: 'ph',
+      eventType: 'ph',
     })
 
     expect(ok).toBe(false)

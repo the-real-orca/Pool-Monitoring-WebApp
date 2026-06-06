@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from main import ChemicalUpdate, Measurement
+from main import Event, Measurement
 
 
 def test_valid_measurement():
@@ -161,73 +161,140 @@ def test_ai_fields_ai_corrected_false():
     assert m.aiCorrected is False
 
 
-# --- ChemicalUpdate tests ---
+# --- Event tests ---
 
-def test_valid_chemical_update_with_amount_and_unit():
-    update = ChemicalUpdate(
+def test_valid_event_with_amount_and_unit():
+    e = Event(
         time=1755724982,
         name="Pool",
-        chemicalType="chlorine",
+        eventType="chlorine",
         amount=250.0,
         unit="ml",
     )
-    assert update.time == 1755724982
-    assert update.name == "Pool"
-    assert update.chemicalType == "chlorine"
-    assert update.amount == 250.0
-    assert update.unit == "ml"
+    assert e.time == 1755724982
+    assert e.name == "Pool"
+    assert e.eventType == "chlorine"
+    assert e.amount == 250.0
+    assert e.unit == "ml"
+    assert e.note is None
 
 
-def test_valid_chemical_update_without_amount_and_unit():
-    update = ChemicalUpdate(
+def test_valid_event_without_amount_and_unit():
+    e = Event(
         time=1755724982,
         name="Pool",
-        chemicalType="ph",
+        eventType="ph",
     )
-    assert update.amount is None
-    assert update.unit is None
+    assert e.amount is None
+    assert e.unit is None
 
 
-def test_chemical_update_rounds_amount_to_one_decimal():
-    update = ChemicalUpdate(
+def test_event_rounds_amount_to_one_decimal():
+    e = Event(
         time=1755724982,
         name="Pool",
-        chemicalType="flocculant",
+        eventType="flocculant",
         amount=123.45,
         unit="g",
     )
-    assert update.amount == 123.5
+    assert e.amount == 123.5
 
 
-def test_chemical_update_rejects_unknown_name():
+def test_event_rejects_unknown_name():
     with pytest.raises(ValidationError) as exc:
-        ChemicalUpdate(
+        Event(
             time=1755724982,
             name="Unknown Pool",
-            chemicalType="chlorine",
+            eventType="chlorine",
             amount=250.0,
             unit="ml",
         )
     assert "Unknown pool name: Unknown Pool" in str(exc.value)
 
 
-def test_chemical_update_requires_unit_when_amount_is_set():
+def test_event_requires_unit_when_amount_is_set():
     with pytest.raises(ValidationError) as exc:
-        ChemicalUpdate(
+        Event(
             time=1755724982,
             name="Pool",
-            chemicalType="chlorine",
+            eventType="chlorine",
             amount=250.0,
         )
     assert "amount and unit must be set together" in str(exc.value)
 
 
-def test_chemical_update_requires_amount_when_unit_is_set():
+def test_event_requires_amount_when_unit_is_set():
     with pytest.raises(ValidationError) as exc:
-        ChemicalUpdate(
+        Event(
             time=1755724982,
             name="Pool",
-            chemicalType="chlorine",
+            eventType="chlorine",
             unit="ml",
         )
     assert "amount and unit must be set together" in str(exc.value)
+
+
+# --- New event types (refill, backwash, winter) ---
+
+def test_event_accepts_refill_with_minutes():
+    e = Event(time=1, name="Pool", eventType="refill", amount=30.0, unit="min")
+    assert e.eventType == "refill"
+    assert e.unit == "min"
+    assert e.amount == 30.0
+
+
+def test_event_accepts_backwash_with_minutes():
+    e = Event(time=1, name="Pool", eventType="backwash", amount=5.0, unit="min")
+    assert e.eventType == "backwash"
+    assert e.unit == "min"
+
+
+def test_event_accepts_winter_with_litres():
+    e = Event(time=1, name="Pool", eventType="winter", amount=2.5, unit="l")
+    assert e.eventType == "winter"
+    assert e.unit == "l"
+
+
+def test_event_rejects_unknown_type():
+    with pytest.raises(ValidationError):
+        Event(time=1, name="Pool", eventType="bogus")
+
+
+def test_event_accepts_kg_unit():
+    e = Event(time=1, name="Pool", eventType="chlorine", amount=2.5, unit="kg")
+    assert e.unit == "kg"
+    assert e.amount == 2.5
+
+
+def test_event_rejects_unknown_unit():
+    with pytest.raises(ValidationError):
+        Event(time=1, name="Pool", eventType="chlorine", amount=1.0, unit="oz")
+
+
+# --- Note field ---
+
+def test_event_accepts_note():
+    e = Event(time=1, name="Pool", eventType="refill", note="opened the valve halfway")
+    assert e.note == "opened the valve halfway"
+
+
+def test_event_note_default_is_none():
+    e = Event(time=1, name="Pool", eventType="chlorine")
+    assert e.note is None
+
+
+def test_event_note_max_length_500_ok():
+    e = Event(time=1, name="Pool", eventType="chlorine", note="A" * 500)
+    assert e.note == "A" * 500
+
+
+def test_event_note_too_long_rejected():
+    with pytest.raises(ValidationError):
+        Event(time=1, name="Pool", eventType="chlorine", note="A" * 501)
+
+
+def test_event_accepts_negative_amount_for_ph_minus_workflow():
+    """The frontend negates ``amount`` for ph-minus before sending; the
+    backend just stores the signed value. No range constraint on amount."""
+    e = Event(time=1, name="Pool", eventType="ph", amount=-10.0, unit="g")
+    assert e.amount == -10.0

@@ -212,12 +212,12 @@ def test_handle_pool_message_unknown_pump_pool_in_map_is_dropped(monkeypatch):
     assert "NotInPoolList" not in main._state._pumps
 
 
-def test_handle_pool_message_ignores_chemistry_payload(pump_handlers):
-    """Chemistry messages are not subscribed-to, but the handler must not
+def test_handle_pool_message_ignores_event_payload(pump_handlers):
+    """Event messages are not subscribed-to, but the handler must not
     misclassify them as pumps if they ever arrive on the wildcard."""
     main, state = pump_handlers
-    msg = {"time": 1, "name": _POOL, "chemicalType": "chlorine"}
-    main._handle_pool_message(f"{_BASE}/chem", msg)
+    msg = {"time": 1, "name": _POOL, "eventType": "chlorine"}
+    main._handle_pool_message(f"{_BASE}/event", msg)
     snap = state.get_snapshot(_POOL)
     assert snap["pump"]["main"]["running"] is None
     assert snap["pump"]["solar"]["running"] is None

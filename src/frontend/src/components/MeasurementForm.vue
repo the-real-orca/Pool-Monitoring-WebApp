@@ -59,17 +59,17 @@ function validate() {
   let valid = true
 
   if (!form.name || form.name.length < 1 || form.name.length > 50) {
-    errors.name = 'Please select a pool'
+    errors.name = 'Bitte ein Becken auswählen'
     valid = false
   }
 
   if (form.status && form.status.length > 500) {
-    errors.status = 'Status must be max 500 characters'
+    errors.status = 'Status darf maximal 500 Zeichen lang sein'
     valid = false
   }
 
   if (!form.time) {
-    errors.time = 'Date/Time is required'
+    errors.time = 'Datum/Uhrzeit ist erforderlich'
     valid = false
   }
 
@@ -89,12 +89,12 @@ async function submit() {
   }
   const ok = await postMeasurement(payload)
   if (ok) {
-    showToast('Measurement saved', 'success')
+    showToast('Messung gespeichert', 'success')
     resetForm()
   } else if (error.value === '401') {
-    showToast('Unauthorized – check your token in settings', 'error')
+    showToast('Nicht autorisiert – Token in den Einstellungen prüfen', 'error')
   } else {
-    showToast('Failed to send measurement', 'error')
+    showToast('Messung konnte nicht gesendet werden', 'error')
   }
 }
 
@@ -104,7 +104,7 @@ function onCaptureApplied({ pH, cl, image }) {
   aiData.image = image
   if (pH != null) form.pH = pH
   if (cl != null) form.cl = cl
-  showToast('Values extracted – please verify', 'success')
+  showToast('Werte extrahiert – bitte überprüfen', 'success')
   showCapture.value = false
 }
 
@@ -121,11 +121,11 @@ initDateTime()
 <template>
   <form @submit.prevent="submit" class="space-y-5">
 
-    <h1 class="text-center text-2xl font-bold text-slate-800">Measurements</h1>
+    <h1 class="text-center text-2xl font-bold text-slate-800">Messung</h1>
 
     <div class="grid grid-cols-1 gap-x-4 md:grid-cols-2">
       <div class="space-y-1">
-        <label class="block text-sm font-medium text-slate-600">Date/Time</label>
+        <label class="block text-sm font-medium text-slate-600">Datum/Uhrzeit</label>
         <input
           v-model="form.time"
           type="datetime-local"
@@ -138,9 +138,9 @@ initDateTime()
         <label class="block text-sm font-medium text-slate-600">Pool</label>
         <select
           v-model="form.name"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+          class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         >
-          <option value="" disabled>Please select</option>
+          <option value="" disabled>Bitte auswählen</option>
           <option v-for="pool in pools" :key="pool.name" :value="pool.name">
             {{ pool.name }}
           </option>
@@ -176,7 +176,7 @@ initDateTime()
 
     <div class="space-y-4">
       <div>
-        <label class="block text-sm font-medium text-slate-600">Temperature</label>
+        <label class="block text-sm font-medium text-slate-600">Temperatur</label>
         <div class="mt-1">
           <ValueSliderInput
             v-model="form.temp"
@@ -186,7 +186,7 @@ initDateTime()
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-slate-600">pH Value</label>
+        <label class="block text-sm font-medium text-slate-600">pH-Wert</label>
         <div class="mt-1">
           <ValueSliderInput
             v-model="form.pH"
@@ -196,7 +196,7 @@ initDateTime()
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-slate-600">Chlorine</label>
+        <label class="block text-sm font-medium text-slate-600">Chlor</label>
         <div class="mt-1">
           <ValueSliderInput
             v-model="form.cl"
@@ -212,7 +212,7 @@ initDateTime()
         @click="showStatus = !showStatus"
         class="flex w-full items-center justify-between text-sm font-medium text-slate-600 hover:text-slate-800"
       >
-        <span>Notes / Status</span>
+        <span>Notizen / Status</span>
         <svg
           class="h-4 w-4 transition-transform"
           :class="{ 'rotate-180': showStatus }"
@@ -228,7 +228,7 @@ initDateTime()
           v-model="form.status"
           rows="2"
           maxlength="500"
-          placeholder="Enter status..."
+          placeholder="Status eingeben..."
           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
         ></textarea>
         <p v-if="errors.status" class="text-sm text-error">{{ errors.status }}</p>
@@ -241,7 +241,7 @@ initDateTime()
         :disabled="loading"
         class="w-full rounded-lg bg-primary py-3 text-lg font-semibold text-white disabled:opacity-50 active:bg-primary/80"
       >
-        {{ loading ? 'Sending...' : 'SEND' }}
+        {{ loading ? 'Wird gesendet...' : 'SENDEN' }}
       </button>
     </div>
 

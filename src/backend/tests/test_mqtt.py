@@ -154,13 +154,13 @@ def test_on_message_dispatches_wildcard_hash():
     for topic, payload in [
         ("home/Pool/ble-yc01", b'{"temp": 1.0}'),
         ("home/Pool/pump", b'{"mainPump": true}'),
-        ("home/Pool/chem", b'{"chemicalType": "chlorine"}'),
+        ("home/Pool/event", b'{"eventType": "chlorine"}'),
     ]:
         msg = MagicMock()
         msg.topic = topic
         msg.payload = payload
         mqtt._on_message(None, None, msg)
-    assert received == ["home/Pool/ble-yc01", "home/Pool/pump", "home/Pool/chem"]
+    assert received == ["home/Pool/ble-yc01", "home/Pool/pump", "home/Pool/event"]
 
 
 def test_on_message_wildcard_does_not_match_unrelated_prefix():

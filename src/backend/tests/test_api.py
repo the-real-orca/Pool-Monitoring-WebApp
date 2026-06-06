@@ -70,7 +70,7 @@ def test_get_status_200(client):
     assert "mqttConnected" in data
     assert "uptime" in data
     assert "version" in data
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "2.0"
 
 
 def test_post_measurement_with_ai_fields(client):
@@ -122,13 +122,13 @@ def test_post_measurement_with_ai_fields_no_correction(client):
     assert "aiImage" not in payload
 
 
-def test_post_chemical_update_201(client):
+def test_post_event_201(client):
     response = client.post(
-        "/api/chem",
+        "/api/event",
         json={
             "time": 1755724982,
             "name": "Pool",
-            "chemicalType": "chlorine",
+            "eventType": "chlorine",
             "amount": 250.0,
             "unit": "ml",
         },
@@ -140,24 +140,24 @@ def test_post_chemical_update_201(client):
     publish_call = __import__("mqtt").publish.call_args
     topic = publish_call[0][0]
     payload = publish_call[0][1]
-    assert topic == "pool/chem"
+    assert topic == "pool/event"
     assert payload == {
         "time": 1755724982,
         "name": "Pool",
-        "chemicalType": "chlorine",
+        "eventType": "chlorine",
         "amount": 250.0,
         "unit": "ml",
     }
     assert "sensorType" not in payload
 
 
-def test_post_chemical_update_without_amount_and_unit(client):
+def test_post_event_without_amount_and_unit(client):
     response = client.post(
-        "/api/chem",
+        "/api/event",
         json={
             "time": 1755724982,
             "name": "Pool",
-            "chemicalType": "ph",
+            "eventType": "ph",
         },
         headers={"Authorization": "Bearer test-token"},
     )
@@ -168,17 +168,17 @@ def test_post_chemical_update_without_amount_and_unit(client):
     assert payload == {
         "time": 1755724982,
         "name": "Pool",
-        "chemicalType": "ph",
+        "eventType": "ph",
     }
 
 
-def test_post_chemical_update_422_invalid_pair(client):
+def test_post_event_422_invalid_pair(client):
     response = client.post(
-        "/api/chem",
+        "/api/event",
         json={
             "time": 1755724982,
             "name": "Pool",
-            "chemicalType": "chlorine",
+            "eventType": "chlorine",
             "amount": 250.0,
         },
         headers={"Authorization": "Bearer test-token"},
@@ -187,14 +187,14 @@ def test_post_chemical_update_422_invalid_pair(client):
     assert "amount and unit must be set together" in response.text
 
 
-def test_post_chemical_update_503_mqtt_down(client):
+def test_post_event_503_mqtt_down(client):
     with patch("mqtt.publish", return_value=False):
         response = client.post(
-            "/api/chem",
+            "/api/event",
             json={
                 "time": 1755724982,
                 "name": "Pool",
-                "chemicalType": "chlorine",
+                "eventType": "chlorine",
                 "amount": 250.0,
                 "unit": "ml",
             },
@@ -202,6 +202,105 @@ def test_post_chemical_update_503_mqtt_down(client):
         )
     assert response.status_code == 503
     assert "MQTT unavailable" in response.json()["detail"]
+
+
+def test_post_event_with_refill_minutes(client):
+    response = client.post(
+        "/api/event",
+        json={
+            "time": 1,
+            "name": "Pool",
+            "eventType": "refill",
+            "amount": 30.0,
+            "unit": "min",
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+    payload = __import__("mqtt").publish.call_args[0][1]
+    assert payload["eventType"] == "refill"
+    assert payload["unit"] == "min"
+    assert payload["amount"] == 30.0
+
+
+def test_post_event_with_backwash_minutes(client):
+    response = client.post(
+        "/api/event",
+        json={"time": 1, "name": "Pool", "eventType": "backwash",
+              "amount": 5.0, "unit": "min"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+
+
+def test_post_event_with_winter_litres(client):
+    response = client.post(
+        "/api/event",
+        json={"time": 1, "name": "Pool", "eventType": "winter",
+              "amount": 2.0, "unit": "l"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+    payload = __import__("mqtt").publish.call_args[0][1]
+    assert payload["eventType"] == "winter"
+
+
+def test_post_event_with_note(client):
+    response = client.post(
+        "/api/event",
+        json={
+            "time": 1,
+            "name": "Pool",
+            "eventType": "backwash",
+            "amount": 5.0,
+            "unit": "min",
+            "note": "after storm, water cloudy",
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+    payload = __import__("mqtt").publish.call_args[0][1]
+    assert payload["note"] == "after storm, water cloudy"
+
+
+def test_post_event_without_note_does_not_include_field(client):
+    response = client.post(
+        "/api/event",
+        json={"time": 1, "name": "Pool", "eventType": "chlorine"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 201
+    payload = __import__("mqtt").publish.call_args[0][1]
+    assert "note" not in payload
+
+
+def test_post_event_422_unknown_event_type(client):
+    response = client.post(
+        "/api/event",
+        json={"time": 1, "name": "Pool", "eventType": "bogus"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 422
+
+
+def test_post_event_422_unknown_unit(client):
+    response = client.post(
+        "/api/event",
+        json={"time": 1, "name": "Pool", "eventType": "chlorine",
+              "amount": 1.0, "unit": "oz"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 422
+
+
+def test_old_chem_endpoint_is_gone(client):
+    """Hard cut: the previous `/api/chem` endpoint must no longer answer."""
+    response = client.post(
+        "/api/chem",
+        json={"time": 1, "name": "Pool", "chemicalType": "chlorine"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert response.status_code == 404
 
 
 # --- /api/analyze-image tests ---
