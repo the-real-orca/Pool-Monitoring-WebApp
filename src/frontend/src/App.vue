@@ -56,7 +56,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex min-h-svh items-center justify-center bg-slate-50 p-4">
-    <div class="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-lg">
+    <div class="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-lg md:max-w-2xl">
       <div class="relative bg-primary px-6 py-4 text-center">
         <div v-if="view !== 'settings'" ref="menuRef" class="absolute left-4 top-4">
           <button

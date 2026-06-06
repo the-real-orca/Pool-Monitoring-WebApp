@@ -123,28 +123,30 @@ initDateTime()
 
     <h1 class="text-center text-2xl font-bold text-slate-800">Measurements</h1>
 
-    <div class="space-y-1">
-      <label class="block text-sm font-medium text-slate-600">Date/Time</label>
-      <input
-        v-model="form.time"
-        type="datetime-local"
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-      />
-      <p v-if="errors.time" class="text-sm text-error">{{ errors.time }}</p>
-    </div>
+    <div class="grid grid-cols-1 gap-x-4 md:grid-cols-2">
+      <div class="space-y-1">
+        <label class="block text-sm font-medium text-slate-600">Date/Time</label>
+        <input
+          v-model="form.time"
+          type="datetime-local"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        <p v-if="errors.time" class="text-sm text-error">{{ errors.time }}</p>
+      </div>
 
-    <div class="space-y-1">
-      <label class="block text-sm font-medium text-slate-600">Pool</label>
-      <select
-        v-model="form.name"
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary bg-white"
-      >
-        <option value="" disabled>Please select</option>
-        <option v-for="pool in pools" :key="pool.name" :value="pool.name">
-          {{ pool.name }}
-        </option>
-      </select>
-      <p v-if="errors.name" class="text-sm text-error">{{ errors.name }}</p>
+      <div class="space-y-1">
+        <label class="block text-sm font-medium text-slate-600">Pool</label>
+        <select
+          v-model="form.name"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+        >
+          <option value="" disabled>Please select</option>
+          <option v-for="pool in pools" :key="pool.name" :value="pool.name">
+            {{ pool.name }}
+          </option>
+        </select>
+        <p v-if="errors.name" class="text-sm text-error">{{ errors.name }}</p>
+      </div>
     </div>
 
     <div :class="hasCamera ? 'grid grid-cols-2 gap-3' : 'space-y-1'">
