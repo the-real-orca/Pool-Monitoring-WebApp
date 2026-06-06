@@ -842,6 +842,87 @@ the new totals.
 
 ---
 
+## Phase 24 – VPS RAM / Disk Optimization
+
+Goal: Cut container **image size** on disk and **baseline RAM** of the
+Python services, because the production VPS is RAM-constrained. The runtime
+RAM delta is modest (Python interpreter baseline is the dominant factor),
+but pulling and cold-starting 300 MB+ images costs both disk cache and
+swap pressure, so the wins compound.
+
+### 24.1 Backend – switch to Alpine + slim runtime deps
+
+Goal: Drop Debian from the Python image and remove dependencies the backend
+never imports at runtime. Pillow is a dependency of the **dev tool**
+`test/test_openrouter.py`, not of the backend container. `uvicorn[standard]`
+pulls in `uvloop`, `httptools`, `websockets`, and `watchfiles` — none of
+which the backend uses (no WebSocket routes, no `--reload`, no high-perf
+loop needed for our throughput).
+
+| # | File | Change |
+|---|------|--------|
+| [x] 24.1.1 | `src/backend/Dockerfile` | `FROM python:3.12.13-slim` → `FROM python:3.12-alpine`; `RUN useradd --create-home appuser` → `RUN adduser -D -g '' appuser` (BusyBox adduser); `pip install` gets `--break-system-packages` (Alpine 3.20+ ships PEP 668 EXTERNALLY-MANAGED). |
+| [x] 24.1.2 | `src/backend/requirements.txt` | Remove `Pillow>=11.0` (unused at runtime). Change `uvicorn[standard]>=0.30` → `uvicorn>=0.30` (no `uvloop` / `httptools` / `websockets` / `watchfiles`). |
+| [x] 24.1.3 | `src/backend/.dockerignore` | New file: excludes `tests/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`, `*.pyc`, `*.md`, `Dockerfile`, `.dockerignore`, `pyproject.toml`, `.env*` (keeps only `*.py` + `requirements.txt`). |
+
+**Verify:** Image size drops from 301 MB → **139 MB** (-54% / -162 MB);
+container `/app/` contains only the 7 runtime `.py` files and
+`requirements.txt`; no test files in the image.
+
+### 24.2 mqtt2mail – switch to Alpine + non-root
+
+| # | File | Change |
+|---|------|--------|
+| [x] 24.2.1 | `src/mqtt2mail/Dockerfile` | `FROM python:3.12-slim` → `FROM python:3.12-alpine`; `pip install` gets `--break-system-packages`; add `adduser appuser` + `USER appuser` (was running as root — same hardening applied to backend in Phase 14). |
+
+**Verify:** Image size 178 MB → **75.5 MB** (-58% / -102 MB); `docker exec
+src-mqtt2mail_pool-1 id` shows `uid=... (appuser)`.
+
+### 24.3 Frontend – pin nginx base image
+
+| # | File | Change |
+|---|------|--------|
+| [x] 24.3.1 | `src/frontend/Dockerfile` | `FROM nginx:alpine` → `FROM nginx:1.27-alpine` (pin for reproducibility; `alpine` rolling tag can pull a new major nginx without warning). |
+| [x] 24.3.2 | `src/frontend/Dockerfile_production` | Same pin. |
+
+**Verify:** Image 94 MB → **74.9 MB** (-20% / -19 MB) thanks to the pin
+landing on a more recent `alpine` 3.20 base; reproducible builds.
+
+### 24.4 Mosquitto – cap memory
+
+Goal: The compose file already capped CPU for every other service but not
+for mosquitto. A bug or burst (e.g. a reconnect storm) could grow the
+broker's RSS without bound. Add an explicit limit, sized to the current
+2.6 MB working set with generous headroom.
+
+| # | File | Change |
+|---|------|--------|
+| [x] 24.4.1 | `src/docker-compose.yml` | New `deploy.resources.limits` on `mosquitto`: `cpus: '0.1'`, `memory: 16M`. |
+
+**Verify:** `docker stats` shows `2.648MiB / 16MiB` (was uncapped).
+
+### 24.5 Before/after summary
+
+| Image | Before | After | Δ Disk | Δ RAM (working set) |
+|-------|--------|-------|--------|---------------------|
+| `src-backend` | 301 MB | 139 MB | **-162 MB** | 40 MB → 38 MB |
+| `src-mqtt2mail_pool` | 178 MB | 75.5 MB | **-102 MB** | 21 MB → 18 MB |
+| `src-frontend` | 94 MB | 74.9 MB | **-19 MB** | 12 MB → 12 MB |
+| **Total** | **573 MB** | **289 MB** | **-284 MB (-50%)** | **~ -3 MB working set** |
+
+Per-service `memory` limits in compose stay unchanged for frontend (64 M),
+backend (128 M), caddy (64 M), mqtt2mail (64 M) — the goal was disk + cold-
+start, not active working set. The mosquitto cap (16 M, new) is the only
+runtime limit change.
+
+**Verify:** `docker compose build --no-cache` succeeds on all three Python
+images using pre-built musllinux wheels (no C compilation); `pytest -v` →
+166/166 green; `npm run test` → 64/64 green; `curl /api/measurements` with
+valid token → 201; `docker stats` shows all containers within their limits.
+
+
+---
+
 ## File Overview
 
 ```
