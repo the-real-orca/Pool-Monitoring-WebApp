@@ -1,6 +1,6 @@
 # Implementation Plan: Pool-Monitoring PWA
 
-**Version:** 2.0 | **Based on:** TSD 2.0, FSD 2.0 | **Date:** 2026-06-06
+**Version:** 2.0 | **Based on:** TSD 2.0, FSD 2.0 | **Date:** 2026-06-07
 **Legend:** `[ ]` open · `[x]` done
 
 ---
@@ -1032,6 +1032,29 @@ version, step grid). No behaviour change.
 | [x] 27.4 | `src/backend/tests/test_api.py` | `test_get_status_200`: assert `version == "2.0"` (was `"1.0.0"`). |
 
 **Verify:** `pytest -v` 185/185 green, `npm run test` 94/94 green, `npm run build` clean. `grep -RnE 'chem|chemical|Chemikalie|chemistry|Chemieupdate|ChemicalUpdateForm|chemicalType' docs/Pool-Monitoring\ -\ Functional\ Specification\ \(FSD\).md` and same against the TSD return only contextually correct occurrences (Phase 25/26 refactor history, `/api/chem` 404 regression test description, `/chem` legacy-removal note). `git diff --stat` shows only `docs/*.md`, `src/backend/main.py`, `src/backend/tests/test_api.py` and a reasonable line count.
+
+
+---
+
+## Phase 28 – mqtt2mail report subject + measurement count
+
+Goal: make the report email self-explanatory without a fixed env subject — the
+mail subject and the in-body heading now carry the pool name and a short
+German date label, and the footer states how many measurements were received
+in the report window. No protocol or behaviour change; this is a presentation
+fix only.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 28.1 | `src/mqtt2mail/app/mqtt2mail.py` | New helper `format_subject_date(dt)` → `"So. 7.6. @ 10:00"` (German weekday short, day.month, `@ HH:MM`). |
+| [x] 28.2 | `src/mqtt2mail/app/mqtt2mail.py` | `build_email_body` (plain) heading: `"Pool Status"` → `f"Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})"`. |
+| [x] 28.3 | `src/mqtt2mail/app/mqtt2mail.py` | `build_email_body_html` (HTML) `<h1>`: same template as the plain heading. |
+| [x] 28.4 | `src/mqtt2mail/app/mqtt2mail.py` | Both bodies append a footer line `Empfangene Messungen: N` (from `snapshot["message_count"]`) right under the `Zeitraum` line. |
+| [x] 28.5 | `src/mqtt2mail/app/mqtt2mail.py` | `reporter_loop`: drop `MAIL_SUBJECT` env read. Subject is generated per report as `f"Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})"`. |
+| [x] 28.6 | `src/mqtt2mail/.env.example` | `MAIL_SUBJECT=…` replaced by a comment describing the auto-generated subject format. |
+
+**Verify:** `python3 -m py_compile src/mqtt2mail/app/mqtt2mail.py` clean. Smoke test with a fixed `window_end` of `2026-06-07 10:00` and `sensor_name="Pool H32"`:
+plain heading renders `Pool Status - Pool H32 (So. 7.6. @ 10:00)`, HTML `<h1>` matches, plain+HTML footer contains `Empfangene Messungen: 42`.
 
 
 ---

@@ -230,6 +230,14 @@ def format_dt(dt: Optional[datetime]) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
+def format_subject_date(dt: Optional[datetime]) -> str:
+    """Short German date label for email subject, e.g. ``So. 7.6. @ 10:00``."""
+    if not dt:
+        return "n/a"
+    weekday_short = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."][dt.weekday()]
+    return f"{weekday_short} {dt.day}.{dt.month}. @ {dt.hour:02d}:{dt.minute:02d}"
+
+
 def datetime_from_payload(payload: dict[str, Any]) -> datetime:
     raw = payload.get("time")
     if isinstance(raw, (int, float)):
@@ -443,7 +451,7 @@ def humanize_alert_text(text: str, label: str, is_alert: bool) -> str:
 def build_email_body(snapshot: dict[str, Any]) -> str:
     lines: list[str] = []
     sensor_name = snapshot.get("sensor_name") or "PoolSensor"
-    lines.append("Pool Status")
+    lines.append(f"Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})")
     lines.append("")
 
     alerts: list[AlertEvent] = snapshot["alerts"]
@@ -491,6 +499,7 @@ def build_email_body(snapshot: dict[str, Any]) -> str:
     if snapshot.get("availability"):
         lines.append(f"Availability: {snapshot['availability']} ({format_dt(snapshot.get('availability_time'))})")
     lines.append(f"Zeitraum: {format_dt(snapshot['window_start'])} - {format_dt(snapshot['window_end'])}")
+    lines.append(f"Empfangene Messungen: {snapshot.get('message_count', 0)}")
     lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -560,13 +569,14 @@ def build_email_body_html(snapshot: dict[str, Any]) -> str:
 
     return (
         "<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"></head>\n<body>\n"
-        f"<h1>Pool Status - {sensor_name}</h1>\n"
+        f"<h1>Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})</h1>\n"
         f"{alerts_html}"
         f"<h2>Übersicht</h2>\n"
         f"{metrics_html}"
         f"<br><hr>\n"
         f"{availability_html}"
         f"<p>Zeitraum: {format_dt(snapshot['window_start'])} - {format_dt(snapshot['window_end'])}</p>\n"
+        f"<p>Empfangene Messungen: {snapshot.get('message_count', 0)}</p>\n"
         "</body>\n</html>\n"
     )
 
@@ -654,7 +664,6 @@ def send_test_email() -> None:
 def reporter_loop(aggregator: PoolAggregator, stop_event: threading.Event) -> None:
     interval = env_int("REPORT_INTERVAL_MINUTES", 15) * 60
     send_empty = env_bool("SEND_EMPTY_REPORT", False)
-    subject = env_str("MAIL_SUBJECT", "Pool Übersicht")
     report_times = parse_report_times(env_str("REPORT_TIMES", ""))
 
     if report_times:
@@ -674,6 +683,8 @@ def reporter_loop(aggregator: PoolAggregator, stop_event: threading.Event) -> No
         if snapshot["message_count"] == 0 and not send_empty:
             logging.info("Skipping empty report window")
             continue
+        sensor_name = snapshot.get("sensor_name") or "PoolSensor"
+        subject = f"Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})"
         body = build_email_body(snapshot)
         html_body = build_email_body_html(snapshot)
         try:
