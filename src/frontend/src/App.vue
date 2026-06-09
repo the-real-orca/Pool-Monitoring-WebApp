@@ -63,7 +63,7 @@ onBeforeUnmount(() => {
             type="button"
             @click="toggleMenu"
             class="flex size-11 items-center justify-center rounded-lg text-white hover:bg-white/20"
-            aria-label="Navigation oeffnen"
+            aria-label="Navigation öffnen"
             :aria-expanded="menuOpen"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
           type="button"
           @click="openSettings"
           class="absolute right-4 top-4 flex size-11 items-center justify-center rounded-lg text-white hover:bg-white/20"
-          aria-label="Einstellungen oeffnen"
+          aria-label="Einstellungen öffnen"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.773c-.309.238-.48.617-.48 1.014v.292c0 .397.171.776.48 1.014l1.003.773a1.125 1.125 0 0 1 .26 1.431l-1.296 2.247a1.125 1.125 0 0 1-1.37.49l-1.217-.456a1.125 1.125 0 0 0-1.075.124c-.073.044-.146.087-.22.127-.332.184-.582.496-.645.87l-.213 1.281c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a13.29 13.29 0 0 0-.22-.127 1.125 1.125 0 0 0-1.075-.124l-1.217.456a1.125 1.125 0 0 1-1.37-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.003-.773c.309-.238.48-.617.48-1.014v-.292c0-.397-.171-.776-.48-1.014l-1.003-.773a1.125 1.125 0 0 1-.26-1.431l1.297-2.247a1.125 1.125 0 0 1 1.37-.49l1.216.456a1.125 1.125 0 0 0 1.075-.124c.073-.044.146-.087.22-.127.332-.184.582-.496.645-.87l.213-1.28Z" />

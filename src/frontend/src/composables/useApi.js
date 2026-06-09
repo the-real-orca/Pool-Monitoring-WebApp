@@ -160,24 +160,9 @@ export function useApi() {
     }
   }
 
-  async function fetchPumpEvents(pool, days = 7) {
-    error.value = null
-    try {
-      const { __status, __data } = await getJson(
-        `/api/pump-events?pool=${encodeURIComponent(pool)}&days=${days}`
-      )
-      if (__status === 401) error.value = '401'
-      if (__status === 422) error.value = '422'
-      return __status === 200 ? __data : null
-    } catch {
-      error.value = 'network'
-      return null
-    }
-  }
-
   return {
     loading, error,
     postMeasurement, postEvent, fetchPools, analyzeImage,
-    fetchPoolsLive, fetchLive, fetchHistory, fetchPumpEvents,
+    fetchPoolsLive, fetchLive, fetchHistory,
   }
 }

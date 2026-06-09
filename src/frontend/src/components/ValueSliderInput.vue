@@ -138,6 +138,7 @@ onBeforeUnmount(() => {
     <div class="flex items-center justify-center gap-6">
       <button
         type="button"
+        aria-label="Verringern"
         @mousedown.prevent="onHoldStart(-1)"
         @mouseup="onHoldEnd"
         @mouseleave="onHoldEnd"
@@ -156,6 +157,7 @@ onBeforeUnmount(() => {
       </button>
       <button
         type="button"
+        aria-label="Erhöhen"
         @mousedown.prevent="onHoldStart(+1)"
         @mouseup="onHoldEnd"
         @mouseleave="onHoldEnd"

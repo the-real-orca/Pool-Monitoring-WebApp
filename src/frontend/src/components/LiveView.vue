@@ -33,7 +33,6 @@ const solarPump = computed(() => snapshot.value?.pump?.solar || { running: null,
 
 const hasSnapshot = computed(() => snapshot.value !== null && snapshot.value.ts > 0)
 const hasAnyPool = computed(() => pools.value.length > 0)
-const persistentError = computed(() => usingCached.value && hasSnapshot.value)
 
 async function loadPools() {
   const list = await fetchPoolsLive()

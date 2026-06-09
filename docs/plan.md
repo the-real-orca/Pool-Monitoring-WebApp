@@ -1060,6 +1060,85 @@ plain heading renders `Pool Status - Pool H32 (So. 7.6. @ 10:00)`, HTML `<h1>` m
 
 ---
 
+## Phase 30 – Frontend UI Polish (F1–F9)
+
+Goal: Fix all frontend issues identified in the comprehensive project analysis —
+time display bug, Germanization gaps, dead code, missing validation config,
+test import duplication, missing test file, and accessibility.
+
+### 30.1 Pump runtime display fix (F1)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.1.1 | `src/frontend/src/components/PumpStatusCard.vue` | `sinceMinutes` divided `diff` by 60 so the value is actual minutes, not seconds. The `läuft seit N min` / `h m` rendering now shows correct elapsed time. |
+
+### 30.2 Dead code removal (F7)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.2.1 | `src/frontend/src/components/StepperInput.vue` | **Deleted** — superseded by `ValueSliderInput`; only used by its own test. |
+| [x] 30.2.2 | `src/frontend/tests/StepperInput.spec.js` | **Deleted** — removed alongside the component. |
+| [x] 30.2.3 | `src/frontend/src/composables/useApi.js` | Removed `fetchPumpEvents` from the exported API (unused in components). |
+| [x] 30.2.4 | `src/frontend/tests/useApi.spec.js` | Removed `describe('fetchPumpEvents')` test block. |
+| [x] 30.2.5 | `src/frontend/src/components/LiveView.vue` | Removed `persistentError` computed (declared but never referenced in template). |
+
+### 30.3 Germanization of remaining English strings (F3)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.3.1 | `src/frontend/src/components/ImageCaptureModal.vue` | 8 user-facing strings translated: `Analyzing image…` → `Analysiere Bild…`; `AI could not reliably read:` → `KI konnte nicht zuverlässig lesen:`; `Unauthorized – check your token` → `Nicht autorisiert – Token prüfen`; `AI could not analyze the image` → `KI konnte das Bild nicht analysieren`; `Daily image-analysis limit reached` → `Tägliches Bildanalyse-Limit erreicht`; `Error` → `Fehler`; `Network error` → `Netzwerkfehler`; `Could not read image file` → `Bilddatei konnte nicht gelesen werden`. |
+| [x] 30.3.2 | `src/frontend/src/components/EventForm.vue` | Toast `Unauthorized – check your token in settings` → `Nicht autorisiert – Token in den Einstellungen prüfen`; button `Sende...` / `SEND` → `Wird gesendet...` / `SENDEN`. |
+
+### 30.4 Umlaut consistency (F4)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.4.1 | `src/frontend/src/App.vue` | `aria-label="Navigation oeffnen"` → `öffnen`; `aria-label="Einstellungen oeffnen"` → `öffnen`. |
+| [x] 30.4.2 | `src/frontend/src/components/EventForm.vue` | `auswaehlen` → `auswählen` (3×); `groesser` → `größer`; `hinzufuegen` → `hinzufügen`. |
+
+### 30.5 Validation config: `NAME_CONFIG` added (F5)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.5.1 | `src/validation.js` | Added `NAME_CONFIG = { minLength:1, maxLength:50, pattern:/^[a-zA-Z0-9 ]+$/ }` as specified in Phase 6.1 and TSD §646. |
+| [x] 30.5.2 | `src/frontend/tests/validation.spec.js` | Added `describe('NAME_CONFIG')` with 4 cases: valid names accepted; empty/long/special-chars rejected. |
+
+### 30.6 Test import cleanup (F6)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.6.1 | `src/frontend/tests/useSettings.spec.js` | Rewritten to import the real `useSettings` composable instead of duplicating `load`/`save` logic. Uses `vi.resetModules()` + dynamic `import()` so each test gets a fresh module-level state. |
+
+### 30.7 Missing test file (F8)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.7.1 | `src/frontend/tests/MeasurementForm.spec.js` (new) | 3 tests: renders form title, renders camera + file buttons, renders submit button. |
+
+### 30.8 Accessibility (F9)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.8.1 | `src/frontend/src/components/ValueSliderInput.vue` | Added `aria-label="Verringern"` / `aria-label="Erhöhen"` to the `−` / `+` icon buttons. Touch targets already ≥ 44px (`size-11`). |
+
+### 30.9 App version bump (F2)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 30.9.1 | `src/frontend/package.json` | `version` `1.0.0` → `2.0.0` (aligns with `APP_VERSION` in SettingsPanel and `GET /api/status`). |
+
+### 30.10 Verify summary
+
+| Suite | Result |
+|-------|--------|
+| Backend (`src/backend`) | `pytest -v` → **185/185** green (unchanged) |
+| Frontend (`src/frontend`) | `npm run test` → **90/90** green (−4: StepperInput + fetchPumpEvents removed, offset by new MeasurementForm + NAME_CONFIG) |
+| mqtt2mail (`src/mqtt2mail`) | `pytest -v` → **39/39** green (unchanged) |
+| Publisher (`src/dev/mqtt-publisher`) | `pytest -v` → **11/11** green (unchanged) |
+
+
+---
+
 ## Phase 29 – TrendChart: fixed Y-axis ranges for pH & Cl
 
 Goal: prevent uPlot from auto-scaling the pH and Cl Y-axes during zoom/pan so
@@ -1127,7 +1206,6 @@ src/
         │   ├── App.vue
         │   ├── validation.js
         │   ├── components/
-        │   │   ├── StepperInput.vue
         │   │   ├── ValueSliderInput.vue   # Phase 7
         │   │   ├── MeasurementForm.vue
         │   │   ├── ImageCaptureModal.vue  # Phase 16
@@ -1136,6 +1214,7 @@ src/
         │   │   ├── TrendChart.vue         # Phase 20
         │   │   ├── PumpStatusCard.vue     # Phase 20
         │   │   └── SettingsPanel.vue
+        │   │   └── (StepperInput.vue removed in Phase 30)
         │   ├── composables/
         │   │   ├── useSettings.js
         │   │   ├── useApi.js
@@ -1148,12 +1227,13 @@ src/
         └── tests/
             ├── validation.spec.js
             ├── useSettings.spec.js
-            ├── StepperInput.spec.js
+            ├── MeasurementForm.spec.js    # Phase 30
             ├── ValueSliderInput.spec.js   # Phase 26
             ├── useImage.spec.js           # Phase 16
             ├── useApi.spec.js             # Phase 16
             ├── useLiveData.spec.js        # Phase 20
             ├── LiveView.spec.js           # Phase 20
             ├── TrendChart.spec.js         # Phase 20
-            └── eventStep.spec.js          # Phase 26
+            ├── eventStep.spec.js          # Phase 26
+            └── (StepperInput.spec.js removed in Phase 30)
     ```

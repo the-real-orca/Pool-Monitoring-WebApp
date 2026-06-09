@@ -1,61 +1,45 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-const KEY = 'pool_monitor_settings'
-const DEFAULTS = { backendUrl: '/api', token: '' }
-
-function load() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}')
-    return { ...DEFAULTS, ...raw, token: raw.token ? atob(raw.token) : '' }
-  } catch { return { ...DEFAULTS } }
-}
-
-function save(s) {
-  localStorage.setItem(KEY, JSON.stringify({ ...s, token: btoa(s.token) }))
-}
+import { nextTick } from 'vue'
 
 describe('useSettings', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.resetModules()
   })
 
-  it('returns defaults when localStorage is empty', () => {
-    const settings = load()
-    expect(settings).toEqual(DEFAULTS)
+  it('returns defaults when localStorage is empty', async () => {
+    const { useSettings } = await import('../src/composables/useSettings.js')
+    const { settings } = useSettings()
+    expect(settings.token).toBe('')
   })
 
-  it('saves and loads roundtrip', () => {
-    const data = { backendUrl: 'http://test/api', token: 'secret' }
-    save(data)
-    const loaded = load()
-    expect(loaded.backendUrl).toBe('http://test/api')
-    expect(loaded.token).toBe('secret')
+  it('persists token change to localStorage', async () => {
+    const { useSettings } = await import('../src/composables/useSettings.js')
+    const { settings } = useSettings()
+    settings.token = 'secret'
+    await nextTick()
+    const raw = JSON.parse(localStorage.getItem('pool_monitor_settings'))
+    expect(raw.token).toBe(btoa('secret'))
   })
 
-  it('encodes token with Base64 on save', () => {
-    const data = { ...DEFAULTS, token: 'my-secret-token' }
-    save(data)
-    const raw = JSON.parse(localStorage.getItem(KEY))
-    expect(raw.token).toBe(btoa('my-secret-token'))
+  it('loads token from localStorage', async () => {
+    localStorage.setItem('pool_monitor_settings', JSON.stringify({ token: btoa('encoded') }))
+    const { useSettings } = await import('../src/composables/useSettings.js')
+    const { settings } = useSettings()
+    expect(settings.token).toBe('encoded')
   })
 
-  it('decodes token with Base64 on load', () => {
-    const raw = { ...DEFAULTS, token: btoa('encoded-token') }
-    localStorage.setItem(KEY, JSON.stringify(raw))
-    const loaded = load()
-    expect(loaded.token).toBe('encoded-token')
+  it('handles missing token gracefully', async () => {
+    localStorage.setItem('pool_monitor_settings', JSON.stringify({}))
+    const { useSettings } = await import('../src/composables/useSettings.js')
+    const { settings } = useSettings()
+    expect(settings.token).toBe('')
   })
 
-  it('handles missing token gracefully', () => {
-    localStorage.setItem(KEY, JSON.stringify({ backendUrl: '/api' }))
-    const loaded = load()
-    expect(loaded.token).toBe('')
-    expect(loaded.backendUrl).toBe('/api')
-  })
-
-  it('handles corrupted localStorage data', () => {
-    localStorage.setItem(KEY, 'not-json')
-    const loaded = load()
-    expect(loaded).toEqual(DEFAULTS)
+  it('handles corrupted localStorage data', async () => {
+    localStorage.setItem('pool_monitor_settings', 'not-json')
+    const { useSettings } = await import('../src/composables/useSettings.js')
+    const { settings } = useSettings()
+    expect(settings.token).toBe('')
   })
 })

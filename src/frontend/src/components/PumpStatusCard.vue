@@ -17,7 +17,7 @@ const statusText = computed(() => {
 
 const sinceMinutes = computed(() => {
   if (!isRunning.value || !props.runningSince) return null
-  const diff = Math.max(0, Math.floor((Date.now() / 1000) - props.runningSince))
+  const diff = Math.max(0, Math.floor(((Date.now() / 1000) - props.runningSince) / 60))
   return diff
 })
 

@@ -396,24 +396,3 @@ describe('fetchHistory', () => {
   })
 })
 
-describe('fetchPumpEvents', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    localStorage.clear()
-    saveSettings({ token: 'test-token' })
-    vi.stubGlobal('fetch', vi.fn())
-  })
-
-  it('returns events on 200', async () => {
-    fetch.mockResolvedValue({
-      status: 200, ok: true,
-      json: () => Promise.resolve({ pool: 'Pool', events: [{ id: 1, pump: 'main', state: true, time: 1, receivedAt: 1 }] })
-    })
-    const { useApi } = await import('../src/composables/useApi.js')
-    const { fetchPumpEvents } = useApi()
-    const out = await fetchPumpEvents('Pool', 7)
-    expect(out.events).toHaveLength(1)
-    expect(fetch.mock.calls[0][0]).toBe('/api/pump-events?pool=Pool&days=7')
-  })
-})
-

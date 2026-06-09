@@ -115,7 +115,7 @@ function validate() {
   let valid = true
 
   if (!form.name || form.name.length < 1 || form.name.length > 50) {
-    errors.name = 'Bitte einen Pool auswaehlen'
+    errors.name = 'Bitte einen Pool auswählen'
     valid = false
   }
 
@@ -130,7 +130,7 @@ function validate() {
   // is needed here.
   if (form.amount != null) {
     if (Number.isNaN(form.amount) || form.amount <= 0) {
-      errors.amount = 'Menge muss groesser als 0 sein'
+      errors.amount = 'Menge muss größer als 0 sein'
       valid = false
     }
   }
@@ -175,7 +175,7 @@ async function submit() {
     showToast('Ereignis gespeichert', 'success')
     resetForm()
   } else if (error.value === '401') {
-    showToast('Unauthorized – check your token in settings', 'error')
+    showToast('Nicht autorisiert – Token in den Einstellungen prüfen', 'error')
   } else {
     showToast('Ereignis konnte nicht gesendet werden', 'error')
   }
@@ -205,7 +205,7 @@ initDateTime()
           v-model="form.name"
           class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         >
-          <option value="" disabled>Bitte auswaehlen</option>
+          <option value="" disabled>Bitte auswählen</option>
           <option v-for="pool in pools" :key="pool.name" :value="pool.name">
             {{ pool.name }}
           </option>
@@ -269,7 +269,7 @@ initDateTime()
           v-model="form.note"
           rows="2"
           maxlength="500"
-          placeholder="Notiz hinzufuegen..."
+          placeholder="Notiz hinzufügen..."
           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
         ></textarea>
         <p v-if="errors.note" class="text-sm text-error">{{ errors.note }}</p>
@@ -281,7 +281,7 @@ initDateTime()
       :disabled="loading"
       class="w-full rounded-lg bg-primary py-3 text-lg font-semibold text-white disabled:opacity-50 active:bg-primary/80"
     >
-      {{ loading ? 'Sende...' : 'SEND' }}
+      {{ loading ? 'Wird gesendet...' : 'SENDEN' }}
     </button>
   </form>
 </template>
