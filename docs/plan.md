@@ -1059,6 +1059,20 @@ plain heading renders `Pool Status - Pool H32 (So. 7.6. @ 10:00)`, HTML `<h1>` m
 
 ---
 
+## Phase 29 – TrendChart: fixed Y-axis ranges for pH & Cl
+
+Goal: prevent uPlot from auto-scaling the pH and Cl Y-axes during zoom/pan so
+the user always sees the full relevant range at a glance.
+
+| # | File | Content |
+|---|------|---------|
+| [x] 29.1 | `src/frontend/src/components/TrendChart.vue` | Replace empty `y: {}` scale config with `y: { range: [6.5, 8] }` for pH and `y: { range: [0, 1.5] }` for Cl. uPlot sets `auto: false` internally when `range` is a static array, so `setScale('x', …)` never rescales those Y-axes. |
+
+**Verify:** `npm run build` clean. pH chart always shows Y-axis 6.5–8, Cl chart always shows 0–1.5, regardless of zoom/pan level. Temp chart remains auto-scaled.
+
+
+---
+
 ## File Overview
 
 ```

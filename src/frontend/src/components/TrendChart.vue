@@ -324,7 +324,11 @@ function makeOptions(metric) {
     },
     scales: {
       x: { time: true },
-      y: {},
+      y: metric.key === 'pH'
+        ? { range: [6.5, 8] }
+        : metric.key === 'cl'
+          ? { range: [0, 1.5] }
+          : {},
     },
     series: [
       {},
