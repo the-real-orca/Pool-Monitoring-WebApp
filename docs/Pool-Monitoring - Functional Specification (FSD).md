@@ -18,7 +18,7 @@ Progressive Web App (PWA) for:
 - Manual data entry at the pool via smartphone
 - **Event Page (default menu entry "Ereignisse"):** Log one operational event per entry — `chlorine`, `ph_plus`, `ph_minus`, `flocculant`, `refill`, `backwash`, `winter` — with date/time, optional amount + unit, and an optional note
 - **Automatic Image Analysis:** Capture a photo of test strips + reference scale, extract pH/chlorine via multimodal AI, prefill form fields
-- **Dashboard (default landing, menu entry "Dashboard"):** Real-time data dashboard fed by BLE sensor and pump MQTT topics – main temperature, 5-sample means for pH/Cl, pump status icons, 7-day zoomable trend chart
+- **Übersicht (default landing, menu entry "Übersicht"):** Real-time data overview fed by BLE sensor and pump MQTT topics – main temperature, 5-sample means for pH/Cl, pump status icons, 7-day zoomable trend chart
 - Comparison of manual vs. automatic measurements (data foundation)
 - Sensor drift analysis and calibration (prepared, not part of this project)
 
@@ -205,7 +205,7 @@ the AI result. Manual correction remains possible before submitting.
 
 ### 3.3 Navigation
 
-- **Dashboard page (default landing):**
+- **Übersicht page (default landing):**
   - No primary action button (read-only view of live data + history)
   - Burger menu (top-left) opens navigation dropdown
   - Gear icon (top-right) opens Settings
@@ -222,7 +222,7 @@ the AI result. Manual correction remains possible before submitting.
   - Switching between Measurement and Event preserves entered values until submit/reset
 
 - **Navigation dropdown (burger menu):**
-  - Dashboard *(default landing)*
+  - Übersicht *(default landing)*
   - Messungen
   - Ereignisse
   - separator

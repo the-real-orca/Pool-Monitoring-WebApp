@@ -28,7 +28,7 @@ and a per-event default unit. UI labels are German; enum values remain English.
 
 **Phase 26 scope (UX polish):** Added `kg` unit, asymmetric stepper steps at
 range boundaries (1 l − → 0.9, 10 g − → 9), reordered unit dropdown
-(Tabs, g, kg, l, Min.), relabelled the menu (Live → Dashboard,
+(Tabs, g, kg, l, Min.), relabelled the menu (Live → Übersicht,
 Measurements → Messungen, Chemieupdate → Ereignisse, Settings → Einstellungen),
 fully Germanised `MeasurementForm` and `SettingsPanel`, and bumped
 `APP_VERSION` to `2.0`.
@@ -152,7 +152,7 @@ frontend/tests/
 ├── useApi.spec.js               # API calls: success, 401, network error (incl. postEvent, live, history)
 ├── useImage.spec.js             # Compression: max edge clamp, JPEG output, byte cap
 ├── useLiveData.spec.js          # 30s polling, stale detection, cleanup (Phase 20)
-├── LiveView.spec.js             # Dashboard render, pool selector (Phase 20)
+├── LiveView.spec.js             # Übersicht render, pool selector (Phase 20)
 ├── TrendChart.spec.js           # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
 ├── MeasurementForm.spec.js      # German labels, submit, photo button (Phase 26)
 └── eventStep.spec.js            # stepFor (both directions), amountDecimals, amountEmptyValue, snapAmount (Phase 26)
@@ -167,7 +167,7 @@ frontend/tests/
 `App.vue` holds `const view = ref('live')` and renders conditionally.
 Target state set: `live | form | event | settings`.
 `useToast` is a module-level singleton, callable from any component.
-The default landing is `'live'` (Dashboard); the burger menu is the
+The default landing is `'live'` (Übersicht); the burger menu is the
 only navigation entry, defined as a flat `navigationEntries` array.
 The Settings shortcut remains top-right (gear icon).
 
@@ -176,7 +176,7 @@ Menu labels are in German; the view key (`'live'`, `'form'`, `'event'`,
 
 ```js
 const navigationEntries = [
-  { key: 'live',      label: 'Dashboard' },
+  { key: 'live',      label: 'Übersicht' },
   { key: 'form',      label: 'Messungen' },
   { key: 'event',     label: 'Ereignisse' },
   { key: 'settings',  label: 'Einstellungen', separator: true },
@@ -1875,14 +1875,14 @@ The view state enum is:
 ```js
 const view = ref('live') // 'live' | 'form' | 'event' | 'settings'
 const navigationEntries = [
-  { key: 'live',     label: 'Dashboard' },
+  { key: 'live',     label: 'Übersicht' },
   { key: 'form',     label: 'Messungen' },
   { key: 'event',    label: 'Ereignisse' },
   { key: 'settings', label: 'Einstellungen', separator: true },
 ]
 ```
 
-`live` (Dashboard) is the default landing. The burger menu and gear icon
+`live` (Übersicht) is the default landing. The burger menu and gear icon
 pattern are reused unchanged. Phase 26 relabelled all menu items in German
 while keeping the internal view keys (`'live'`, `'form'`, `'event'`,
 `'settings'`) English, and renamed the chemistry view key `'chemistry'` →
@@ -2219,7 +2219,7 @@ frontend/tests/
 ├── useApi.spec.js               # API calls: success, 401, network error (incl. postEvent, live, history)
 ├── useImage.spec.js             # Compression: max edge clamp, JPEG output, byte cap
 ├── useLiveData.spec.js          # 30s polling, stale detection, cleanup (Phase 20)
-├── LiveView.spec.js             # Dashboard render, pool selector (Phase 20)
+├── LiveView.spec.js             # Übersicht render, pool selector (Phase 20)
 ├── TrendChart.spec.js           # uPlot chart instances, empty state, destroy on unmount, touch gestures (Phase 20, 22)
 ├── MeasurementForm.spec.js      # German labels, submit, photo button (Phase 26)
 └── eventStep.spec.js            # stepFor (both directions), amountDecimals, amountEmptyValue, snapAmount (Phase 26)
@@ -2256,7 +2256,7 @@ frontend/tests/
 | 23 | Live data consolidation | Hard-code pump field names, drop `LIVE_TOPIC_*_TEMPLATE` and `LIVE_PUMP_FIELD_*` env vars, consolidate `POOL_LIST` to base-topic form |
 | 24 | Image capture / live data / image capture integration | end-to-end verification |
 | 25 | Event refactor (Phase 25) | Rename `chemicalType` → `eventType`, add `ph_plus`/`ph_minus` separation, add `refill`/`backwash`/`winter` event types, add `note` field, switch endpoint to `POST /api/event`, switch topic suffix to `/event` (hard cut, no `/api/chem` compat) |
-| 26 | Event form UX polish (Phase 26) | Add `kg` unit, add asymmetric stepper steps at thresholds, reorder unit dropdown (Tabs, g, kg, l, Min.), rename menu (Dashboard/Messungen/Ereignisse/Einstellungen), Germanise `MeasurementForm` + `SettingsPanel`, bump `APP_VERSION` to `2.0`. New util `utils/eventStep.js` (pure), `ValueSliderInput` gains `stepDown` prop |
+| 26 | Event form UX polish (Phase 26) | Add `kg` unit, add asymmetric stepper steps at thresholds, reorder unit dropdown (Tabs, g, kg, l, Min.), rename menu (Übersicht/Messungen/Ereignisse/Einstellungen), Germanise `MeasurementForm` + `SettingsPanel`, bump `APP_VERSION` to `2.0`. New util `utils/eventStep.js` (pure), `ValueSliderInput` gains `stepDown` prop |
 
 ---
 
@@ -2350,7 +2350,7 @@ Payload example (chlorine addition, no `sensorType`):
 ```js
 const view = ref('live') // 'live' | 'form' | 'event' | 'settings'
 const navigationEntries = [
-  { key: 'live',     label: 'Dashboard' },
+  { key: 'live',     label: 'Übersicht' },
   { key: 'form',     label: 'Messungen' },
   { key: 'event',    label: 'Ereignisse' },
   { key: 'settings', label: 'Einstellungen', separator: true },

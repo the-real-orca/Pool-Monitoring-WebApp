@@ -13,7 +13,7 @@ const menuRef = ref(null)
 const { toast } = useToast()
 
 const navigationEntries = [
-  { label: 'Dashboard', view: 'live' },
+  { label: 'Übersicht', view: 'live' },
   { label: 'Messungen', view: 'form' },
   { label: 'Ereignisse', view: 'event' },
 ]
