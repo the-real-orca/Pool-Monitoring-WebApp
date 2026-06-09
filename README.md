@@ -15,8 +15,8 @@ of historical aggregates. Python/FastAPI backend bridges everything to an MQTT b
 - **AI image analysis** (optional): photograph a test strip + reference scale, the
   backend forwards it to a multimodal AI service and prefills pH / Cl into the form
   (rate-limited per day, images persisted for traceability)
-- **Chemistry updates** (`POST /api/chem`): log chemical additions per pool and
-  publish to `<pool-topic>/chem` (DE → EN enum mapping, optional amount + unit)
+- **Event logging** (`POST /api/event`): log chemical additions, refill, backwash,
+  winterising per pool and publish to `<base>/event` (optional amount + unit + note)
 - **Multi-pool** support: pool list served from the backend, selector in the form
 - **Optional `mqtt2mail` report service**: subscribes to pool topics and emails
   periodic reports (configurable times, multi-topic, fallback mail to stdout)
@@ -53,13 +53,11 @@ cd src && docker compose up -d
 | Environment Variable | Description |
 |---------------------|-------------|
 | `API_TOKEN` | Bearer token for API authentication |
-| `MQTT_HOST` / `MQTT_PORT` | MQTT broker (default: `mosquitto:2883`) |
+| `MQTT_HOST` / `MQTT_PORT` | MQTT broker (default: `mosquitto` / `2883`; the bundled dev broker listens on port 2883) |
 | `MQTT_USER` / `MQTT_PASS` | MQTT credentials (optional) |
 | `MQTT_TLS` | Enable TLS for the broker (`1`/`true` forces TLS, `0`/`false` forces plain) |
-| `POOL_LIST` | JSON array of pool names and MQTT topics |
+| `POOL_LIST` | JSON array of `{"name","topic"}` — `topic` is the **base** (e.g. `home/H32/pool`); the backend subscribes `<base>/+` and inspects JSON payload content |
 | `FRONTEND_URL` | Production frontend URL for CORS (e.g. `https://pool.io10.org`) |
-| `LIVE_TOPIC_BLE_TEMPLATE` | MQTT topic template for sensor data (default: `home/{pool}/pool/ble-yc01`) |
-| `LIVE_TOPIC_PUMP_TEMPLATE` | MQTT topic template for pump state |
 | `LIVE_DB_PATH` | SQLite file for hourly aggregates + pump events (default: `/data/history/data.db`) |
 | `AI_API_KEY` / `AI_MODEL` / `AI_PROVIDER` | Optional image analysis; rate-limited via `AI_MAX_REQUESTS_PER_DAY` |
 | `LOG_LEVEL` | Root log level (default `INFO`; set `DEBUG` for per-MQTT / per-DB / per-aggregator-tick logs) |
@@ -73,7 +71,7 @@ cd src && docker compose up -d
 | `/api/status` | GET | Health check (no auth) |
 | `/api/pools` | GET | List available pools (auth required) |
 | `/api/measurements` | POST | Submit manual measurement (auth required) |
-| `/api/chem` | POST | Log a chemistry update (auth required) |
+| `/api/event` | POST | Log an operational event (auth required) |
 | `/api/analyze-image` | POST | Multipart upload; returns extracted pH / Cl (auth required) |
 | `/api/pools/live` | GET | Pools with at least one live sample (auth required) |
 | `/api/live` | GET | Latest snapshot for a pool (auth required) |
@@ -105,7 +103,7 @@ src/
 │   └── tests/
 ├── frontend/
 │   ├── src/
-│   │   ├── App.vue              # View switcher (live / form / chemistry / settings)
+│   │   ├── App.vue              # View switcher (live / form / event / settings)
 │   │   ├── main.js
 │   │   ├── validation.js
 │   │   ├── components/
@@ -113,7 +111,7 @@ src/
 │   │   │   ├── TrendChart.vue         # uPlot, 3 panels, mouse + touch gestures
 │   │   │   ├── PumpStatusCard.vue
 │   │   │   ├── MeasurementForm.vue
-│   │   │   ├── ChemicalUpdateForm.vue
+│   │   │   ├── EventForm.vue
 │   │   │   ├── ImageCaptureModal.vue
 │   │   │   ├── ValueSliderInput.vue
 │   │   │   └── SettingsPanel.vue

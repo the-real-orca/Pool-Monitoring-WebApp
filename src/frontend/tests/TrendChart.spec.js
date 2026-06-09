@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import TrendChart from '../src/components/TrendChart.vue'
 
@@ -9,6 +9,12 @@ function saveSettings(s) {
 }
 
 describe('TrendChart', () => {
+  let wrapper
+
+  afterEach(() => {
+    wrapper?.unmount()
+  })
+
   beforeEach(() => {
     vi.resetModules()
     localStorage.clear()
@@ -22,7 +28,7 @@ describe('TrendChart', () => {
   it('shows the empty state when no points are returned', async () => {
     fetch.mockResolvedValue({ status: 200, ok: true, json: () => Promise.resolve({ pool: 'Pool', metric: 'temp', unit: '°C', points: [] }) })
 
-    const wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
+    wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
     await flushPromises()
     expect(wrapper.text()).toContain('Noch keine Daten')
   }, 10000)
@@ -37,7 +43,7 @@ describe('TrendChart', () => {
       return Promise.reject(new Error('unexpected url: ' + url))
     })
 
-    const wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
+    wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
     await flushPromises()
     expect(wrapper.find('[data-testid="trend-chart-temp"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="trend-chart-pH"]').exists()).toBe(true)
@@ -63,6 +69,12 @@ describe('TrendChart', () => {
 // so each event is built as a plain `Event` with a `touches` array
 // attached — uPlot only inspects the array, not the event class.
 describe('TrendChart touch gestures', () => {
+  let wrapper
+
+  afterEach(() => {
+    wrapper?.unmount()
+  })
+
   beforeEach(() => {
     vi.resetModules()
     localStorage.clear()
@@ -91,7 +103,8 @@ describe('TrendChart touch gestures', () => {
       if (url.includes('metric=cl'))   return Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve({ pool: 'Pool', metric: 'cl', unit: 'mg/l', points: [{ t: now, v: 0.7 }] }) })
       return Promise.reject(new Error('unexpected url: ' + url))
     })
-    return mount(TrendChart, { props: { pool: 'Pool' } })
+    wrapper = mount(TrendChart, { props: { pool: 'Pool' } })
+    return wrapper
   }
 
   it('does not preventDefault on a single-finger touchstart (pan only)', async () => {

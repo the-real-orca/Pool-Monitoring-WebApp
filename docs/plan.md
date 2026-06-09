@@ -795,13 +795,14 @@ Goal: Replace the template-based publisher config
 
 | # | File | Content |
 |---|------|---------|
-| [x] 23.5.1 | `src/dev/mqtt-publisher/publisher.py` | New env `POOL_BASE_TOPICS` parsed as a dict `{"<name>": "<base>"}` (e.g. `Pool=home/H32/pool`). Internal `BLE_SUFFIX = "ble-yc01"`, `PUMP_SUFFIX = "pump"` — no env override. Publish functions take a pool name and select the matching base, then build `<base>/ble-yc01` or `<base>/pump`. |
-| [x] 23.5.2 | `src/dev/mqtt-publisher/publisher.py` | Remove `BLE_TOPIC_TEMPLATE` and `PUMP_TOPIC_TEMPLATE` env reads. CLI / one-shot publish paths now use the dict. |
-| [x] 23.5.3 | `src/dev/mqtt-publisher/tests/test_publisher.py` | Updated for the new dict input: `POOL_BASE_TOPICS={"Pool":"home/H32/pool"}` resolves to `home/H32/pool/ble-yc01` and `home/H32/pool/pump`; unknown pool name is rejected; malformed dict (missing `=`) raises a clear error. |
+| [x] 23.5.1 | `src/dev/mqtt-publisher/publisher.py` | Config derived from `POOL_LIST` (primary) or legacy `POOLS` env; builds `POOL_BASE_TOPICS` dict internally. No dedicated `POOL_BASE_TOPICS` env var. Hard-coded suffix constants `BLE_TOPIC_SUFFIX="ble-yc01"`, `PUMP_TOPIC_SUFFIX="pump"`. Publish functions take a pool name and select the matching base, then build `<base>/ble-yc01` or `<base>/pump`. |
+| [x] 23.5.2 | `src/dev/mqtt-publisher/publisher.py` | Remove `BLE_TOPIC_TEMPLATE` and `PUMP_TOPIC_TEMPLATE` env reads. No CLI — configuration is env-only (env vars `POOL_LIST`, `INTERVAL_SECONDS`, etc.). |
+| [x] 23.5.3 | `src/dev/mqtt-publisher/tests/test_publisher.py` | Updated for the new POOL_LIST input: tests pass `POOL_LIST` or monkeypatch `POOL_BASE_TOPICS` dict; unknown pool name is rejected; missing `=` in legacy `POOLS` env raises error. |
 | [x] 23.5.4 | `src/dev/mqtt-publisher/README.md` | (Updated by parallel sub-agent) Documents the new `POOL_BASE_TOPICS` env format and the fixed suffixes. |
 
-**Verify:** `python publisher.py --pool Pool --kind ble` publishes to
-`home/H32/pool/ble-yc01`; `--kind pump` publishes to `home/H32/pool/pump`.
+**Verify:** `docker compose --profile debug up mqtt-publisher` starts and
+publishes BLE + pump payloads every `INTERVAL_SECONDS`. For each pool,
+`<base>/ble-yc01` and `<base>/pump` are published in every tick.
 `pytest -v` in the publisher dir is green (11/11).
 
 ### 23.6 Infrastructure: docker-compose, .env.example consolidation

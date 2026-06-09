@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import LiveView from '../src/components/LiveView.vue'
 
@@ -19,6 +19,12 @@ function mockSnapshot(extra = {}) {
 }
 
 describe('LiveView', () => {
+  let wrapper
+
+  afterEach(() => {
+    wrapper?.unmount()
+  })
+
   beforeEach(() => {
     vi.resetModules()
     localStorage.clear()
@@ -46,7 +52,7 @@ describe('LiveView', () => {
 
   it('shows the waiting message until the first snapshot arrives', async () => {
     fetch.mockImplementation(() => new Promise(() => {})) // never resolves
-    const wrapper = mount(LiveView)
+    wrapper = mount(LiveView)
     await flushPromises()
     expect(wrapper.text()).toContain('Warte auf Daten')
   })
@@ -65,7 +71,7 @@ describe('LiveView', () => {
       return Promise.reject(new Error('unexpected url: ' + url))
     })
 
-    const wrapper = mount(LiveView)
+    wrapper = mount(LiveView)
     await flushPromises()
     expect(wrapper.find('[data-testid="temperature-card"]').text()).toContain('24.6')
     expect(wrapper.find('[data-testid="ph-card"]').text()).toContain('7.2')
@@ -88,7 +94,7 @@ describe('LiveView', () => {
       return Promise.reject(new Error('unexpected url: ' + url))
     })
 
-    const wrapper = mount(LiveView)
+    wrapper = mount(LiveView)
     await flushPromises()
     const sel = wrapper.find('[data-testid="pool-selector"]')
     expect(sel.exists()).toBe(true)
@@ -109,7 +115,7 @@ describe('LiveView', () => {
       return Promise.reject(new Error('unexpected url: ' + url))
     })
 
-    const wrapper = mount(LiveView)
+    wrapper = mount(LiveView)
     await flushPromises()
     const sel = wrapper.find('[data-testid="pool-selector"]')
     expect(sel.exists()).toBe(true)
@@ -131,7 +137,7 @@ describe('LiveView', () => {
       return Promise.reject(new Error('unexpected url: ' + url))
     })
 
-    const wrapper = mount(LiveView)
+    wrapper = mount(LiveView)
     await flushPromises()
     expect(wrapper.find('[data-testid="stale-badge"]').exists()).toBe(true)
   })

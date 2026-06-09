@@ -38,8 +38,8 @@ cp frontend/Dockerfile_production "$DEPLOY_DIR/frontend/Dockerfile"
 cp frontend/.dockerignore "$DEPLOY_DIR/frontend/.dockerignore"
 
 # Mosquitto
-#mkdir -p "$DEPLOY_DIR/mosquitto/config"
-#cp mosquitto/config/mosquitto.conf "$DEPLOY_DIR/mosquitto/config/"
+mkdir -p "$DEPLOY_DIR/mosquitto/config"
+cp mosquitto/config/mosquitto.conf "$DEPLOY_DIR/mosquitto/config/"
 
 echo "finished: $DEPLOY_DIR/"
 echo "copy with: scp -r $DEPLOY_DIR user@vserver:/opt/pool-monitoring"

@@ -80,24 +80,15 @@ cd src && docker compose stop pool-mqtt-mailer
 
 ## MQTT Topics
 
-Topic-Auswahl (Prioritaet):
+Subscription-Topics werden ausschliesslich aus `POOL_LIST` abgeleitet
+(einzige Quelle der Wahrheit). Pro Pool-Eintrag `{"name","topic"}` wird:
 
-1. `MQTT_TOPICS`, `MQTT_ALERT_TOPICS`, `MQTT_AVAILABILITY_TOPICS`
-2. Topics aus `POOL_LIST` (automatisch aus Pool-Monitoring)
-3. Fallback: `MQTT_TOPIC_BASE` (+ `/alert`, `/availability`)
+- Data: `<topic>/+` (alle Nachrichten unter diesem Base-Topic)
+- Alerts: `<topic>/+/alert`
+- Availability: (derzeit leer, fuer zukuenftige Nutzung)
 
-Beispiel mit expliziten Topics:
-
-```text
-home/H32/pool/manual
-home/H32/whirlpool/manual
-```
-
-Konfiguration ueber `.env`:
-
-```env
-MQTT_TOPICS=home/H32/pool/manual,home/H32/whirlpool/manual
-```
+`POOL_LIST` wird aus der gemeinsamen `src/.env` gelesen — keine
+separaten `MQTT_TOPICS*`-Env-Vars mehr.
 
 ## Fehlertoleranz
 
