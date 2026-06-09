@@ -63,7 +63,10 @@ def test_get_pools_401(client):
 
 
 def test_get_status_200(client):
-    response = client.get("/api/status")
+    response = client.get(
+        "/api/status",
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
@@ -71,6 +74,12 @@ def test_get_status_200(client):
     assert "uptime" in data
     assert "version" in data
     assert data["version"] == "2.0"
+
+
+def test_health_200_no_auth(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
 
 
 def test_post_measurement_with_ai_fields(client):
@@ -374,7 +383,7 @@ def test_analyze_image_503_timeout(client):
 
 def test_analyze_image_429_rate_limit(client):
     with patch("ai.analyze_pool_image", new_callable=AsyncMock) as mock:
-        mock.return_value = __import__("ai").ImageAnalysisResult(ph=7.2, cl=1.5, time=1716518400)
+        mock.return_value = __import__("ai").ImageAnalysisResult(ph=7.2, cl=1.5)
         for _ in range(10):
             resp = client.post(
                 "/api/analyze-image",
@@ -395,7 +404,7 @@ def test_analyze_image_midnight_rollover(client):
     from datetime import datetime, timezone
     import main
 
-    mock_result = __import__("ai").ImageAnalysisResult(ph=7.2, cl=1.5, time=1716518400)
+    mock_result = __import__("ai").ImageAnalysisResult(ph=7.2, cl=1.5)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Day 1: fill up limit by manipulating counter directly

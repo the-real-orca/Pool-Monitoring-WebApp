@@ -16,7 +16,6 @@ def _setup_live(tmp_path, monkeypatch):
 
     state = live_state.LiveState(ring_size=5, stale_after_seconds=600)
     monkeypatch.setattr(main, "_state", state, raising=False)
-    monkeypatch.setattr(main, "_topic_to_pool_map", {}, raising=False)
     return main, state
 
 
@@ -222,7 +221,10 @@ def test_api_pump_events_422_unknown_pool(client, tmp_path, monkeypatch):
 
 def test_api_status_includes_live_data_configured(client, tmp_path, monkeypatch):
     _setup_live(tmp_path, monkeypatch)
-    response = client.get("/api/status")
+    response = client.get(
+        "/api/status",
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["liveDataConfigured"] is True
@@ -232,6 +234,9 @@ def test_api_status_live_data_unconfigured(client, tmp_path, monkeypatch):
     db.close()
     import main
     monkeypatch.setattr(main, "_state", live_state.LiveState(), raising=False)
-    response = client.get("/api/status")
+    response = client.get(
+        "/api/status",
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert response.status_code == 200
     assert response.json()["liveDataConfigured"] is False

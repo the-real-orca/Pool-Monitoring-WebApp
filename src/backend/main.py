@@ -5,7 +5,6 @@ import re
 import secrets as _secrets
 import threading
 import time
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -56,7 +55,6 @@ if _mqtt_tls_env:
     MQTT_TLS = _mqtt_tls_env.lower() == "true"
 else:
     MQTT_TLS = MQTT_PORT == 8883
-FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
 AI_MAX_REQUESTS_PER_DAY = int(os.getenv("AI_MAX_REQUESTS_PER_DAY", "10"))
 AI_MAX_IMAGE_BYTES = int(os.getenv("AI_MAX_IMAGE_BYTES", "10485760"))
@@ -68,7 +66,7 @@ _ai_counter_date: str = ""
 LIVE_AGGREGATION_WINDOW_MINUTES = int(os.getenv("LIVE_AGGREGATION_WINDOW_MINUTES", "60"))
 LIVE_RETENTION_DAYS = int(os.getenv("LIVE_RETENTION_DAYS", "90"))
 LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "/data/history/data.db")
-LIVE_SAMPLE_RING_SIZE = int(os.getenv("LIVE_SAMPLE_RING_SIZE", "5"))
+LIVE_SAMPLE_RING_SIZE = int(os.getenv("LIVE_SAMPLE_RING_SIZE", "60"))
 LIVE_STALE_AFTER_SECONDS = int(os.getenv("LIVE_STALE_AFTER_SECONDS", "600"))
 # Minimum seconds between two persisted pump events for the same pool.
 # State still updates in memory so the UI stays current, but we throttle
@@ -79,7 +77,6 @@ _pump_event_throttle: dict[tuple[str, str], int] = {}
 
 VALID_METRICS = ("temp", "pH", "cl")
 METRIC_UNITS = {"temp": "°C", "pH": "", "cl": "mg/l"}
-PUMP_FIELDS = ("mainPump", "solarPump")
 # Pool names must not contain MQTT wildcards (+, #, $) because they are
 # substituted into subscribe topics. Anything outside this allow-list would
 # let a misconfigured POOL_LIST match foreign pools.
@@ -105,14 +102,10 @@ def _base_topic_for(pool: dict) -> str | None:
     return topic
 
 
-# Reserved topic suffixes under a pool's base topic.
-# - ``/manual``  : measurement form publish target (back-end → MQTT)
-# - ``/event``   : event form publish target (back-end → MQTT)
-# - ``/pump``    : pump status publisher (ESP firmware → back-end)
-# - ``/alert``   : any alert publisher (intermediate ``+`` is allowed for
-#                  downstream services like mqtt2mail)
-# - ``/+`` (wildcard) : catch-all subscription for back-end + mqtt2mail
-RESERVED_SUFFIXES = ("manual", "event", "pump")
+# Reserved topic suffixes under a pool's base topic:
+# ``manual``, ``event``, ``pump``, ``alert``.
+# These are never referenced in code — they are a design convention enforced
+# by the MQTT topic schema (see docs).
 
 
 def ai_rate_check_and_increment() -> tuple[bool, int]:
@@ -139,11 +132,6 @@ _aggregator: aggregator.Aggregator | None = None
 def _get_state() -> live_state.LiveState:
     assert _state is not None, "LiveState not initialised"
     return _state
-
-
-def _base_to_pool() -> dict[str, str]:
-    """Map base topic (no wildcards) → pool name. Populated in lifespan."""
-    return _base_to_pool_map
 
 
 # base topic → pool name; built once in lifespan from POOL_LIST.
@@ -463,16 +451,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
+    RateLimitMiddleware,
+    times=API_RATE_LIMIT_REQUESTS,
+    seconds=API_RATE_LIMIT_WINDOW_SECONDS,
+)
+
+app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL] if FRONTEND_URL else [],
     allow_methods=["POST", "GET"],
     allow_headers=["Authorization", "Content-Type"],
-)
-
-app.add_middleware(
-    RateLimitMiddleware,
-    times=API_RATE_LIMIT_REQUESTS,
-    seconds=API_RATE_LIMIT_WINDOW_SECONDS,
 )
 
 
@@ -607,7 +595,12 @@ async def get_pump_events(
     }
 
 
-@app.get("/api/status")
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+
+@app.get("/api/status", dependencies=[Depends(verify_token)])
 async def get_status():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return {

@@ -70,7 +70,12 @@ class Aggregator:
                 await asyncio.wait_for(self._task, timeout=5)
             except asyncio.TimeoutError:
                 self._task.cancel()
-            self._task = None
+        # Flush any pending window before shutting down.
+        if self._pending and db.is_configured():
+            now = self._clock()
+            last_window = self._window_start(now, self._window_seconds)
+            self._flush_window(last_window)
+        self._task = None
 
     # ------------------------------------------------------------------
     # Internal helpers

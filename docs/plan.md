@@ -1060,6 +1060,70 @@ plain heading renders `Pool Status - Pool H32 (So. 7.6. @ 10:00)`, HTML `<h1>` m
 
 ---
 
+## Phase 31 – Backend Cleanup (B1–B7)
+
+Goal: Clean up dead code, unused dependencies, config mismatches, CORS ordering,
+information disclosure on status endpoint, test smells, and aggregator shutdown
+edge case identified in the project analysis.
+
+### 31.1 Dead Code / Unused Imports (B1)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.1.1 | `src/backend/main.py` | Remove `from collections import defaultdict` (unused). Remove `PUMP_FIELDS` constant (unused). Remove `RESERVED_SUFFIXES` (documentation-only; keep comment). Remove dead `_base_to_pool()` function (never called). Remove duplicate `FRONTEND_URL` read at line 59. |
+| [x] 31.1.2 | `src/backend/ai.py` | Remove `AI_MAX_IMAGE_BYTES` env read (unused in this module; byte check happens in `main.py`). |
+| [x] 31.1.3 | `src/backend/db.py` | Remove unused `Iterable` import from `typing`. |
+
+### 31.2 Dependency cleanup (B2)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.2.1 | `src/backend/requirements.txt` | Remove `python-dotenv>=1.0` — never imported (env comes from Docker Compose `env_file`). |
+
+### 31.3 Config default sync (B3)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.3.1 | `src/backend/ai.py` | `AI_IMAGE_RETENTION_DAYS` defaults to `30` in code; `.env.example` already documented correctly at `60` after K1–K5 fixes — no further change needed. |
+
+### 31.4 Status endpoint auth + health endpoint (B4)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.4.1 | `src/backend/main.py` | `/api/status` now requires `Depends(verify_token)` to prevent information disclosure. New unauthenticated `GET /health` endpoint returning `{"status": "healthy"}` for Docker/Caddy health checks. |
+| [x] 31.4.2 | `src/backend/tests/test_api.py` | `test_get_status_200` passes auth header. New `test_health_200_no_auth`. |
+| [x] 31.4.3 | `src/backend/tests/test_api_live.py` | Both status tests pass auth header. |
+
+### 31.5 CORS on 429 responses (B5)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.5.1 | `src/backend/main.py` | Swap middleware order: `RateLimitMiddleware` added first (outer), `CORSMiddleware` second (inner). Rate-limited 429 responses now pass through CORS middleware and include proper CORS headers. |
+
+### 31.6 Test smells (B6)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.6.1 | `src/backend/tests/test_api_live.py` | Remove `monkeypatch.setattr(main, "_topic_to_pool_map", {})` — attribute `_topic_to_pool_map` never existed (actual name: `_base_to_pool_map`); the patch was a no-op. |
+| [x] 31.6.2 | `src/backend/tests/test_api.py` | Remove `time=1716518400` from `ImageAnalysisResult(ph=7.2, cl=1.5, time=...)` — `ImageAnalysisResult` model has no `time` field; Pydantic silently ignored it. |
+
+### 31.7 Aggregator shutdown flush + ring buffer size (B7)
+
+| # | File | Change |
+|---|------|--------|
+| [x] 31.7.1 | `src/backend/aggregator.py` | `stop()` now flushes the last pending window before exiting, so no sample data is lost during graceful shutdown. |
+| [x] 31.7.2 | `src/backend/main.py` | Default `LIVE_SAMPLE_RING_SIZE` increased from `5` to `60` — accommodates one sample per second between 30-second aggregate ticks without ring buffer eviction. |
+
+### 31.8 Verify summary
+
+| Suite | Result |
+|-------|--------|
+| Backend (`src/backend`) | `pytest -v` → **186/186** green (+1: new `/health` test) |
+| Frontend (`src/frontend`) | `npm run test` → **90/90** green (unchanged) |
+| mqtt2mail (`src/mqtt2mail`) | `pytest -v` → **39/39** green (unchanged) |
+| Publisher (`src/dev/mqtt-publisher`) | `pytest -v` → **11/11** green (unchanged) |
+
+
 ## Phase 30 – Frontend UI Polish (F1–F9)
 
 Goal: Fix all frontend issues identified in the comprehensive project analysis —

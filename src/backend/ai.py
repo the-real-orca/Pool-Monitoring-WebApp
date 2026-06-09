@@ -27,7 +27,6 @@ AI_MODEL = os.getenv("AI_MODEL", "google/gemini-3-flash-preview")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 AI_IMAGE_STORAGE_PATH = os.getenv("AI_IMAGE_STORAGE_PATH", "/data/ai")
 AI_IMAGE_RETENTION_DAYS = int(os.getenv("AI_IMAGE_RETENTION_DAYS", "30"))
-AI_MAX_IMAGE_BYTES = int(os.getenv("AI_MAX_IMAGE_BYTES", "10485760"))
 
 
 class AIRefusalError(Exception):
