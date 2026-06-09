@@ -75,15 +75,6 @@ def normalize_topic(topic: str) -> str:
     return value
 
 
-def parse_topic_csv(value: str) -> list[str]:
-    topics: list[str] = []
-    for item in value.split(","):
-        topic = normalize_topic(item)
-        if topic:
-            topics.append(topic)
-    return topics
-
-
 def parse_pool_topics() -> list[str]:
     raw = env_str("POOL_LIST")
     if not raw:
@@ -312,8 +303,6 @@ class PoolAggregator:
         self.metric_configs = self._build_metric_configs()
         self.metrics = {key: MetricState(config) for key, config in self.metric_configs.items()}
         self.alerts: list[AlertEvent] = []
-        self.availability: Optional[str] = None
-        self.availability_time: Optional[datetime] = None
         self.message_count = 0
         self.invalid_message_count = 0
         self.window_start = now_local()
@@ -338,13 +327,16 @@ class PoolAggregator:
     def add_data(self, payload: dict[str, Any]) -> None:
         timestamp = datetime_from_payload(payload)
         with self.lock:
-            self.message_count += 1
+            has_metric = False
             name = payload.get("name")
             if isinstance(name, str) and name:
                 self.last_sensor_name = name
             for key, state in self.metrics.items():
                 if key in payload:
+                    has_metric = True
                     state.add(payload.get(key), timestamp)
+            if has_metric:
+                self.message_count += 1
 
     def add_alert(self, payload: dict[str, Any]) -> None:
         timestamp = datetime_from_payload(payload)
@@ -373,12 +365,6 @@ class PoolAggregator:
                 )
             )
 
-    def add_availability(self, payload: str) -> None:
-        with self.lock:
-            self.message_count += 1
-            self.availability = payload.strip()
-            self.availability_time = now_local()
-
     def mark_invalid(self) -> None:
         with self.lock:
             self.invalid_message_count += 1
@@ -391,8 +377,6 @@ class PoolAggregator:
                 "sensor_name": self.last_sensor_name,
                 "metrics": self.metrics,
                 "alerts": list(self.alerts),
-                "availability": self.availability,
-                "availability_time": self.availability_time,
                 "message_count": self.message_count,
                 "invalid_message_count": self.invalid_message_count,
             }
@@ -401,7 +385,6 @@ class PoolAggregator:
             self.message_count = 0
             self.invalid_message_count = 0
             self.window_start = now_local()
-            # Availability is retained across windows as current state.
             return snapshot
 
 
@@ -456,14 +439,14 @@ def build_email_body(snapshot: dict[str, Any]) -> str:
 
     alerts: list[AlertEvent] = snapshot["alerts"]
     if alerts:
-        lines.append("<b>Warnung:</b>")
+        lines.append("Warnung:")
         lines.append("")
         for alert in alerts:
             lines.append(format_alert(alert))
             lines.append("")
         lines.append("")
 
-    lines.append("<b>Übersicht:</b>")
+    lines.append("Übersicht:")
     lines.append("")
 
     metrics: dict[str, MetricState] = snapshot["metrics"]
@@ -496,8 +479,6 @@ def build_email_body(snapshot: dict[str, Any]) -> str:
     lines.append("---")
     lines.append("")
     lines.append(f"Sensor: {sensor_name}")
-    if snapshot.get("availability"):
-        lines.append(f"Availability: {snapshot['availability']} ({format_dt(snapshot.get('availability_time'))})")
     lines.append(f"Zeitraum: {format_dt(snapshot['window_start'])} - {format_dt(snapshot['window_end'])}")
     lines.append(f"Empfangene Messungen: {snapshot.get('message_count', 0)}")
     lines.append("")
@@ -563,10 +544,6 @@ def build_email_body_html(snapshot: dict[str, Any]) -> str:
     if not primary_html and not secondary_html:
         metrics_html = "<p>Keine Messwerte im Zeitraum empfangen.</p>\n"
 
-    availability_html = ""
-    if snapshot.get("availability"):
-        availability_html = f"<p>Availability: {snapshot['availability']} ({format_dt(snapshot.get('availability_time'))})</p>\n"
-
     return (
         "<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"></head>\n<body>\n"
         f"<h1>Pool Status - {sensor_name} ({format_subject_date(snapshot['window_end'])})</h1>\n"
@@ -574,7 +551,6 @@ def build_email_body_html(snapshot: dict[str, Any]) -> str:
         f"<h2>Übersicht</h2>\n"
         f"{metrics_html}"
         f"<br><hr>\n"
-        f"{availability_html}"
         f"<p>Zeitraum: {format_dt(snapshot['window_start'])} - {format_dt(snapshot['window_end'])}</p>\n"
         f"<p>Empfangene Messungen: {snapshot.get('message_count', 0)}</p>\n"
         "</body>\n</html>\n"
@@ -725,7 +701,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
-    data_topics, alert_topics, availability_topics = resolve_topics()
+    data_topics, alert_topics, _ = resolve_topics()
     mqtt_host = env_str("MQTT_HOST")
     mqtt_port = env_int("MQTT_PORT", 1883)
     mqtt_client_id = env_str("MQTT_CLIENT_ID", f"pool-mqtt-mailer-{os.urandom(4).hex()}")
@@ -741,7 +717,9 @@ def main() -> None:
 
     username = env_str("MQTT_USERNAME") or env_str("MQTT_USER")
     password = env_str("MQTT_PASSWORD") or env_str("MQTT_PASS")
-    if username:
+    if not username:
+        logging.warning("MQTT_USERNAME/MQTT_USER not set — connecting without authentication")
+    else:
         client.username_pw_set(username, password or None)
 
     if env_bool("MQTT_TLS", False):
@@ -753,7 +731,7 @@ def main() -> None:
     def on_connect(client: mqtt.Client, _userdata: Any, _flags: mqtt.ConnectFlags, reason_code: mqtt.ReasonCode, _properties: Any) -> None:
         if reason_code == 0:
             logging.info("Connected to MQTT broker %s:%s", mqtt_host, mqtt_port)
-            all_topics = unique_topics(data_topics + alert_topics + availability_topics)
+            all_topics = unique_topics(data_topics + alert_topics)
             for topic in all_topics:
                 client.subscribe(topic, qos=0)
             logging.info("Subscribed topics: %s", ", ".join(all_topics))
@@ -767,12 +745,7 @@ def main() -> None:
             decoded = raw.decode("utf-8")
         except UnicodeDecodeError:
             decoded = repr(raw)
-        print(f"[mqtt-debug] topic={topic} payload={decoded}", flush=True)
-        logging.debug("MQTT message on %s: %s", topic, message.payload)
-
-        if any(topic_matches(p, topic) for p in availability_topics):
-            aggregator.add_availability(message.payload.decode("utf-8", errors="replace"))
-            return
+        logging.debug("MQTT message on %s: %s", topic, decoded)
 
         payload = parse_json_payload(message.payload)
         if payload is None:
