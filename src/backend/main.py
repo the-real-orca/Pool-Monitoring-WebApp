@@ -75,7 +75,7 @@ LIVE_STALE_AFTER_SECONDS = int(os.getenv("LIVE_STALE_AFTER_SECONDS", "600"))
 # DB writes to keep the pump_events table from being flooded by a
 # compromised broker (M2).
 LIVE_PUMP_MIN_EVENT_INTERVAL = int(os.getenv("LIVE_PUMP_MIN_EVENT_INTERVAL", "5"))
-_pump_event_throttle: dict[str, int] = {}
+_pump_event_throttle: dict[tuple[str, str], int] = {}
 
 VALID_METRICS = ("temp", "pH", "cl")
 METRIC_UNITS = {"temp": "°C", "pH": "", "cl": "mg/l"}
@@ -200,7 +200,7 @@ def _handle_pool_message(topic: str, payload: dict) -> None:
             log.warning("MQTT payload on %s: %s", topic, e)
             continue
         if state.set_pump(pool, pump_name, new_state, ts) and db.is_configured():
-            if _should_persist_pump_event(pool, int(time.time())):
+            if _should_persist_pump_event(pool, pump_name, int(time.time())):
                 db.insert_pump_event(pool, pump_name, new_state, ts, int(time.time()))
 
     if not metrics_seen and not pumps_seen:
@@ -233,14 +233,15 @@ def _strict_bool(value: Any, field: str) -> bool:
     raise ValueError(f"{field}: cannot coerce {value!r} to bool")
 
 
-def _should_persist_pump_event(pool: str, now: int) -> bool:
-    """M2 throttle: persist at most one pump event per pool per
+def _should_persist_pump_event(pool: str, pump_name: str, now: int) -> bool:
+    """M2 throttle: persist at most one pump event per (pool, pump_name) per
     LIVE_PUMP_MIN_EVENT_INTERVAL seconds. State in ``LiveState`` is still
     updated on every publish; this only gates the DB write."""
-    last = _pump_event_throttle.get(pool, 0)
+    key = (pool, pump_name)
+    last = _pump_event_throttle.get(key, 0)
     if now - last < LIVE_PUMP_MIN_EVENT_INTERVAL:
         return False
-    _pump_event_throttle[pool] = now
+    _pump_event_throttle[key] = now
     return True
 
 
@@ -273,6 +274,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             cutoff = now - timedelta(seconds=self.seconds)
             with self._lock:
                 bucket = [t for t in self.requests.get(client_ip, []) if t > cutoff]
+                if not bucket:
+                    self.requests.pop(client_ip, None)
                 if len(bucket) >= self.times:
                     return JSONResponse(
                         status_code=429,
@@ -280,9 +283,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     )
                 bucket.append(now)
                 self.requests[client_ip] = bucket
-                # Drop empty buckets to keep the dict small (I1 memory).
-                if not self.requests[client_ip]:
-                    self.requests.pop(client_ip, None)
 
         response = await call_next(request)
         return response

@@ -270,7 +270,7 @@ def test_pump_event_throttle_resets_after_interval(monkeypatch, tmp_path):
     # Simulate time advancing by 5s between publish 2 and 3.
     throttle_calls = iter([0, 5, 10])
     monkeypatch.setattr(main, "_should_persist_pump_event",
-                        lambda pool, now: (next(throttle_calls) >= 1))
+                        lambda pool, pump_name, now: (next(throttle_calls) >= 1))
 
     main._handle_pool_message(f"{_BASE}/pump", {"mainPump": True})
     main._handle_pool_message(f"{_BASE}/pump", {"mainPump": False})
