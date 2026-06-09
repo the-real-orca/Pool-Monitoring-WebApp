@@ -70,16 +70,6 @@ See `docs/plan.md` for full implementation plan with checkboxes.
 - **Frontend:** `vitest` in `src/frontend/` – run with `cd src/frontend && npm run test`
 - **Linting:** Ruff (backend), ESLint (frontend)
 
-## Startup Protocol
-
-On session start, summarize:
-
-1. Current implementation status (check `docs/plan.md` checkboxes)
-2. Previous session changes (check `git log --oneline -5`)
-3. Next steps from plan
-
-**Do NOT start implementation without explicit request.**
-
 
 ## Agend Modes
 
@@ -97,4 +87,5 @@ On session start, summarize:
 - When using sub-agents to implement features, act as a coordinator only
 - Use the best model for the task - premium models for complex tasks (like coding) and mid-tier models for simpler tasks, like documentation
 - After completing features (large or small), always run commands like lint, type check and next build to check code quality
+- Do NOT start implementation without explicit request.
 
