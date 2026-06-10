@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pool Dashboard – Layout Draft (1280x800)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: '#0EA5E9',
+          success: '#22C55E',
+          warning: '#F59E0B',
+          error:   '#EF4444',
+        },
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #e2e8f0; }
+  /* feste Größe für das Tablet-Viewport: 7" / 1280x800 (querformat) */
+  .tablet {
+    width: 1280px;
+    height: 800px;
+    overflow: hidden;
+  }
+  /* Skaliert das Mockup so, dass es in den Browser passt, ohne die Layout-Größe zu verändern */
+  @media (max-width: 1320px) {
+    .scaler { transform: scale(0.75); transform-origin: top left; }
+  }
+  @media (max-width: 1000px) {
+    .scaler { transform: scale(0.55); transform-origin: top left; }
+  }
+</style>
+</head>
+<body class="font-sans antialiased text-slate-800">
+
+<div class="p-6 flex items-start justify-center">
+<div class="scaler">
+
+<!-- =================== TABLET 1280x800 =================== -->
+<div class="tablet bg-gradient-to-br from-sky-50 via-white to-cyan-50 shadow-2xl rounded-3xl ring-1 ring-slate-200/60 relative">
+
+  <!-- ───────────── HEADER (h=64) ───────────── -->
+  <header class="h-16 px-6 flex items-center justify-between border-b border-slate-200/70 bg-white/60 backdrop-blur rounded-t-3xl">
+    <div class="flex items-center gap-3">
+      <div class="size-10 rounded-xl bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center shadow-md shadow-primary/30">
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8-2 2.4 2 4.8 2M3 19c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8-2 2.4 2 4.8 2"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <div class="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-400">Pool Monitor</div>
+        <div class="text-lg font-bold text-slate-800">Pool H32 <span class="text-slate-300 font-normal mx-1">·</span> <span class="text-slate-500 font-medium">Garten</span></div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-6">
+      <!-- Live-Indikator -->
+      <div class="flex items-center gap-2">
+        <span class="relative flex size-2.5">
+          <span class="absolute inline-flex h-full w-full rounded-full bg-success opacity-70 animate-ping"></span>
+          <span class="relative inline-flex rounded-full size-2.5 bg-success"></span>
+        </span>
+        <span class="text-xs font-semibold text-slate-600">LIVE</span>
+        <span class="text-xs text-slate-400">· Update vor 12 s</span>
+      </div>
+      <div class="text-right leading-tight">
+        <div class="text-sm font-semibold text-slate-700">Samstag, 06. Juni 2026</div>
+        <div class="text-xs text-slate-400">14:32 · Außen 24,1 °C · sonnig</div>
+      </div>
+      <button class="size-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ───────────── BODY (h=736) ───────────── -->
+  <!-- Grid: 12 Spalten, 2 Reihen. Obere Reihe Kennzahlen (h ~420), untere Reihe Charts (h ~280) -->
+  <main class="h-[calc(800px-64px)] p-5 grid grid-cols-12 grid-rows-[1fr_280px] gap-4">
+
+    <!-- ===== TEMPERATUR (groß, dominierend) ===== -->
+    <section class="col-span-5 row-span-1 rounded-2xl bg-gradient-to-br from-primary to-cyan-500 text-white p-6 shadow-lg shadow-primary/20 relative overflow-hidden">
+      <!-- Hintergrund-Wellen -->
+      <svg class="absolute inset-x-0 bottom-0 w-full text-white/10" viewBox="0 0 400 80" preserveAspectRatio="none">
+        <path d="M0 40 Q 50 10 100 40 T 200 40 T 300 40 T 400 40 V80 H0 Z" fill="currentColor"/>
+        <path d="M0 55 Q 50 25 100 55 T 200 55 T 300 55 T 400 55 V80 H0 Z" fill="currentColor" opacity="0.5"/>
+      </svg>
+
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">Wassertemperatur</div>
+          <div class="text-[11px] text-white/60 mt-0.5">Sensor Skimmer · vor 12 s</div>
+        </div>
+        <div class="flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur px-3 py-1 text-xs font-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+          <span>+0,4 °C / 24 h</span>
+        </div>
+      </div>
+
+      <div class="mt-6 flex items-end gap-2">
+        <div class="text-[7rem] leading-none font-extrabold tracking-tight">28,4</div>
+        <div class="pb-5 text-4xl font-light text-white/80">°C</div>
+      </div>
+
+      <!-- Tag/Verlaufs-Bar -->
+      <div class="mt-6 relative">
+        <div class="flex justify-between text-[10px] uppercase tracking-wider text-white/70 mb-1">
+          <span>Min 26,1°</span>
+          <span class="font-semibold">Komfortbereich 27 – 30 °C</span>
+          <span>Max 29,8°</span>
+        </div>
+        <div class="h-2.5 rounded-full bg-white/20 relative">
+          <!-- Komfortzone -->
+          <div class="absolute h-full rounded-full bg-white/30" style="left:24%; width:38%"></div>
+          <!-- Aktueller Wert (28,4 ≈ 65%) -->
+          <div class="absolute -top-1 size-4.5 size-4 rounded-full bg-white shadow ring-2 ring-primary" style="left:calc(60% - 8px)"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-white/60 mt-1.5">
+          <span>20°</span><span>25°</span><span>30°</span><span>35°</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== pH + Chlor (gestapelt, 1 Spalte = 3 col) ===== -->
+    <section class="col-span-3 row-span-1 flex flex-col gap-4">
+      <!-- pH -->
+      <div class="flex-1 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">pH-Wert</div>
+            <div class="text-[11px] text-slate-400">manuelle Messung · 12:10</div>
+          </div>
+          <div class="size-9 rounded-lg bg-emerald-50 flex items-center justify-center text-success">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          </div>
+        </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <div class="text-5xl font-extrabold text-slate-800">7,2</div>
+          <div class="rounded-full bg-success/10 text-success text-[11px] font-bold px-2 py-0.5">OK</div>
+        </div>
+        <!-- pH Skala -->
+        <div class="mt-3">
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-red-400 via-emerald-400 to-violet-500">
+            <!-- Soll-Bereich 7,0–7,4 -->
+            <div class="absolute -top-0.5 h-3 rounded-sm ring-2 ring-white" style="left:50%; width:8%; background:rgba(34,197,94,0.35);"></div>
+            <!-- Marker 7,2 ≈ 51% -->
+            <div class="absolute -top-1 size-4 rounded-full bg-white shadow ring-2 ring-success" style="left:calc(52% - 8px)"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+            <span>6,0</span><span>7,0</span><span>7,4</span><span>8,0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chlor -->
+      <div class="flex-1 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Chlor (freies Cl)</div>
+            <div class="text-[11px] text-slate-400">manuelle Messung · 12:10</div>
+          </div>
+          <div class="size-9 rounded-lg bg-amber-50 flex items-center justify-center text-warning">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+          </div>
+        </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <div class="text-5xl font-extrabold text-slate-800">0,7</div>
+          <div class="text-sm font-medium text-slate-400">mg/l</div>
+          <div class="ml-auto rounded-full bg-warning/10 text-warning text-[11px] font-bold px-2 py-0.5">NIEDRIG</div>
+        </div>
+        <div class="mt-3">
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-amber-300 via-emerald-400 to-rose-400">
+            <div class="absolute -top-0.5 h-3 rounded-sm ring-2 ring-white" style="left:33%; width:34%; background:rgba(34,197,94,0.35);"></div>
+            <div class="absolute -top-1 size-4 rounded-full bg-white shadow ring-2 ring-warning" style="left:calc(23% - 8px)"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+            <span>0</span><span>1,0</span><span>2,0</span><span>3,0</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Pumpen + Alarme (gestapelt) ===== -->
+    <section class="col-span-4 row-span-1 flex flex-col gap-4">
+
+      <!-- ALARME -->
+      <div class="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-2.5 border-b border-slate-100 bg-slate-50/60">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-4 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376C1.83 17.626 2.914 19.5 4.645 19.5h14.71c1.73 0 2.815-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Alarme</span>
+            <span class="ml-1 rounded-full bg-warning/15 text-warning text-[10px] font-bold px-1.5 py-0.5">2 aktiv</span>
+          </div>
+          <button class="text-[11px] font-semibold text-primary hover:underline">Alle ansehen</button>
+        </div>
+        <ul class="divide-y divide-slate-100">
+          <li class="flex items-center gap-3 px-5 py-2.5">
+            <span class="size-2 rounded-full bg-warning shrink-0"></span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[13px] font-semibold text-slate-800 truncate">Chlor-Wert unter Sollbereich</div>
+              <div class="text-[11px] text-slate-400">0,7 mg/l · seit 12:10</div>
+            </div>
+            <span class="text-[10px] uppercase font-bold text-warning">Warnung</span>
+          </li>
+          <li class="flex items-center gap-3 px-5 py-2.5">
+            <span class="size-2 rounded-full bg-slate-400 shrink-0"></span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[13px] font-semibold text-slate-800 truncate">Letzte Messung > 24 h</div>
+              <div class="text-[11px] text-slate-400">pH · gestern 12:10</div>
+            </div>
+            <span class="text-[10px] uppercase font-bold text-slate-500">Info</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- PUMPEN -->
+      <div class="grid grid-cols-2 gap-4 flex-1">
+        <!-- HAUPT PUMPE -->
+        <div class="rounded-2xl border-2 border-success/30 bg-success/5 p-4 flex flex-col relative overflow-hidden">
+          <div class="flex items-start justify-between">
+            <div class="size-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-success">
+              <svg xmlns="http://www.w3.org/2000/svg" class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <span class="rounded-full bg-success text-white text-[10px] font-bold uppercase px-2 py-0.5 flex items-center gap-1">
+              <span class="size-1.5 rounded-full bg-white animate-pulse"></span> Läuft
+            </span>
+          </div>
+          <div class="mt-3">
+            <div class="text-[11px] uppercase tracking-wider font-semibold text-success/80">Hauptpumpe</div>
+            <div class="text-base font-bold text-slate-800">Filterkreislauf</div>
+          </div>
+          <div class="mt-auto pt-3 text-[11px] text-slate-500 flex items-center justify-between">
+            <span>seit <span class="font-semibold text-slate-700">2 h 14 min</span></span>
+            <span class="text-success font-semibold">↑ 1,8 kW</span>
+          </div>
+        </div>
+
+        <!-- SOLAR PUMPE -->
+        <div class="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 flex flex-col">
+          <div class="flex items-start justify-between">
+            <div class="size-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-400">
+              <svg xmlns="http://www.w3.org/2000/svg" class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            </div>
+            <span class="rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5">Aus</span>
+          </div>
+          <div class="mt-3">
+            <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Solarpumpe</div>
+            <div class="text-base font-bold text-slate-700">Wärmetauscher</div>
+          </div>
+          <div class="mt-auto pt-3 text-[11px] text-slate-500 flex items-center justify-between">
+            <span>letzter Lauf: <span class="font-semibold text-slate-700">12:42</span></span>
+            <span class="text-slate-400">Δ T zu niedrig</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- ===== UNTERE REIHE: Charts (h=280) ===== -->
+    <!-- ====================================================== -->
+
+    <!-- TREND CHART (Temp / pH / Cl) -->
+    <section class="col-span-8 row-span-1 rounded-2xl bg-white border border-slate-200 shadow-sm p-4 flex flex-col">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <h2 class="text-sm font-bold text-slate-800">Trendverlauf</h2>
+          <p class="text-[11px] text-slate-400">Temperatur, pH & Chlor</p>
+        </div>
+        <div class="flex items-center gap-4">
+          <!-- Legende -->
+          <div class="flex items-center gap-3 text-[11px]">
+            <span class="flex items-center gap-1.5"><span class="size-2.5 rounded-full bg-primary"></span><span class="text-slate-600 font-medium">Temp °C</span></span>
+            <span class="flex items-center gap-1.5"><span class="size-2.5 rounded-full bg-success"></span><span class="text-slate-600 font-medium">pH</span></span>
+            <span class="flex items-center gap-1.5"><span class="size-2.5 rounded-full bg-warning"></span><span class="text-slate-600 font-medium">Cl mg/l</span></span>
+          </div>
+          <!-- Range Switcher -->
+          <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+            <button class="px-2.5 py-1 rounded-md text-slate-500">24 h</button>
+            <button class="px-2.5 py-1 rounded-md bg-white shadow text-slate-800">7 Tage</button>
+            <button class="px-2.5 py-1 rounded-md text-slate-500">30 T</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SVG-Chart -->
+      <div class="flex-1 relative">
+        <svg viewBox="0 0 700 200" preserveAspectRatio="none" class="w-full h-full">
+          <!-- Grid horizontal -->
+          <g stroke="#e2e8f0" stroke-width="1">
+            <line x1="0"   y1="40"  x2="700" y2="40"/>
+            <line x1="0"   y1="90"  x2="700" y2="90"/>
+            <line x1="0"   y1="140" x2="700" y2="140"/>
+            <line x1="0"   y1="190" x2="700" y2="190"/>
+          </g>
+
+          <!-- Temperatur (primary) – Fläche + Linie -->
+          <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40 L700,200 L0,200 Z"
+                fill="url(#gradTemp)" opacity="0.25"/>
+          <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40"
+                fill="none" stroke="#0EA5E9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+          <!-- pH (success) -->
+          <path d="M0,110 L100,108 L200,112 L300,107 L400,110 L500,109 L600,106 L700,108"
+                fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0"/>
+
+          <!-- Chlor (warning) -->
+          <path d="M0,140 L100,135 L200,148 L300,160 L400,158 L500,170 L600,168 L700,175"
+                fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+          <!-- Aktueller Punkt (Temp) -->
+          <circle cx="700" cy="40" r="5" fill="#fff" stroke="#0EA5E9" stroke-width="2.5"/>
+          <circle cx="700" cy="108" r="4" fill="#fff" stroke="#22C55E" stroke-width="2"/>
+          <circle cx="700" cy="175" r="4" fill="#fff" stroke="#F59E0B" stroke-width="2"/>
+
+          <defs>
+            <linearGradient id="gradTemp" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#0EA5E9"/>
+              <stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <!-- Y-Achsen Labels rechts -->
+        <div class="absolute right-1 top-0 h-full flex flex-col justify-between text-[9px] text-slate-400 pointer-events-none">
+          <span>30°</span><span>28°</span><span>26°</span><span>24°</span>
+        </div>
+      </div>
+
+      <!-- X-Achse -->
+      <div class="flex justify-between text-[10px] text-slate-400 mt-1 px-1">
+        <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span><span class="font-semibold text-slate-600">heute</span>
+      </div>
+    </section>
+
+    <!-- PUMPEN LAUFZEITEN (Gantt) -->
+    <section class="col-span-4 row-span-1 rounded-2xl bg-white border border-slate-200 shadow-sm p-4 flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-800">Pumpenlaufzeiten</h2>
+          <p class="text-[11px] text-slate-400">letzte 24 Stunden</p>
+        </div>
+        <div class="text-[10px] text-slate-500 font-semibold flex items-center gap-3">
+          <span class="flex items-center gap-1"><span class="size-2.5 rounded-sm bg-primary"></span>Haupt</span>
+          <span class="flex items-center gap-1"><span class="size-2.5 rounded-sm bg-warning"></span>Solar</span>
+        </div>
+      </div>
+
+      <!-- Gantt -->
+      <div class="flex-1 flex flex-col justify-center gap-4">
+        <!-- Hauptpumpe -->
+        <div>
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="font-semibold text-slate-700">Hauptpumpe</span>
+            <span class="text-slate-500"><span class="font-bold text-slate-800">8,2 h</span> Laufzeit</span>
+          </div>
+          <div class="relative h-5 rounded-md bg-slate-100 overflow-hidden">
+            <!-- Laufzeit-Blöcke (24h skaliert auf 100%) -->
+            <div class="absolute h-full bg-primary/80 rounded-sm" style="left:0%; width:8%;"></div>      <!-- 00–02 -->
+            <div class="absolute h-full bg-primary/80 rounded-sm" style="left:25%; width:12%;"></div>    <!-- 06–09 -->
+            <div class="absolute h-full bg-primary rounded-sm"    style="left:46%; width:18%;"></div>    <!-- 11–15 (aktuell) -->
+            <div class="absolute h-full bg-primary/80 rounded-sm" style="left:75%; width:8%;"></div>     <!-- 18–20 -->
+            <!-- Live-Indikator -->
+            <div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%;">
+              <span class="absolute -top-1 -left-1 size-2 rounded-full bg-error animate-pulse"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Solarpumpe -->
+        <div>
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="font-semibold text-slate-700">Solarpumpe</span>
+            <span class="text-slate-500"><span class="font-bold text-slate-800">4,1 h</span> Laufzeit</span>
+          </div>
+          <div class="relative h-5 rounded-md bg-slate-100 overflow-hidden">
+            <div class="absolute h-full bg-warning/80 rounded-sm" style="left:42%; width:10%;"></div>    <!-- 10–12:30 -->
+            <div class="absolute h-full bg-warning rounded-sm"    style="left:55%; width:7%;"></div>     <!-- 13–14:40 -->
+            <div class="absolute h-full bg-warning/80 rounded-sm" style="left:64%; width:0.5%;"></div>
+            <div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%;"></div>
+          </div>
+        </div>
+
+        <!-- Energie/Summary -->
+        <div class="grid grid-cols-2 gap-2 pt-2 mt-1 border-t border-slate-100">
+          <div class="text-center">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Energie 24 h</div>
+            <div class="text-base font-bold text-slate-800">14,8 <span class="text-xs font-normal text-slate-400">kWh</span></div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Solar-Ertrag</div>
+            <div class="text-base font-bold text-warning">+4,2 <span class="text-xs font-normal text-slate-400">°C/h</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- X-Achse Stunden -->
+      <div class="flex justify-between text-[9px] text-slate-400 mt-2 px-0.5">
+        <span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span>
+      </div>
+    </section>
+
+  </main>
+</div>
+<!-- ====== /TABLET ====== -->
+
+<!-- Beschriftung unter dem Mockup -->
+<div class="mt-4 text-center text-xs text-slate-500 font-medium">
+  Pool-Monitoring · Dashboard Layout Draft · 1280 × 800 px (7" Tablet, Querformat)
+</div>
+
+</div>
+</div>
+
+</body>
+</html>

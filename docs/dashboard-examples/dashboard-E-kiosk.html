@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pool Dashboard – Variante E · Kiosk (1280x800)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    primary: '#0EA5E9', success: '#22C55E', warning: '#F59E0B', error: '#EF4444',
+  } } } }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#f1f5f9; font-family:'Inter',system-ui,sans-serif; }
+  .tablet { width:1280px; height:800px; overflow:hidden; }
+  @media (max-width:1320px) { .scaler { transform:scale(.75); transform-origin:top left; } }
+  @media (max-width:1000px) { .scaler { transform:scale(.55); transform-origin:top left; } }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+</style>
+</head>
+<body class="text-slate-800 antialiased">
+<div class="p-6 flex items-start justify-center">
+<div class="scaler">
+
+<div class="tablet bg-white rounded-3xl ring-1 ring-slate-200/60 shadow-2xl relative overflow-hidden flex flex-col">
+
+  <!-- TOP STRIP (sehr schmal, 40px) -->
+  <div class="h-10 px-6 flex items-center justify-between border-b border-slate-200 bg-slate-50">
+    <div class="flex items-center gap-3">
+      <div class="size-6 rounded-md bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8-2 2.4 2 4.8 2"/></svg>
+      </div>
+      <span class="text-sm font-bold text-slate-700">Pool H32</span>
+      <span class="text-xs text-slate-400">· Garten</span>
+    </div>
+    <div class="flex items-center gap-5 text-xs text-slate-500">
+      <span class="flex items-center gap-1.5"><span class="size-2 rounded-full bg-success animate-pulse"></span><span class="font-semibold text-slate-600">LIVE</span> · vor 12 s</span>
+      <span><span class="font-semibold text-slate-700 num">14:32</span> · Sa, 06.06.2026</span>
+    </div>
+  </div>
+
+  <!-- HAUPTBEREICH: 60% Höhe für Riesenwerte -->
+  <main class="flex-1 grid grid-cols-12 gap-0">
+
+    <!-- ALARM-BANNER LINKS (wenn aktiv, schmal 40px Höhe) -->
+
+    <!-- TEMPERATUR (RIESIG, links 7 Spalten) -->
+    <section class="col-span-7 bg-gradient-to-br from-primary to-cyan-500 text-white p-8 flex flex-col justify-between relative overflow-hidden border-r border-slate-200">
+      <svg class="absolute inset-x-0 bottom-0 w-full text-white/10" viewBox="0 0 400 80" preserveAspectRatio="none">
+        <path d="M0 40 Q 50 10 100 40 T 200 40 T 300 40 T 400 40 V80 H0 Z" fill="currentColor"/>
+        <path d="M0 55 Q 50 25 100 55 T 200 55 T 300 55 T 400 55 V80 H0 Z" fill="currentColor" opacity="0.5"/>
+      </svg>
+      <div class="relative">
+        <div class="text-sm font-bold uppercase tracking-[0.3em] text-white/80">Wassertemperatur</div>
+      </div>
+      <!-- RIESIGE ZAHL -->
+      <div class="relative flex-1 flex items-center justify-center">
+        <div class="flex items-end gap-3">
+          <span class="text-[16rem] leading-[0.8] font-black tracking-tighter num drop-shadow-lg">28,4</span>
+          <span class="pb-12 text-7xl font-light text-white/80">°C</span>
+        </div>
+      </div>
+      <div class="relative flex items-center justify-between text-base">
+        <div class="flex items-center gap-2 rounded-full bg-white/25 backdrop-blur px-4 py-2 font-bold">
+          <svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+          <span>+0,4 °C / 24 h</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="text-right"><div class="text-[10px] uppercase tracking-wider text-white/70">24h Min</div><div class="text-lg font-bold num">26,1°</div></div>
+          <div class="text-right"><div class="text-[10px] uppercase tracking-wider text-white/70">24h Max</div><div class="text-lg font-bold num">29,8°</div></div>
+          <div class="rounded-full bg-white text-primary px-4 py-2 font-bold text-sm">KOMFORT</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECHTE SPALTE: pH + Cl + Alarm -->
+    <section class="col-span-5 flex flex-col">
+
+      <!-- pH (groß) -->
+      <div class="flex-1 p-6 flex flex-col justify-center border-b border-slate-200 bg-white relative">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-sm font-bold uppercase tracking-[0.3em] text-slate-500">pH-Wert</div>
+          <span class="rounded-full bg-success text-white text-xs font-bold px-3 py-1 uppercase tracking-wider">OK</span>
+        </div>
+        <div class="flex items-baseline gap-3 my-1">
+          <div class="text-[8.5rem] leading-none font-black text-slate-800 num">7,2</div>
+          <div class="text-2xl text-slate-400 font-light">Soll 7,0 – 7,4</div>
+        </div>
+        <div class="relative h-3 rounded-full bg-gradient-to-r from-red-400 via-success to-violet-500 mt-1">
+          <div class="absolute -top-1 size-5 rounded-full bg-white shadow-lg ring-2 ring-success" style="left:calc(52% - 10px)"></div>
+        </div>
+      </div>
+
+      <!-- CHLOR (groß) -->
+      <div class="flex-1 p-6 flex flex-col justify-center bg-warning/5 relative">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-sm font-bold uppercase tracking-[0.3em] text-slate-500">Chlor (freies Cl)</div>
+          <span class="rounded-full bg-warning text-white text-xs font-bold px-3 py-1 uppercase tracking-wider flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376C1.83 17.626 2.914 19.5 4.645 19.5h14.71c1.73 0 2.815-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/></svg>
+            Niedrig
+          </span>
+        </div>
+        <div class="flex items-baseline gap-3 my-1">
+          <div class="text-[8.5rem] leading-none font-black text-slate-800 num">0,7</div>
+          <div class="text-3xl text-slate-400 font-light">mg/l</div>
+          <div class="ml-auto text-right">
+            <div class="text-xs uppercase tracking-wider text-slate-400">Soll</div>
+            <div class="text-xl font-bold text-slate-600 num">1,0 – 1,5</div>
+          </div>
+        </div>
+        <div class="relative h-3 rounded-full bg-gradient-to-r from-warning via-success to-error mt-1">
+          <div class="absolute -top-1 size-5 rounded-full bg-white shadow-lg ring-2 ring-warning" style="left:calc(23% - 10px)"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- UNTERER BEREICH: Pumpen-Status + Mini-Charts -->
+  <footer class="h-72 grid grid-cols-12 gap-0 border-t border-slate-200 bg-slate-50/50">
+
+    <!-- HAUPTPUMPE (groß, links) -->
+    <div class="col-span-3 p-5 border-r border-slate-200 bg-success/10 flex flex-col justify-center relative overflow-hidden">
+      <div class="absolute -top-10 -right-10 size-32 rounded-full bg-success/20 blur-2xl"></div>
+      <div class="flex items-center gap-3 mb-2 relative">
+        <div class="size-12 rounded-xl bg-white shadow flex items-center justify-center text-success">
+          <svg xmlns="http://www.w3.org/2000/svg" class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wider font-bold text-success">Hauptpumpe</div>
+          <div class="text-base font-bold text-slate-800">Filterkreislauf</div>
+        </div>
+      </div>
+      <div class="relative text-center my-2">
+        <div class="text-5xl font-black text-success drop-shadow-sm">LÄUFT</div>
+        <div class="text-sm text-slate-600 mt-1">seit <span class="font-bold text-slate-800 num">2 h 14 min</span></div>
+      </div>
+      <div class="flex items-center justify-between text-sm relative">
+        <span class="text-slate-500">Leistung</span>
+        <span class="font-bold text-slate-800 num">1,8 kW</span>
+      </div>
+    </div>
+
+    <!-- SOLARPUMPE -->
+    <div class="col-span-3 p-5 border-r border-slate-200 bg-slate-100/60 flex flex-col justify-center">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="size-12 rounded-xl bg-white shadow flex items-center justify-center text-slate-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wider font-bold text-slate-500">Solarpumpe</div>
+          <div class="text-base font-bold text-slate-700">Wärmetauscher</div>
+        </div>
+      </div>
+      <div class="text-center my-2">
+        <div class="text-5xl font-black text-slate-400">AUS</div>
+        <div class="text-sm text-slate-500 mt-1">letzter Lauf <span class="font-bold text-slate-700 num">12:42</span></div>
+      </div>
+      <div class="flex items-center justify-between text-sm">
+        <span class="text-slate-500">Grund</span>
+        <span class="font-semibold text-slate-600">ΔT zu niedrig</span>
+      </div>
+    </div>
+
+    <!-- TREND CHART (kompakt) -->
+    <div class="col-span-4 p-4 border-r border-slate-200 flex flex-col bg-white">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-sm font-bold text-slate-800">Trend · 7 Tage</h3>
+        <div class="flex items-center gap-3 text-[10px]">
+          <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-primary"></span><span class="text-slate-500">Temp</span></span>
+          <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-success"></span><span class="text-slate-500">pH</span></span>
+          <span class="flex items-center gap-1"><span class="size-2 rounded-full bg-warning"></span><span class="text-slate-500">Cl</span></span>
+        </div>
+      </div>
+      <div class="flex-1 relative">
+        <svg viewBox="0 0 400 150" preserveAspectRatio="none" class="w-full h-full">
+          <g stroke="#e2e8f0" stroke-width="1">
+            <line x1="0" y1="37" x2="400" y2="37"/>
+            <line x1="0" y1="75" x2="400" y2="75"/>
+            <line x1="0" y1="112" x2="400" y2="112"/>
+          </g>
+          <path d="M0,50 L57,47 L114,40 L171,43 L228,33 L285,37 L342,35 L400,28 L400,150 L0,150 Z" fill="url(#gE)" opacity="0.25"/>
+          <path d="M0,50 L57,47 L114,40 L171,43 L228,33 L285,37 L342,35 L400,28" fill="none" stroke="#0EA5E9" stroke-width="3" stroke-linecap="round"/>
+          <path d="M0,82 L57,80 L114,84 L171,78 L228,81 L285,80 L342,77 L400,79" fill="none" stroke="#22C55E" stroke-width="2.5"/>
+          <path d="M0,108 L57,103 L114,115 L171,123 L228,121 L285,131 L342,129 L400,135" fill="none" stroke="#F59E0B" stroke-width="2.5"/>
+          <circle cx="400" cy="28" r="5" fill="#fff" stroke="#0EA5E9" stroke-width="2.5"/>
+          <circle cx="400" cy="79" r="4" fill="#fff" stroke="#22C55E" stroke-width="2"/>
+          <circle cx="400" cy="135" r="4" fill="#fff" stroke="#F59E0B" stroke-width="2"/>
+          <defs><linearGradient id="gE" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#0EA5E9"/><stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="flex justify-between text-[9px] text-slate-400 mt-1"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span class="font-bold text-slate-600">heute</span></div>
+    </div>
+
+    <!-- ALARME + PUMPEN GANTT -->
+    <div class="col-span-2 p-4 flex flex-col gap-3 bg-white">
+      <!-- Alarme Mini -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376C1.83 17.626 2.914 19.5 4.645 19.5h14.71c1.73 0 2.815-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/></svg>
+            Alarme
+          </h3>
+          <span class="rounded-full bg-warning text-white text-[10px] font-bold px-2 py-0.5">2</span>
+        </div>
+        <ul class="space-y-1">
+          <li class="text-[11px] flex items-start gap-1.5">
+            <span class="size-1.5 mt-1 rounded-full bg-warning shrink-0"></span>
+            <span class="text-slate-700 leading-tight">Chlor unter Soll</span>
+          </li>
+          <li class="text-[11px] flex items-start gap-1.5">
+            <span class="size-1.5 mt-1 rounded-full bg-slate-400 shrink-0"></span>
+            <span class="text-slate-700 leading-tight">pH-Messung > 24 h</span>
+          </li>
+        </ul>
+      </div>
+      <!-- Pumpen Gantt Mini -->
+      <div class="mt-auto">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Pumpen 24 h</h3>
+        <div class="space-y-1.5">
+          <div>
+            <div class="text-[10px] text-slate-500 flex justify-between"><span>Haupt</span><span class="font-bold text-slate-700 num">8,2 h</span></div>
+            <div class="relative h-2.5 rounded bg-slate-100 overflow-hidden mt-0.5">
+              <div class="absolute h-full bg-primary/80" style="left:0%; width:8%"></div>
+              <div class="absolute h-full bg-primary/80" style="left:25%; width:12%"></div>
+              <div class="absolute h-full bg-primary" style="left:46%; width:18%"></div>
+              <div class="absolute h-full bg-primary/80" style="left:75%; width:8%"></div>
+              <div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500 flex justify-between"><span>Solar</span><span class="font-bold text-slate-700 num">4,1 h</span></div>
+            <div class="relative h-2.5 rounded bg-slate-100 overflow-hidden mt-0.5">
+              <div class="absolute h-full bg-warning/80" style="left:42%; width:10%"></div>
+              <div class="absolute h-full bg-warning" style="left:55%; width:7%"></div>
+              <div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-between text-[9px] text-slate-400 mt-1"><span>00</span><span>12</span><span>24</span></div>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<div class="mt-4 text-center text-xs text-slate-500 font-medium">
+  Variante E · Kiosk-Modus (Riesen-Zahlen, Lesbar aus 2-3 m) · 1280 × 800 px
+</div>
+
+</div></div>
+</body></html>
