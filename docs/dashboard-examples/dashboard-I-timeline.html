@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pool Dashboard – Variante I · Timeline (1280x800)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { primary: '#0EA5E9', success: '#22C55E', warning: '#F59E0B', error: '#EF4444' },
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+      },
+    },
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#0f172a; font-family:'Inter',system-ui,sans-serif; }
+  .tablet { width:1280px; height:800px; overflow:hidden; }
+  @media (max-width:1320px) { .scaler { transform:scale(.75); transform-origin:top left; } }
+  @media (max-width:1000px) { .scaler { transform:scale(.55); transform-origin:top left; } }
+  .num { font-variant-numeric: tabular-nums; }
+  .tide { stroke-dasharray: 4 4; }
+</style>
+</head>
+<body class="text-slate-100 antialiased">
+<div class="p-6 flex items-start justify-center"><div class="scaler">
+
+<div class="tablet bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 rounded-3xl ring-1 ring-slate-700 shadow-2xl relative overflow-hidden">
+
+  <header class="h-14 px-6 flex items-center justify-between border-b border-slate-700/80 bg-slate-900/70 backdrop-blur">
+    <div class="flex items-center gap-3">
+      <div class="size-9 rounded-xl bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="size-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2M3 19c2.4 0 2.4-2 4.8-2"/></svg></div>
+      <div class="text-lg font-bold text-white">Pool H32 <span class="text-slate-500 font-normal ml-1 text-sm">· Garten</span></div>
+    </div>
+    <div class="flex items-center gap-5">
+      <span class="flex items-center gap-2"><span class="relative flex size-2.5"><span class="absolute inline-flex h-full w-full rounded-full bg-success opacity-70 animate-ping"></span><span class="relative inline-flex rounded-full size-2.5 bg-success"></span></span><span class="text-xs font-semibold text-slate-300">LIVE · vor 12 s</span></span>
+      <span class="text-xs text-slate-400">Sa, 06.06.2026 · <span class="font-semibold text-slate-200">14:32</span></span>
+    </div>
+  </header>
+
+  <main class="h-[calc(800px-56px)] grid grid-cols-12 gap-4 p-5">
+
+    <!-- Annotated timeline (full height left) -->
+    <section class="col-span-6 flex flex-col gap-3">
+      <div class="flex items-center justify-between px-1"><h2 class="text-sm font-bold text-white">Tagesverlauf</h2><div class="inline-flex rounded-lg bg-slate-800/80 p-0.5 text-[11px] font-semibold ring-1 ring-slate-700"><button class="px-2.5 py-1 rounded-md bg-slate-700 text-white">Heute</button><button class="px-2.5 py-1 rounded-md text-slate-400">Gestern</button></div></div>
+      <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-4 relative overflow-hidden">
+        <svg viewBox="0 0 500 500" preserveAspectRatio="none" class="w-full h-full">
+          <!-- grid background -->
+          <g stroke="#334155" stroke-width="1"><line x1="0" y1="100" x2="500" y2="100"/><line x1="0" y1="200" x2="500" y2="200"/><line x1="0" y1="300" x2="500" y2="300"/><line x1="0" y1="400" x2="500" y2="400"/></g>
+          <!-- shaded bands for sensors -->
+          <rect x="0" y="60" width="500" height="140" fill="#0EA5E9" opacity="0.06"/>
+          <rect x="0" y="220" width="500" height="100" fill="#22C55E" opacity="0.06"/>
+          <rect x="0" y="340" width="500" height="80" fill="#F59E0B" opacity="0.08"/>
+          <!-- curves -->
+          <path d="M0,140 L83,135 L166,125 L249,130 L332,118 L415,128 L499,110 L499,500 L0,500 Z" fill="url(#t1)" opacity="0.4"/>
+          <path d="M0,260 L83,258 L166,270 L249,260 L332,268 L415,263 L499,265 L499,500 L0,500 Z" fill="url(#t2)" opacity="0.25"/>
+          <path d="M0,370 L83,365 L166,380 L249,388 L332,386 L415,395 L499,398 L499,500 L0,500 Z" fill="url(#t3)" opacity="0.35"/>
+          <path d="M0,140 L83,135 L166,125 L249,130 L332,118 L415,128 L499,110" fill="none" stroke="#0EA5E9" stroke-width="3" stroke-linecap="round"/>
+          <path d="M0,260 L83,258 L166,270 L249,260 L332,268 L415,263 L499,265" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round"/>
+          <path d="M0,370 L83,365 L166,380 L249,388 L332,386 L415,395 L499,398" fill="none" stroke="#F59E0B" stroke-width="3" stroke-linecap="round"/>
+          <!-- current markers -->
+          <circle cx="499" cy="110" r="5" fill="#fff" stroke="#0EA5E9" stroke-width="2.5"/>
+          <circle cx="499" cy="265" r="5" fill="#fff" stroke="#22C55E" stroke-width="2.5"/>
+          <circle cx="499" cy="398" r="5" fill="#fff" stroke="#F59E0B" stroke-width="2.5"/>
+          <!-- vertical "now" ruler -->
+          <line x1="499" y1="0" x2="499" y2="500" stroke="#fff" stroke-width="1.5" class="tide"/>
+          <text x="499" y="16" text-anchor="middle" fill="#fff" font-size="12" font-weight="800">14:32</text>
+          <!-- hour ticks -->
+          <g text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600">
+            <text x="0" y="525">00:00</text><text x="83" y="525">04:00</text><text x="166" y="525">08:00</text><text x="249" y="525">12:00</text><text x="332" y="525">16:00</text><text x="415" y="525">20:00</text><text x="499" y="525">jetzt</text>
+          </g>
+          <defs>
+            <linearGradient id="t1" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#0EA5E9"/><stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/></linearGradient>
+            <linearGradient id="t2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#22C55E"/><stop offset="100%" stop-color="#22C55E" stop-opacity="0"/></linearGradient>
+            <linearGradient id="t3" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#F59E0B" stop-opacity="0"/></linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <div class="flex gap-3 mt-1">
+        <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex items-center gap-3">
+          <div class="size-9 rounded-lg bg-primary/20 text-primary flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2M3 19c2.4 0 2.4-2 4.8-2"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Temperatur</div><div class="text-2xl font-black text-white num">28,4 °C</div></div>
+        </div>
+        <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex items-center gap-3">
+          <div class="size-9 rounded-lg bg-success/20 text-success flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">pH</div><div class="text-2xl font-black text-white num">7,2</div></div>
+        </div>
+        <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex items-center gap-3">
+          <div class="size-9 rounded-lg bg-warning/20 text-warning flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Chlor</div><div class="text-2xl font-black text-white num">0,7 mg/l</div></div>
+        </div>
+        <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex items-center gap-3">
+          <div class="size-9 rounded-lg bg-primary/20 text-primary flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Pumpe</div><div class="text-2xl font-black text-white num">8,2 h</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT rail: status / alarms / pumps -->
+    <section class="col-span-6 flex flex-col gap-4">
+      <div class="flex-1 rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-4 flex flex-col">
+        <div class="flex items-center justify-between mb-3"><h3 class="text-xs font-bold text-white uppercase tracking-wider">Alarme</h3><span class="rounded-full bg-error/20 text-error text-[10px] font-bold px-2 py-0.5">2 aktiv</span></div>
+        <div class="flex-1 space-y-3">
+          <div class="rounded-xl bg-error/10 border border-error/15 p-3"><div class="flex items-center gap-2 mb-1"><span class="size-2 rounded-full bg-error shadow shadow-error/70"></span><span class="text-[11px] font-bold text-error uppercase">Warnung</span><span class="text-[10px] text-slate-500 ml-auto">seit 12:10</span></div><div class="text-[12px] text-slate-200 font-semibold">Chlor-Wert unter Sollbereich</div><div class="text-[11px] text-slate-400">0,7 mg/l (Soll 1,0 – 1,5)</div></div>
+          <div class="rounded-xl bg-warning/10 border border-warning/15 p-3"><div class="flex items-center gap-2 mb-1"><span class="size-2 rounded-full bg-warning shadow"></span><span class="text-[11px] font-bold text-warning uppercase">Info</span><span class="text-[10px] text-slate-500 ml-auto">gestern</span></div><div class="text-[12px] text-slate-200 font-semibold">pH-Messung > 24 h alt</div><div class="text-[11px] text-slate-400">Letzte manuelle Messung gestern 12:10</div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 h-48">
+        <div class="rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex flex-col">
+          <div class="flex items-center justify-between mb-2"><div class="text-[11px] font-bold text-white">Hauptpumpe</div><span class="rounded-full bg-success text-white text-[9px] font-bold px-2 py-0.5 uppercase flex items-center gap-1"><span class="size-1.5 rounded-full bg-white animate-pulse"></span>Läuft</span></div>
+          <div class="flex-1 flex items-center justify-center"><div class="text-5xl font-black text-success drop-shadow">LÄUFT</div></div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400"><span>seit 2 h 14 min</span><span class="font-bold text-white">1,8 kW</span></div>
+        </div>
+        <div class="rounded-2xl bg-slate-800/60 ring-1 ring-slate-700 p-3 flex flex-col">
+          <div class="flex items-center justify-between mb-2"><div class="text-[11px] font-bold text-white">Solarpumpe</div><span class="rounded-full bg-slate-700 text-slate-300 text-[9px] font-bold px-2 py-0.5 uppercase">Aus</span></div>
+          <div class="flex-1 flex items-center justify-center"><div class="text-5xl font-black text-slate-500">AUS</div></div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400"><span>ΔT niedrig</span><span class="font-medium text-slate-300">letzter Lauf 12:42</span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="mt-4 text-center text-xs text-slate-400 font-medium">Variante I · Timeline-Stack · 1280 × 800 px</div>
+
+</div></div>
+</body>
+</html>

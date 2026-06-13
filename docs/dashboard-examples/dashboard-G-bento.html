@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pool Dashboard – Variante G · Bento Grid (1280x800)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { primary: '#0EA5E9', success: '#22C55E', warning: '#F59E0B', error: '#EF4444' },
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+      },
+    },
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#e2e8f0; font-family:'Inter',system-ui,sans-serif; }
+  .tablet { width:1280px; height:800px; overflow:hidden; }
+  @media (max-width:1320px) { .scaler { transform:scale(.75); transform-origin:top left; } }
+  @media (max-width:1000px) { .scaler { transform:scale(.55); transform-origin:top left; } }
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="text-slate-800 antialiased">
+<div class="p-6 flex items-start justify-center"><div class="scaler">
+
+<div class="tablet bg-slate-50 rounded-3xl ring-1 ring-slate-200/60 shadow-2xl relative overflow-hidden">
+
+  <header class="h-14 px-6 flex items-center justify-between border-b border-slate-200 bg-white rounded-t-3xl">
+    <div class="flex items-center gap-3">
+      <div class="size-9 rounded-xl bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center shadow shadow-primary/30">
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2M3 19c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2"/></svg>
+      </div>
+      <div class="text-lg font-bold text-slate-800">Pool H32 <span class="text-slate-400 font-normal ml-1 text-sm">· Garten</span></div>
+    </div>
+    <div class="flex items-center gap-5">
+      <span class="flex items-center gap-2"><span class="relative flex size-2.5"><span class="absolute inline-flex h-full w-full rounded-full bg-success opacity-70 animate-ping"></span><span class="relative inline-flex rounded-full size-2.5 bg-success"></span></span><span class="text-xs font-semibold text-slate-600">LIVE · vor 12 s</span></span>
+      <span class="text-xs text-slate-500">Sa, 06.06.2026 · <span class="font-semibold text-slate-700">14:32</span></span>
+      <button class="size-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37"/></svg></button>
+    </div>
+  </header>
+
+  <!-- BENTO GRID: 12 cols, organic row heights -->
+  <main class="p-5 grid grid-cols-12 gap-4" style="grid-auto-rows: minmax(80px, auto);">
+
+    <!-- TEMP: L-shape spanning cols 1-5, rows 1-3 -->
+    <section class="col-span-5 row-span-3 rounded-3xl bg-gradient-to-br from-primary to-cyan-500 text-white p-6 shadow-lg shadow-primary/20 relative overflow-hidden flex flex-col">
+      <svg class="absolute inset-x-0 bottom-0 w-full text-white/10" viewBox="0 0 400 80" preserveAspectRatio="none"><path d="M0 40 Q 50 10 100 40 T 200 40 T 300 40 T 400 40 V80 H0 Z" fill="currentColor"/><path d="M0 55 Q 50 25 100 55 T 200 55 T 300 55 T 400 55 V80 H0 Z" fill="currentColor" opacity="0.5"/></svg>
+      <div class="relative">
+        <div class="text-[11px] font-bold uppercase tracking-[0.2em] text-white/80">Wassertemperatur</div>
+        <div class="text-[11px] text-white/60 mt-0.5">Sensor Skimmer · vor 12 s</div>
+      </div>
+      <div class="relative mt-4 flex items-end gap-3">
+        <div class="text-[8rem] leading-none font-black tracking-tight">28,4</div>
+        <div class="pb-6 text-4xl font-light text-white/80">°C</div>
+      </div>
+      <div class="mt-auto relative">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-white/25 backdrop-blur px-3 py-1.5 text-xs font-bold"><svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg> +0,4 °C / 24 h</span>
+          <span class="rounded-full bg-white text-primary px-3 py-1.5 text-xs font-bold">KOMFORT</span>
+        </div>
+        <div class="h-3 rounded-full bg-white/20 relative">
+          <div class="absolute h-full rounded-full bg-white/30" style="left:24%; width:38%"></div>
+          <div class="absolute -top-1 size-4 rounded-full bg-white shadow ring-2 ring-primary" style="left:calc(60% - 8px)"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-white/60 mt-1.5"><span>20°</span><span>25°</span><span>30°</span><span>35°</span></div>
+      </div>
+    </section>
+
+    <!-- pH: square-ish -->
+    <section class="col-span-3 row-span-1 rounded-3xl bg-white border border-slate-200 p-5 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">pH-Wert</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">manuell · 12:10</div>
+        </div>
+        <span class="rounded-full bg-success/15 text-success text-[10px] font-bold px-2 py-0.5">OK</span>
+      </div>
+      <div class="flex-1 flex items-center">
+        <div class="text-center w-full">
+          <div class="text-[5.5rem] leading-none font-black text-slate-800">7,2</div>
+          <div class="text-sm text-slate-400 mt-2">Soll 7,0 – 7,4</div>
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-red-400 via-success to-violet-500 mt-3 mx-auto max-w-[90%]">
+            <div class="absolute -top-1 size-3.5 rounded-full bg-white shadow ring-2 ring-success" style="left:calc(52% - 7px)"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cl: square-ish -->
+    <section class="col-span-2 row-span-1 rounded-3xl bg-white border border-slate-200 p-5 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Chlor</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">freies Cl</div>
+        </div>
+        <span class="rounded-full bg-warning/15 text-warning text-[10px] font-bold px-2 py-0.5">NIEDRIG</span>
+      </div>
+      <div class="flex-1 flex items-center">
+        <div class="text-center w-full">
+          <div class="text-[4rem] leading-none font-black text-slate-800">0,7</div>
+          <div class="text-xs text-slate-400 mt-2">Soll 1,0 – 1,5 mg/l</div>
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-warning via-success to-error mt-3 mx-auto max-w-[90%]">
+            <div class="absolute -top-1 size-3 rounded-full bg-white shadow ring-2 ring-warning" style="left:calc(23% - 6px)"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Alarme: wide strip right-top -->
+    <section class="col-span-2 row-span-1 rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-warning/5">
+        <div class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="size-3.5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376C1.83 17.626 2.914 19.5 4.645 19.5h14.71c1.73 0 2.815-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/></svg><span class="text-[11px] font-bold uppercase tracking-wider text-slate-700">Alarme</span><span class="rounded-full bg-warning text-white text-[9px] font-bold px-1.5 py-0.5">2</span></div>
+        <button class="text-[10px] font-semibold text-primary hover:underline">Alle</button>
+      </div>
+      <ul class="divide-y divide-slate-100 text-[11px]">
+        <li class="px-3 py-2.5"><div class="flex items-center gap-1.5 mb-0.5"><span class="size-1.5 rounded-full bg-warning shrink-0"></span><span class="text-[10px] uppercase font-bold text-warning">Warnung</span><span class="ml-auto text-[9px] text-slate-400">12:10</span></div><div class="text-slate-700 font-medium leading-tight">Chlor unter Sollbereich</div></li>
+        <li class="px-3 py-2.5"><div class="flex items-center gap-1.5 mb-0.5"><span class="size-1.5 rounded-full bg-slate-400 shrink-0"></span><span class="text-[10px] uppercase font-bold text-slate-500">Info</span><span class="ml-auto text-[9px] text-slate-400">gestern</span></div><div class="text-slate-700 font-medium leading-tight">Messung > 24 h</div></li>
+      </ul>
+    </section>
+
+    <!-- HAUPTPUMPE: medium -->
+    <section class="col-span-3 row-span-1 rounded-3xl bg-white border-2 border-success/30 bg-success/5 p-4 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="size-9 rounded-lg bg-white shadow flex items-center justify-center text-success"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider font-bold text-success">Hauptpumpe</div><div class="text-sm font-bold text-slate-800">Filter</div></div>
+        </div>
+        <span class="rounded-full bg-success text-white text-[10px] font-bold uppercase px-2 py-0.5 flex items-center gap-1"><span class="size-1.5 rounded-full bg-white animate-pulse"></span>Läuft</span>
+      </div>
+      <div class="mt-2 flex items-center justify-between text-[11px] text-slate-600 pt-2 border-t border-success/15">
+        <span>seit <span class="font-bold text-slate-800">2 h 14 min</span></span>
+        <span class="font-bold text-success"><span class="text-[10px] text-slate-500">Leistung</span> 1,8 kW</span>
+      </div>
+    </section>
+
+    <!-- SOLARPUMPE: medium -->
+    <section class="col-span-2 row-span-1 rounded-3xl bg-white border border-slate-200 p-4 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="size-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3"/></svg></div>
+          <div><div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Solarpumpe</div><div class="text-sm font-bold text-slate-700">Wärme</div></div>
+        </div>
+        <span class="rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase px-2 py-0.5">Aus</span>
+      </div>
+      <div class="mt-2 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+        <span>letzter Lauf <span class="font-bold text-slate-700">12:42</span></span>
+        <span>ΔT zu niedrig</span>
+      </div>
+    </section>
+
+    <!-- TREND: wide, bottom-left -->
+    <section class="col-span-8 row-span-1 rounded-3xl bg-white border border-slate-200 shadow-sm p-5 flex flex-col">
+      <div class="flex items-center justify-between mb-2">
+        <div><h2 class="text-sm font-bold text-slate-800">Trendverlauf</h2><p class="text-[11px] text-slate-400">Temperatur, pH & Chlor · 7 Tage</p></div>
+        <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold"><button class="px-2.5 py-1 rounded-md text-slate-500">24 h</button><button class="px-2.5 py-1 rounded-md bg-white shadow text-slate-800">7 T</button><button class="px-2.5 py-1 rounded-md text-slate-500">30 T</button></div>
+      </div>
+      <div class="flex-1 relative min-h-0">
+        <svg viewBox="0 0 700 180" preserveAspectRatio="none" class="w-full h-full">
+          <g stroke="#e2e8f0" stroke-width="1"><line x1="0" y1="40" x2="700" y2="40"/><line x1="0" y1="90" x2="700" y2="90"/><line x1="0" y1="140" x2="700" y2="140"/></g>
+          <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40 L700,180 L0,180 Z" fill="url(#gT)" opacity="0.25"/>
+          <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40" fill="none" stroke="#0EA5E9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M0,110 L100,108 L200,112 L300,107 L400,110 L500,109 L600,106 L700,108" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round"/>
+          <path d="M0,140 L100,135 L200,148 L300,160 L400,158 L500,170 L600,168 L700,175" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="700" cy="40" r="5" fill="#fff" stroke="#0EA5E9" stroke-width="2.5"/><circle cx="700" cy="108" r="4" fill="#fff" stroke="#22C55E" stroke-width="2"/><circle cx="700" cy="175" r="4" fill="#fff" stroke="#F59E0B" stroke-width="2"/>
+          <defs><linearGradient id="gT" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#0EA5E9"/><stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/></linearGradient></defs>
+        </svg>
+        <div class="flex justify-between text-[10px] text-slate-400 mt-1 px-1"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span><span class="font-semibold text-slate-600">heute</span></div>
+      </div>
+    </section>
+
+    <!-- PUMPEN GANTT: bottom-right -->
+    <section class="col-span-4 row-span-1 rounded-3xl bg-white border border-slate-200 shadow-sm p-4 flex flex-col">
+      <div class="flex items-center justify-between mb-2"><div><h2 class="text-sm font-bold text-slate-800">Pumpenlaufzeiten</h2><p class="text-[11px] text-slate-400">24 Stunden</p></div><div class="text-[10px] text-slate-500 font-semibold flex gap-3"><span class="flex items-center gap-1"><span class="size-2.5 rounded-sm bg-primary"></span>Haupt</span><span class="flex items-center gap-1"><span class="size-2.5 rounded-sm bg-warning"></span>Solar</span></div></div>
+      <div class="flex-1 flex flex-col justify-center gap-4">
+        <div><div class="flex items-center justify-between text-[11px] mb-1"><span class="font-semibold text-slate-700">Hauptpumpe</span><span class="text-slate-500"><span class="font-bold text-slate-800">8,2 h</span> Laufzeit</span></div><div class="relative h-5 rounded-md bg-slate-100 overflow-hidden"><div class="absolute h-full bg-primary/80 rounded-sm" style="left:0%; width:8%"></div><div class="absolute h-full bg-primary/80 rounded-sm" style="left:25%; width:12%"></div><div class="absolute h-full bg-primary rounded-sm" style="left:46%; width:18%"></div><div class="absolute h-full bg-primary/80 rounded-sm" style="left:75%; width:8%"></div><div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%"><span class="absolute -top-1 -left-1 size-2 rounded-full bg-error animate-pulse"></span></div></div></div>
+        <div><div class="flex items-center justify-between text-[11px] mb-1"><span class="font-semibold text-slate-700">Solarpumpe</span><span class="text-slate-500"><span class="font-bold text-slate-800">4,1 h</span> Laufzeit</span></div><div class="relative h-5 rounded-md bg-slate-100 overflow-hidden"><div class="absolute h-full bg-warning/80 rounded-sm" style="left:42%; width:10%"></div><div class="absolute h-full bg-warning rounded-sm" style="left:55%; width:7%"></div><div class="absolute top-0 h-full w-0.5 bg-error" style="left:60%"></div></div></div>
+      </div>
+      <div class="flex justify-between text-[9px] text-slate-400 mt-2 px-0.5"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    </section>
+
+  </main>
+</div>
+
+<div class="mt-4 text-center text-xs text-slate-500 font-medium">Variante G · Bento Grid (unterschiedliche Kachelgrößen) · 1280 × 800 px</div>
+
+</div></div>
+</body>
+</html>

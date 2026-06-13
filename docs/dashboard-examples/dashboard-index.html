@@ -13,7 +13,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   html, body { margin:0; padding:0; background:#f1f5f9; font-family:'Inter',system-ui,sans-serif; }
-  /* Preview-Kacheln zeigen iframe in skalierter Größe */
   .preview {
     width: 1280px;
     height: 800px;
@@ -23,8 +22,8 @@
     pointer-events: none;
   }
   .preview-wrap {
-    width: 576px;   /* 1280 * 0.45 */
-    height: 360px;  /* 800 * 0.45 */
+    width: 576px;
+    height: 360px;
     overflow: hidden;
     border-radius: 16px;
     background: white;
@@ -40,23 +39,20 @@
   <header class="mb-10">
     <div class="flex items-center gap-3 mb-3">
       <div class="size-10 rounded-xl bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center shadow-md shadow-primary/30">
-        <svg xmlns="http://www.w3.org/2000/svg" class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8-2 2.4 2 4.8 2M3 19c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8-2 2.4 2 4.8 2"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8 2 2.4 2 4.8 2M3 19c2.4 0 2.4-2 4.8-2s2.4 2 4.8 2 2.4-2 4.8 2 2.4 2 4.8 2"/></svg>
       </div>
       <div>
         <div class="text-xs uppercase tracking-[0.18em] font-semibold text-slate-400">Pool Monitor</div>
         <h1 class="text-3xl font-extrabold text-slate-800">Dashboard Layout-Entwürfe</h1>
       </div>
     </div>
-    <p class="text-slate-600 max-w-3xl">Sechs Design-Varianten für das 7&quot; Tablet-Dashboard (1280 × 800 px Querformat).
-      Klick auf eine Variante öffnet die volle Mockup-Ansicht.
-      Alle Layouts zeigen die gleichen Daten: Alarme, Wassertemperatur, pH, Chlor, Pumpen-Status (Haupt+Solar),
-      Trendverlauf und Pumpen-Laufzeiten.</p>
+    <p class="text-slate-600 max-w-3xl">Elf Design-Varianten für das 7" Tablet-Dashboard (1280 × 800 px Querformat). Klick auf eine Variante öffnet die volle Mockup-Ansicht. Alle Layouts zeigen die gleichen Daten: Alarme, Wassertemperatur, pH, Chlor, Pumpen-Status (Haupt+Solar), Trendverlauf und Pumpen-Laufzeiten.</p>
   </header>
 
   <!-- GRID -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-    <!-- ORIGINAL (Layout) -->
+    <!-- ORIGINAL -->
     <a href="dashboard-mockup.html" target="_blank" class="block group">
       <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
         <iframe src="dashboard-mockup.html" class="preview" scrolling="no"></iframe>
@@ -65,8 +61,7 @@
         <span class="rounded bg-primary text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Original</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Klassisch hell</h2>
       </div>
-      <p class="text-sm text-slate-500">Helles Grid-Layout, Temperatur dominiert (5/12 Spalten), pH/Cl gestapelt, Pumpen + Alarme rechts.
-        Untere Reihe: Trend + Pumpen-Gantt.</p>
+      <p class="text-sm text-slate-500">Helles Grid-Layout, Temperatur dominiert (5/12 Spalten), pH/Cl gestapelt, Pumpen + Alarme rechts.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-mockup.html</div>
     </a>
 
@@ -79,8 +74,7 @@
         <span class="rounded bg-slate-800 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante A</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Dark Theme</h2>
       </div>
-      <p class="text-sm text-slate-500">Gleiches Layout wie das Original, aber mit dunklem Nacht-Theme.
-        Reduziert Augenermüdung bei Abendnutzung, hat aber denselben Informationsaufbau.</p>
+      <p class="text-sm text-slate-500">Gleiches Layout wie das Original, aber mit dunklem Nacht-Theme.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-A-dark.html</div>
     </a>
 
@@ -93,8 +87,7 @@
         <span class="rounded bg-cyan-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante B</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Temperatur zentral (Gauge)</h2>
       </div>
-      <p class="text-sm text-slate-500">Temperatur als großer Kreis-Gauge in der Mitte, pH/Cl mit Halbkreis-Gauges links,
-        Alarme + Pumpen rechts. Sehr „dashboardig", auffälliger Hero-Wert.</p>
+      <p class="text-sm text-slate-500">Großer Kreis-Gauge in der Mitte, pH/Cl links, Alarme + Pumpen rechts.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-B-central.html</div>
     </a>
 
@@ -107,8 +100,7 @@
         <span class="rounded bg-emerald-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante C</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">3-Spalten-Layout</h2>
       </div>
-      <p class="text-sm text-slate-500">Klare semantische Trennung in drei Vertikalen: <strong>Status</strong> (Alarme, Pumpen) ·
-        <strong>Werte</strong> (Temp, pH, Cl) · <strong>History</strong> (Trend, Gantt). Sehr aufgeräumt und scanbar.</p>
+      <p class="text-sm text-slate-500">Semantische Trennung: Status · Werte · History.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-C-columns.html</div>
     </a>
 
@@ -121,9 +113,7 @@
         <span class="rounded bg-sky-700 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante D</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Glassmorphism</h2>
       </div>
-      <p class="text-sm text-slate-500">Pool-Wasser als CSS-Hintergrund (Kaustik-Lichtmuster, animierte Wellen),
-        halbtransparente Glas-Karten darüber. Modern, sehr ansprechend, „Premium"-Look.
-        Achtung: backdrop-filter Performance auf Tablet prüfen.</p>
+      <p class="text-sm text-slate-500">Pool-Wasser als CSS-Hintergrund, halbtransparente Glas-Karten.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-D-glass.html</div>
     </a>
 
@@ -136,9 +126,7 @@
         <span class="rounded bg-amber-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante E</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Kiosk-Modus</h2>
       </div>
-      <p class="text-sm text-slate-500">Extreme Lesbarkeit: Temperatur als 16rem-Riesenzahl, pH/Cl auch sehr groß,
-        Pumpen-Status als TEXT-Label („LÄUFT" / „AUS"). Lesbar aus 2-3 m Entfernung, minimal Chrome.
-        Ideal für Wand-Display im Technikraum.</p>
+      <p class="text-sm text-slate-500">Extreme Lesbarkeit mit Riesen-Zahlen aus 2–3 m Entfernung.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-E-kiosk.html</div>
     </a>
 
@@ -152,10 +140,78 @@
         <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
         <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Integrierte Charts</h2>
       </div>
-      <p class="text-sm text-slate-500">Vergrößerte Temperatur-Card mit eingebettetem 7-Tage-Chart rechts daneben.
-        pH und Chlor nebeneinander darunter – jeweils mit eigenem Sparkline-Chart und Soll-Bereich-Band.
-        Keine separate Trend-Sektion mehr nötig, dafür mehr Platz für Pumpen-Gantt.</p>
+      <p class="text-sm text-slate-500">Temperatur-Card mit eingebettetem 7-Tage-Chart, pH/Cl mit Sparklines.</p>
       <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-F-integrated.html</div>
+    </a>
+
+    <!-- G -->
+    <a href="dashboard-G-bento.html" target="_blank" class="block group">
+      <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
+        <iframe src="dashboard-G-bento.html" class="preview" scrolling="no"></iframe>
+      </div>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="rounded bg-indigo-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante G</span>
+        <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
+        <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Bento Grid</h2>
+      </div>
+      <p class="text-sm text-slate-500">Apple-ähnliche Bento-Kacheln mit unterschiedlichen Größen für bessere Flächennutzung.</p>
+      <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-G-bento.html</div>
+    </a>
+
+    <!-- H -->
+    <a href="dashboard-H-compass.html" target="_blank" class="block group">
+      <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
+        <iframe src="dashboard-H-compass.html" class="preview" scrolling="no"></iframe>
+      </div>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="rounded bg-slate-900 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante H</span>
+        <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
+        <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Compass-Layout</h2>
+      </div>
+      <p class="text-sm text-slate-500">Kompassartige Anordnung: Werte zentral, Pumpen westlich, Charts östlich.</p>
+      <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-H-compass.html</div>
+    </a>
+
+    <!-- I -->
+    <a href="dashboard-I-timeline.html" target="_blank" class="block group">
+      <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
+        <iframe src="dashboard-I-timeline.html" class="preview" scrolling="no"></iframe>
+      </div>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="rounded bg-violet-700 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante I</span>
+        <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
+        <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Timeline-Stack</h2>
+      </div>
+      <p class="text-sm text-slate-500">Vertikaler Stack mit zentraler Tages-Timeline für Alarme und Pumpe.</p>
+      <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-I-timeline.html</div>
+    </a>
+
+    <!-- J -->
+    <a href="dashboard-J-scan.html" target="_blank" class="block group">
+      <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
+        <iframe src="dashboard-J-scan.html" class="preview" scrolling="no"></iframe>
+      </div>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="rounded bg-teal-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante J</span>
+        <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
+        <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Scan-View</h2>
+      </div>
+      <p class="text-sm text-slate-500">Optimiert zum schnellen Erfassen: große KPI-Kacheln + Historie darunter.</p>
+      <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-J-scan.html</div>
+    </a>
+
+    <!-- K -->
+    <a href="dashboard-K-morning.html" target="_blank" class="block group">
+      <div class="preview-wrap mb-3 ring-1 ring-slate-200 group-hover:ring-primary transition">
+        <iframe src="dashboard-K-morning.html" class="preview" scrolling="no"></iframe>
+      </div>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="rounded bg-orange-500 text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">Variante K</span>
+        <span class="rounded bg-success/15 text-success text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">NEU</span>
+        <h2 class="text-lg font-bold text-slate-800 group-hover:text-primary">Morgenroutine</h2>
+      </div>
+      <p class="text-sm text-slate-500">Aufgabenorientierte Ansicht für die tägliche Bad-Vorbereitung.</p>
+      <div class="mt-1 text-xs text-slate-400 font-mono">dashboard-K-morning.html</div>
     </a>
 
   </div>
@@ -164,12 +220,17 @@
   <div class="mt-12 rounded-2xl bg-white border border-slate-200 p-6 shadow-sm">
     <h3 class="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Hinweise zur Auswahl</h3>
     <ul class="text-sm text-slate-600 space-y-1.5 list-disc pl-5">
-      <li><strong>Original / A (Dark):</strong> Vielseitigste Variante, gute Balance zwischen Info-Dichte und Lesbarkeit.</li>
-      <li><strong>B (Gauge):</strong> Wenn der Wow-Effekt bei der Temperatur wichtig ist – ein einziger Wert dominiert.</li>
+      <li><strong>Original / A (Dark):</strong> Vielseitigste Varianten, gute Balance zwischen Info-Dichte und Lesbarkeit.</li>
+      <li><strong>B (Gauge):</strong> Wow-Effekt bei der Temperatur – ein einziger Wert dominiert.</li>
       <li><strong>C (Spalten):</strong> Beste Lösung für Power-User – semantische Gliederung erleichtert Scannen.</li>
       <li><strong>D (Glass):</strong> Schönste Variante optisch, aber technisch am aufwändigsten (Performance).</li>
-      <li><strong>E (Kiosk):</strong> Wenn das Tablet aus mehr als 1 m Entfernung gelesen werden muss.</li>
-      <li><strong>F (Integrierte Charts):</strong> Beste Daten-Dichte – Trends direkt im Wert sichtbar, keine zusätzliche Augen-Bewegung nötig. Empfohlen wenn Werte und ihre Entwicklung gleichwertig wichtig sind.</li>
+      <li><strong>E (Kiosk):</strong> Lesbar aus 2–3 m Entfernung, ideal für Wand-Display im Technikraum.</li>
+      <li><strong>F (Integrierte Charts):</strong> Trends direkt im Wert sichtbar – keine zusätzliche Augen-Bewegung nötig.</li>
+      <li><strong>G (Bento):</strong> Moderne, unregelmäßige Kacheln für visuell abwechslungsreiche Darstellung.</li>
+      <li><strong>H (Compass):</strong> Nord-Süd-Ost-West-Anordnung, klare Orientierung im Raum.</li>
+      <li><strong>I (Timeline):</strong> Tagesverlauf im Vordergrund, gut für Nachverfolgung von Schaltzeiten.</li>
+      <li><strong>J (Scan):</strong> Kompromiss aus Übersicht und Detail, schnell zu erfassen.</li>
+      <li><strong>K (Morgenroutine):</strong> Aufgabenorientierte Ansicht für die tägliche Pool-Vorbereitung.</li>
     </ul>
     <div class="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-400 font-mono">
       <strong>Tipp:</strong> Browser-Fenster auf ca. 1320 × 900 px setzen für 1:1-Darstellung – ansonsten skaliert das Mockup automatisch.
@@ -179,6 +240,8 @@
   <footer class="mt-8 text-center text-xs text-slate-400">
     Pool-Monitoring · Dashboard Mockups · 1280 × 800 px (7" Tablet, Querformat) · Tailwind via CDN
   </footer>
+
 </div>
 
-</body></html>
+</body>
+</html>

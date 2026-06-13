@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pool Dashboard – Variante K · Morgenroutine (1280x800)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { primary: '#0EA5E9', success: '#22C55E', warning: '#F59E0B', error: '#EF4444' },
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+      },
+    },
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#cbd5e1; font-family:'Inter',system-ui,sans-serif; }
+  .tablet { width:1280px; height:800px; overflow:hidden; }
+  @media (max-width:1320px) { .scaler { transform:scale(.75); transform-origin:top left; } }
+  @media (max-width:1000px) { .scaler { transform:scale(.55); transform-origin:top left; } }
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="text-slate-800 antialiased">
+<div class="p-6 flex items-start justify-center"><div class="scaler">
+
+<div class="tablet bg-gradient-to-br from-amber-50 via-white to-orange-50 rounded-[44px] ring-1 ring-amber-200/80 shadow-[0_25px_60px_rgba(180,120,40,0.25)] relative overflow-hidden">
+
+  <header class="h-14 px-6 flex items-center justify-between border-b border-amber-200/60 bg-white/60 backdrop-blur-md">
+    <div class="flex items-center gap-3">
+      <div class="size-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white"><svg xmlns="http://www.w3.org/2000/svg" class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15c2.4 0 2.4-2 4.8-2M3 19c2.4 0 2.4-2 4.8-2"/></svg></div>
+      <div class="text-lg font-bold text-slate-800">Good Morning · Pool H32</div>
+    </div>
+    <div class="flex items-center gap-4 text-sm text-slate-700">
+      <span class="font-semibold">Mo, 08.06.2026</span>
+      <span class="rounded-full bg-white border border-amber-200 px-3 py-1 text-xs font-bold text-amber-700">☀ Badezeit</span>
+    </div>
+  </header>
+
+  <main class="h-[calc(800px-56px)] p-5 grid grid-cols-12 gap-4">
+
+    <!-- LEFT: Routine list -->
+    <section class="col-span-4 flex flex-col gap-4">
+      <div class="flex-1 rounded-3xl bg-white/60 border border-amber-200/70 p-4 shadow-sm backdrop-blur flex flex-col">
+        <div class="flex items-center justify-between mb-3"><h2 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Morgenroutine</h2><span class="text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">in 30 Min</span></div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-3 rounded-2xl bg-success/10 border border-success/20 p-3"><div class="size-8 rounded-lg bg-success text-white flex items-center justify-center font-black shadow shadow-success/40">1</div><div class="flex-1"><div class="text-[12px] font-bold text-slate-800">Messung durchführen</div><div class="text-[10px] text-slate-600">pH + Chlor prüfen und eintragen</div></div><div class="text-[10px] font-bold text-success">Offen</div></div>
+          <div class="flex items-center gap-3 rounded-2xl bg-white/70 border border-slate-200 p-3"><div class="size-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center font-black">2</div><div class="flex-1"><div class="text-[12px] font-bold text-slate-800">Pumpe starten</div><div class="text-[10px] text-slate-500">Hauptpumpe auf 8:00 Uhr vorbereiten</div></div><div class="text-[10px] font-medium text-slate-500">08:00</div></div>
+          <div class="flex items-center gap-3 rounded-2xl bg-white/70 border border-slate-200 p-3"><div class="size-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center font-black">3</div><div class="flex-1"><div class="text-[12px] font-bold text-slate-800">Chlor nachdosieren</div><div class="text-[10px] text-slate-500">Ziel: 1,0 – 1,5 mg/l</div></div><div class="text-[10px] font-medium text-slate-500">08:15</div></div>
+          <div class="flex items-center gap-3 rounded-2xl bg-white/70 border border-slate-200 p-3"><div class="size-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center font-black">4</div><div class="flex-1"><div class="text-[12px] font-bold text-slate-800">Badekontrolle</div><div class="text-[10px] text-slate-500">Sichtprüfung Wasser + Umfeld</div></div><div class="text-[10px] font-medium text-slate-500">08:30</div></div>
+        </div>
+      </div>
+
+      <!-- Tagesziel -->
+      <div class="h-44 rounded-3xl bg-white/60 border border-amber-200/70 p-4 shadow-sm backdrop-blur flex flex-col justify-between relative overflow-hidden">
+        <div class="relative">
+          <div class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Ziel heute</div>
+          <div class="text-3xl font-black text-slate-800 leading-none">28,0 °C</div>
+          <div class="text-[11px] text-slate-500 mt-1">Wassertemperatur · Badetag</div>
+          <div class="flex items-center gap-2 mt-2"><span class="rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5">Noch +1,2 °C</span><span class="text-[10px] text-slate-500">Solarphase 10–16 Uhr nutzen</span></div>
+        </div>
+        <div class="h-2 rounded-full bg-amber-100 relative"><div class="absolute h-full rounded-full bg-amber-400" style="left:0%; width:68%"></div><div class="absolute -top-1 size-3 rounded-full bg-white shadow ring-2 ring-amber-400" style="left:calc(68% - 6px)"></div></div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Detail panels -->
+    <section class="col-span-8 flex flex-col gap-4">
+      <div class="flex-1 grid grid-cols-3 gap-4">
+        <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
+          <div class="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Temperatur</div>
+          <div class="text-[5rem] leading-none font-black text-slate-800 num mt-2">28,4</div>
+          <div class="text-sm text-slate-400 pb-1">°C</div>
+          <div class="text-[10px] text-slate-500">Soll: 27–30 · Sensor Skimmer</div>
+          <div class="inline-flex items-center gap-1 rounded-full bg-success/15 text-success text-[10px] font-bold px-2 py-0.5 mt-2 self-start"><svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>+0,4 °C / 24 h</div>
+        </div>
+        <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
+          <div class="flex items-center justify-between"><div class="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">pH-Wert</div><span class="rounded-full bg-success/15 text-success text-[10px] font-bold px-2 py-0.5">OK</span></div>
+          <div class="text-[5rem] leading-none font-black text-slate-800 num mt-2">7,2</div>
+          <div class="text-[10px] text-slate-500 mt-1">Soll 7,0 – 7,4</div>
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-red-400 via-success to-violet-500 mt-2"><div class="absolute -top-1 size-3.5 rounded-full bg-white shadow ring-2 ring-success" style="left:calc(52% - 7px)"></div></div>
+        </div>
+        <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
+          <div class="flex items-center justify-between"><div class="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Chlor</div><span class="rounded-full bg-warning/15 text-warning text-[10px] font-bold px-2 py-0.5">NIEDRIG</span></div>
+          <div class="text-[5rem] leading-none font-black text-slate-800 num mt-2">0,7</div>
+          <div class="text-[10px] text-slate-500 mt-1">Soll 1,0 – 1,5 mg/l</div>
+          <div class="relative h-2 rounded-full bg-gradient-to-r from-warning via-success to-error mt-2"><div class="absolute -top-1 size-3.5 rounded-full bg-white shadow ring-2 ring-warning" style="left:calc(23% - 7px)"></div></div>
+        </div>
+      </div>
+
+      <div class="h-64 rounded-3xl bg-white border border-slate-200 shadow-sm p-4 flex flex-col">
+        <div class="flex items-center justify-between mb-1"><h2 class="text-sm font-bold text-slate-800">24h-Trend</h2><div class="flex gap-2 text-[10px] font-semibold text-slate-500"><span class="flex items-center gap-1"><span class="size-2 rounded-full bg-primary"></span>Temp</span><span class="flex items-center gap-1"><span class="size-2 rounded-full bg-success"></span>pH</span><span class="flex items-center gap-1"><span class="size-2 rounded-full bg-warning"></span>Cl</span></div></div>
+        <div class="flex-1 relative min-h-0">
+          <svg viewBox="0 0 700 180" preserveAspectRatio="none" class="w-full h-full">
+            <g stroke="#e2e8f0" stroke-width="1"><line x1="0" y1="40" x2="700" y2="40"/><line x1="0" y1="90" x2="700" y2="90"/><line x1="0" y1="140" x2="700" y2="140"/></g>
+            <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40 L700,180 L0,180 Z" fill="url(#gK)" opacity="0.25"/>
+            <path d="M0,70 L100,65 L200,55 L300,60 L400,48 L500,55 L600,50 L700,40" fill="none" stroke="#0EA5E9" stroke-width="2.5"/>
+            <path d="M0,110 L100,108 L200,112 L300,107 L400,110 L500,109 L600,106 L700,108" fill="none" stroke="#22C55E" stroke-width="2"/>
+            <path d="M0,140 L100,135 L200,148 L300,160 L400,158 L500,170 L600,168 L700,175" fill="none" stroke="#F59E0B" stroke-width="2"/>
+            <circle cx="700" cy="40" r="5" fill="#fff" stroke="#0EA5E9" stroke-width="2.5"/><circle cx="700" cy="108" r="4" fill="#fff" stroke="#22C55E" stroke-width="2"/><circle cx="700" cy="175" r="4" fill="#fff" stroke="#F59E0B" stroke-width="2"/>
+            <defs><linearGradient id="gK" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#0EA5E9"/><stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/></linearGradient></defs>
+          </svg>
+          <div class="flex justify-between text-[10px] text-slate-400 mt-1 px-1"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span><span class="font-semibold text-slate-600">heute</span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="mt-4 text-center text-xs text-slate-500 font-medium">Variante K · Morgenroutine + Detailwerte · 1280 × 800 px</div>
+
+</div></div>
+</body>
+</html>
