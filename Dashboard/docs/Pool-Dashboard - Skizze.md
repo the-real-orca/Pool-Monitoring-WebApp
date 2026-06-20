@@ -14,8 +14,8 @@
 
 | Daten | Quelle | Zugriff |
 |-------|--------|---------|
-| Wasserwerte (Temp, pH, Cl) | BLE-YC01 → Externer MQTT | Dashboard-Backend subscribed |
-| Historische Messwerte (7d) | Pool-Monitoring SQLite | Read-only Volume-Mount |
+| Wasserwerte (Temp, pH, Cl) | BLE-YC01 → Externer MQTT | Dashboard-Backend subscribed (live) / TimescaleDB via mqtt2db (history) |
+| Historische Messwerte (7d) | TimescaleDB (via mqtt2db-Bridge) | Dashboard-Backend liest aus TimescaleDB |
 | Events (Chlor, Nachfüllen…) | Pool-Monitoring → MQTT → Service → TimescaleDB | Read-only via psycopg2 |
 | Filterpumpen-Status | Tasmota → Interner MQTT | Dashboard-Backend subscribed |
 | Solarpumpen-Status | Tasmota Energy → Interner MQTT | Aus Power Consumption abgeleitet |
@@ -32,9 +32,8 @@
 | Backend | Python FastAPI (eigener Service) |
 | Frontend | Vue 3 + Tailwind CSS + uPlot |
 | Charting | uPlot (wie Pool-Monitoring) |
-| DB Historie | Pool-Monitoring SQLite (read-only) |
-| DB Events | TimescaleDB (read-only, bestehender Container) |
-| MQTT Sensor-Daten | Externer Broker (gemeinsam mit Pool-Monitoring) |
+| DB | TimescaleDB (live, history, events – read-only) |
+| MQTT Sensor-Daten | Externer Broker (gelesen von mqtt2db-Bridge, geschrieben in TimescaleDB) |
 | MQTT Pumpen-Steuerung | Interner Broker (bestehender Container, Tasmota) |
 | Alarm-Logik | Dashboard-Backend (eigener Service) |
 | Deployment | Sub-Path auf internem Server |
@@ -92,10 +91,9 @@ DAUERLAUF ──►  AUS
 |-----------|-------------|
 | Frontend | Vue 3 (Composition API), JavaScript, Tailwind CSS, Vite |
 | Charts | uPlot (Canvas, Touch-Zoom/Pan) |
-| Backend | Python FastAPI, paho-mqtt, sqlite3, psycopg2 |
-| DB History | Pool-Monitoring SQLite (read-only) |
-| DB Events | TimescaleDB (read-only) |
-| MQTT Ext | Externer Mosquitto (Sensor + Events) |
+| Backend | Python FastAPI, paho-mqtt, psycopg2 |
+| DB | TimescaleDB (read-only) |
+| MQTT→DB Bridge | mqtt2db (subscribes Ext MQTT, schreibt in TimescaleDB) |
 | MQTT Int | Interner Mosquitto (Tasmota) |
 | Deployment | Docker Compose, Caddy Sub-Path, Nginx |
 
@@ -118,8 +116,7 @@ dashboard/
 │   ├── live_state.py
 │   ├── pump_state.py
 │   ├── alarms.py
-│   ├── db_history.py
-│   ├── db_events.py
+│   ├── db_timescale.py
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/

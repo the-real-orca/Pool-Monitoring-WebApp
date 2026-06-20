@@ -37,59 +37,47 @@ Web Dashboard for:
 
 ### 2.1 System Overview
 
+```mermaid
+flowchart TB
+    classDef ext fill:#e5e7eb,stroke:#9ca3af,stroke-dasharray:6 3,color:#374151
+
+    subgraph ExternalNetwork["External Network (Internet)"]
+        PMFrontend["Pool-Monitoring Frontend<br/>(Vue 3)"]:::ext
+        PMBackend["Pool-Monitoring Backend<br/>(FastAPI)"]:::ext
+        SQLiteDB["SQLite DB<br/>(live_aggregates, pump_events)"]:::ext
+        ExtMQTT["External MQTT (Mosquitto)<br/>- BLE sensor (ble-yc01)<br/>- Events (event)"]:::ext
+    end
+
+    subgraph InternalNetwork["Internal Network"]
+        PDBFrontend["Pool Dashboard Frontend<br/>(Vue 3)"]
+        PDBBackend["Pool Dashboard Backend<br/>(FastAPI)"]
+        MQTT2DB["mqtt2db bridge<br/>(Ext MQTT → TimescaleDB)"]:::ext
+        TimescaleDB["TimescaleDB<br/>(events, data)"]:::ext
+        IntMQTT["Internal MQTT (Mosquitto)<br/>Tasmota-connected<br/>- Filter pump (cmnd, stat)<br/>- Solar pump (power/status)"]:::ext
+        Tasmota["ESP32 / Tasmota<br/>Filter pump relay<br/>+ Solar pump power monitoring"]:::ext
+    end
+
+    PMFrontend --> PMBackend
+    PDBFrontend --> PDBBackend
+
+    PMBackend --> SQLiteDB
+    PMBackend --> ExtMQTT
+
+    PDBBackend -- "subscribe live data<br/>(BLE YC01, events)" --> ExtMQTT
+    ExtMQTT -.->|subscribes| MQTT2DB
+    MQTT2DB -->|writes| TimescaleDB
+
+    PDBBackend -->|"reads history & events"| TimescaleDB
+    PDBBackend -- "Pump control<br/>(read/write: timers, status, power, override)" --> IntMQTT
+
+    IntMQTT --> Tasmota
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                      Internal Network                          │
-│                                                               │
-│  ┌──────────────────┐         ┌──────────────────┐            │
-│  │  Pool-Monitoring  │         │  Pool Dashboard  │            │
-│  │    Frontend       │         │    Frontend      │            │
-│  │    (Vue 3)        │         │    (Vue 3)       │            │
-│  └────────┬─────────┘         └────────┬─────────┘            │
-│           │                            │                      │
-│  ┌────────┴─────────┐         ┌────────┴─────────┐            │
-│  │  Pool-Monitoring  │         │  Pool Dashboard  │            │
-│  │    Backend        │         │    Backend       │            │
-│  │    (FastAPI)      │         │    (FastAPI)     │            │
-│  └────────┬─────────┘         └───┬────┬────┬────┘            │
-│           │                       │    │    │                  │
-│  ┌────────┴─────────┐             │    │    │                  │
-│  │    SQLite DB     │◄────────────┘    │    │  (read-only)     │
-│  │  (live_aggregates│    hist. data    │    │                  │
-│  │   pump_events)   │                 │    │                  │
-│  └──────────────────┘                 │    │                  │
-│                                       │    │                  │
-│  ┌──────────────────┐                 │    │                  │
-│  │   TimescaleDB    │◄────────────────┘    │  Events          │
-│  │  (events, data)  │     (read-only)      │                  │
-│  └──────────────────┘                      │                  │
-│                                            │                  │
-│  ┌─────────────────────────────────┐       │                  │
-│  │   External MQTT (Mosquitto)     │◄──────┘  Sensor data    │
-│  │   shared with Pool-Monitoring   │     (subscribe: BLE     │
-│  │   - BLE sensor (ble-yc01)       │      YC01, events)      │
-│  │   - Events (event)              │                          │
-│  └─────────────────────────────────┘                          │
-│                                            │                  │
-│  ┌─────────────────────────────────┐       │                  │
-│  │   Internal MQTT (Mosquitto)     │◄──────┘  Pump control   │
-│  │   Tasmota-connected             │     (read/write:        │
-│  │   - Filter pump (cmnd, stat)    │      timers, status,    │
-│  │   - Solar pump (power/status)   │      power, override)   │
-│  └──────────┬──────────────────────┘                          │
-│             │                                                 │
-│  ┌──────────┴──────────┐                                      │
-│  │  ESP32 / Tasmota    │                                      │
-│  │  Filter pump relay  │                                      │
-│  │  + Solar pump power │                                      │
-│  │  monitoring         │                                      │
-│  └─────────────────────┘                                      │
-└───────────────────────────────────────────────────────────────┘
-```
+
+Legende: Komponenten mit `:::ext` (gepunkteter Rahmen, grau) werden nicht in diesem Projekt entwickelt – sie sind bestehende Infrastruktur (Pool-Monitoring, MQTT-Broker, TimescaleDB, Tasmota). Nur **Pool Dashboard Frontend** und **Pool Dashboard Backend** sind Teil dieses Projekts.
 
 ### 2.2 Communication Flow
 
-**Live Sensor Data: External MQTT → Dashboard Backend → Polling**
+**Live Sensor Data: External MQTT → Dashboard Backend (direct subscription)**
 
 ```mermaid
 sequenceDiagram
@@ -111,17 +99,17 @@ sequenceDiagram
 sequenceDiagram
     participant FE as Dashboard Frontend
     participant DB as Dashboard Backend
-    participant IntMQTT as Internal MQTT
-    participant Tasmota as Tasmota (Filter Pump)
+    participant Tasmota as Filter Pump (Tasmota) <br> via Internal MQTT
 
     FE->>DB: POST /api/pump/override {mode, durationHours}
     DB->>DB: State Machine: set override
-    DB->>IntMQTT: publish cmnd/<device>/POWER ON
-    DB->>IntMQTT: publish cmnd/<device>/TIMER (disable)
-    IntMQTT->>Tasmota: relay command
+    DB->>Tasmota: publish cmnd/<device>/TIMER (disable)
+    DB->>Tasmota: publish cmnd/<device>/POWER ON
 
     Note over DB: After N hours → revert to schedule
-    DB->>IntMQTT: publish cmnd/<device>/TIMER (enable)
+
+    DB->>Tasmota: publish cmnd/<device>/POWER ON/OFF (dependend on schedule)
+    DB->>Tasmota: publish cmnd/<device>/TIMER (enable)
 ```
 
 **Schedule Read/Write: Backend ↔ Tasmota via MQTT**
@@ -130,30 +118,29 @@ sequenceDiagram
 sequenceDiagram
     participant FE as Dashboard Frontend
     participant DB as Dashboard Backend
-    participant IntMQTT as Internal MQTT
-    participant Tasmota as Tasmota
+    participant Tasmota as Filter Pump (Tasmota) <br> via Internal MQTT
 
     FE->>DB: GET /api/schedule
-    DB->>IntMQTT: publish cmnd/<device>/Timers
-    IntMQTT-->>DB: stat/<device>/RESULT {timers: [...]}
+    DB->>Tasmota: publish cmnd/<device>/Timers
+    Tasmota-->>DB: stat/<device>/RESULT {timers: [...]}
     DB-->>FE: schedule data
 
     FE->>DB: POST /api/schedule {slots: [...]}
-    DB->>IntMQTT: publish cmnd/<device>/Timer0 ... Timer4
+    DB->>Tasmota: publish cmnd/<device>/Timer0 ... Timer4
     DB-->>FE: {status: "ok"}
 ```
 
-**Historical Data: Read from Pool-Monitoring SQLite**
+**Historical Data: Read from TimescaleDB**
 
 ```mermaid
 sequenceDiagram
     participant FE as Dashboard Frontend
     participant DB as Dashboard Backend
-    participant SQLite as Pool-Monitoring SQLite
+    participant TDB as TimescaleDB
 
     FE->>DB: GET /api/history?metric=temp&days=7
-    DB->>SQLite: SELECT * FROM live_aggregates WHERE ...
-    SQLite-->>DB: rows
+    DB->>TDB: SELECT ... FROM live_aggregates WHERE ...
+    TDB-->>DB: rows
     DB-->>FE: {points: [{t, v}, ...]}
 ```
 
@@ -172,7 +159,7 @@ sequenceDiagram
     DB-->>FE: {events: [...]}
 ```
 
-**Alarm Evaluation: Backend (every new sensor sample)**
+**Alarm Evaluation: Backend (on every new sensor sample from MQTT)**
 
 ```mermaid
 sequenceDiagram
@@ -180,11 +167,22 @@ sequenceDiagram
     participant DB as Dashboard Backend
     participant FE as Dashboard Frontend
 
-    MQTT->>DB: new sensor sample {temp, pH, cl}
+    MQTT->>DB: new sensor sample (temp, pH, cl)
     DB->>DB: evaluate thresholds (pH, Cl)
     alt pH out of range
         DB->>DB: create alarm record
     end
+    FE->>DB: GET /api/alarms
+    DB-->>FE: {alarms: [...]}
+```
+
+```mermaid
+sequenceDiagram
+    participant MQTT as External MQTT
+    participant DB as Dashboard Backend
+    participant FE as Dashboard Frontend
+
+    MQTT->>DB: new power data (power)
     DB->>DB: evaluate power consumption trend
     alt power > threshold
         DB->>DB: create alarm record
@@ -193,17 +191,18 @@ sequenceDiagram
     DB-->>FE: {alarms: [...]}
 ```
 
+
 ### 2.3 Technology Stack
 
 | Component     | Technology                                             |
 | ------------- | ------------------------------------------------------ |
 | Frontend      | Vue.js 3 (Composition API, JavaScript), Tailwind CSS, Vite |
 | Charts        | uPlot (Canvas-based, touch zoom/pan)                   |
-| Backend       | Python FastAPI, paho-mqtt, sqlite3 (stdlib), psycopg2 (TimescaleDB) |
-| DB (History)  | Pool-Monitoring SQLite (read-only volume mount)        |
-| DB (Events)   | TimescaleDB (read-only, existing container)             |
-| MQTT (Ext)    | External Mosquitto broker (shared with Pool-Monitoring) |
-| MQTT (Int)    | Internal Mosquitto broker (Tasmota-connected, existing) |
+| Backend       | Python FastAPI, paho-mqtt, psycopg2 (TimescaleDB)       |
+| DB            | TimescaleDB (read-only, existing container)             |
+| MQTT (Ext)    | External Mosquitto broker (shared with Pool-Monitoring, existing container) |
+| MQTT (Int)    | Internal Mosquitto broker (Tasmota-connected, existing, existing container) |
+| MQTT→DB Bridge| mqtt2db (subscribes Ext MQTT, writes to TimescaleDB, existing container)   |
 | Infrastructure| Docker Compose, Caddy (sub-path routing), Nginx         |
 
 ---
@@ -260,7 +259,7 @@ Landing page showing an overview of all relevant data at a glance:
 | **Chlor** | Mean of last 5 raw samples | Number with "ø 5 M." subtitle, color-coded, mg/l | Every 10 s |
 | **Filterpumpe** | Backend state machine + Tasmota status | Icon, mode label (AUTOMATIK / DAUERLAUF / AUS), state (LÄUFT / AUS), running time | Every 10 s |
 | **Solarpumpe** | Derived from Tasmota power consumption | Icon, state (LÄUFT / AUS), "läuft seit HH:MM" | Every 10 s |
-| **Trend chart** | Per-hour aggregates from Pool-Monitoring SQLite | uPlot, 3 panels (temp/pH/cl), zoom/pan, 7-day window | On mount, manual refresh |
+| **Trend chart** | Per-hour aggregates from TimescaleDB | uPlot, 3 panels (temp/pH/cl), zoom/pan, 7-day window | On mount, manual refresh |
 
 #### 3.3.2 Color Coding
 
@@ -309,6 +308,7 @@ The Dashboard maps 15-min slot grid to Tasmota Timer commands:
 - ON slots → `TimerN` with time and action=ON
 - OFF slots → `TimerN` with time and action=OFF
 - Max 16 timer slots (Tasmota hardware limit)
+- ==> aneinanderliegende slotts müssen zusammengefasst werden (max. 8 aktive zeit slotts)
 
 ### 3.5 Alarm / Event Overview
 
@@ -380,13 +380,12 @@ Settings are stored in the Dashboard Backend (no localStorage – settings are s
 ```
 dashboard/backend/
 ├── main.py              # FastAPI app, all routes, Pydantic models, config, auth
-├── mqtt_ext.py          # External MQTT client (sensor data subscription)
+├── mqtt_ext.py          # External MQTT client (live sensor data subscription)
 ├── mqtt_int.py          # Internal MQTT client (Tasmota pump control)
 ├── live_state.py        # In-memory ring buffer for sensor samples
 ├── pump_state.py        # Pump state machine (auto/manual/off)
 ├── alarms.py            # Alarm evaluation logic
-├── db_history.py        # Pool-Monitoring SQLite reader (read-only)
-├── db_events.py         # TimescaleDB reader (read-only)
+├── db_timescale.py      # TimescaleDB reader (live, history, events)
 ├── requirements.txt
 └── Dockerfile
 ```
@@ -467,6 +466,8 @@ Modes: `"auto"` (schedule), `"manual"` (timed override), `"off"` (stop).
 ```
 
 Reads from Tasmota via MQTT command, caches result for 30 seconds.
+
+**Note:** `/api/history` reads from TimescaleDB (not SQLite). The `mqtt2db` bridge continuously writes sensor data from External MQTT into TimescaleDB.
 
 #### POST /api/schedule
 
@@ -555,13 +556,20 @@ Max 16 timer slots (Tasmota hardware limit).
 
 ### 4.3 MQTT Integration
 
-#### 4.3.1 External MQTT (Sensor Data)
+#### 4.3.1 mqtt2db Bridge (External MQTT → TimescaleDB)
 
-| Direction | Topic | Purpose |
-|-----------|-------|---------|
-| Subscribe | `home/+/pool/ble-yc01` | BLE-YC01 sensor: temp, pH, Cl |
-| Subscribe | `home/+/pool/pump` | Pump state from ESP32 relay |
-| Subscribe | `+/event` | Pool-Monitoring operational events |
+#### 4.3.1 External MQTT (Live Sensor Data)
+
+The Dashboard Backend subscribes **directly** to the External MQTT broker for live sensor data.
+Historical data and events are served by a dedicated `mqtt2db` bridge (see below).
+
+| Direction | Component | Topic | Purpose |
+|-----------|-----------|-------|---------|
+| Subscribe | Dashboard Backend | `home/+/pool/ble-yc01` | BLE-YC01 sensor: temp, pH, Cl |
+| Subscribe | Dashboard Backend | `home/+/pool/pump` | Pump state from ESP32 relay |
+| Subscribe | mqtt2db bridge | `home/+/pool/ble-yc01` | Persist sample to TimescaleDB |
+| Subscribe | mqtt2db bridge | `+/event` | Persist event to TimescaleDB |
+| Write | mqtt2db bridge | TimescaleDB | INSERT sample/event row |
 
 Payloads match the Pool-Monitoring protocol (see FSD §4.3).
 
@@ -578,24 +586,15 @@ Payloads match the Pool-Monitoring protocol (see FSD §4.3).
 
 ### 4.4 Pump State Machine
 
-```
-                     ┌──────────────────┐
-            ┌───────►│    ZEITPLAN      │◄────────────┐
-            │        │  (auto mode)     │             │
-            │        └───────┬──────────┘             │
-            │                │                        │
-            │        override expires                 │
-            │                │                        │
-            │        ┌───────▼──────────┐             │
-            ├────────┤  DAUERLAUF       │             │
-            │        │  (manual mode)   ├─────────────┘
-            │        │  timer runs down │  (timer reset)
-            │        └──────────────────┘
-            │
-            │        ┌──────────────────┐
-            └────────┤    AUS           │
-                     │  (off mode)      │
-                     └──────────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> ZEITPLAN
+    ZEITPLAN --> DAUERLAUF : EIN
+    ZEITPLAN --> AUS : AUS
+    DAUERLAUF --> ZEITPLAN : Timer abgelaufen
+    DAUERLAUF --> AUS : AUS
+    AUS --> ZEITPLAN : AUTO
+    AUS --> DAUERLAUF : EIN
 ```
 
 Transitions:
@@ -629,7 +628,7 @@ Settings are persisted to a local JSON file in the container (`/data/config.json
 | Chart data source | 7-day window, per-hour aggregates |
 | Schedule sync with Tasmota | On save, plus automatic re-read every 60s |
 | `/api/live` response | < 50ms (RAM-only) |
-| `/api/history` response | < 200ms (SQLite read-only, ≤ 168 points) |
+| `/api/history` response | < 200ms (TimescaleDB read-only, ≤ 168 points) |
 | MQTT publish latency | < 200ms |
 | Tablet resolution | 1024×800 (landscape) |
 | Touch target size | Minimum 44×44 px |
@@ -649,6 +648,7 @@ Existing services (unchanged):
 New services:
 - `dashboard-frontend`: Vue 3 SPA, served via Nginx
 - `dashboard-backend`: Python FastAPI
+- `mqtt2db`: MQTT→TimescaleDB bridge (subscribes Ext MQTT, writes sensor data and events)
 
 ### 6.2 Caddy Routing
 
@@ -663,11 +663,8 @@ handle_path /dashboard/* {
 
 ### 6.3 Volumes
 
-```yaml
-dashboard-backend:
-  volumes:
-    - ../data/history:/data/history:ro   # Pool-Monitoring SQLite (read-only)
-```
+No dedicated volume mounts for `dashboard-backend` – all data is read from TimescaleDB (existing container).
+The `mqtt2db` bridge requires no persistent storage.
 
 ## 7. Error Handling
 
@@ -684,10 +681,10 @@ dashboard-backend:
 
 | Error | Behavior |
 |-------|----------|
-| External MQTT lost | Reconnect (exponential backoff, max 5 min) |
+| External MQTT lost | Reconnect (exponential backoff, max 5 min); live data goes stale |
 | Internal MQTT lost | Reconnect (exponential backoff, max 5 min) |
-| Pool-Monitoring SQLite locked/temporary failure | Retry after 1s, return stale data if unavailable |
-| TimescaleDB unreachable | Events page shows error "Datenbank nicht erreichbar" |
+| mqtt2db bridge lost | History/events not updated (TimescaleDB data grows stale) |
+| TimescaleDB unreachable | Dashboard shows error "Datenbank nicht erreichbar" on history/events views |
 | Tasmota command timeout | Return error to frontend, log event |
 
 ## 8. Future Enhancements

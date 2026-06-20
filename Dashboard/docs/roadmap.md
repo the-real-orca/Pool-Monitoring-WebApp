@@ -10,7 +10,7 @@
 - [ ] `dashboard/frontend/nginx.conf` für SPA-Routing erstellen
 - [ ] Services in `docker-compose.yml` eintragen (`dashboard-frontend`, `dashboard-backend`)
 - [ ] Caddy-Routing für Sub-Path `/dashboard/*` erweitern
-- [ ] Volume-Mount für Pool-Monitoring SQLite (`/data/history:ro`)
+- [ ] `mqtt2db` Bridge-Service in `docker-compose.yml` (subscribes Ext MQTT, schreibt in TimescaleDB)
 - [ ] Basis-Test: Beide Container starten, Caddy antwortet auf `/dashboard/`
 
 ---
@@ -18,13 +18,12 @@
 ## Phase 2: Backend-Grundgerüst
 
 - [ ] `main.py` – FastAPI-App, Pydantic-Models, Config (os.getenv), JSON-Config-Persistenz
-- [ ] `mqtt_ext.py` – MQTT-Client für externen Broker (Sensor-Daten subscription)
+- [ ] `mqtt_ext.py` – MQTT-Client für externen Broker (Live-Sensor-Daten)
 - [ ] `mqtt_int.py` – MQTT-Client für internen Broker (Tasmota)
 - [ ] `live_state.py` – In-Memory Ringbuffer (temp/pH/Cl, 5 Samples)
-- [ ] `db_history.py` – SQLite-Reader für Pool-Monitoring-Live-Aggregates
-- [ ] `db_events.py` – TimescaleDB-Reader für Events (read-only)
-- [ ] Endpunkte: `GET /api/live`, `GET /api/history`
-- [ ] Tests: MQTT-Connection, Ringbuffer, SQLite-Read, TimescaleDB-Read
+- [ ] `db_timescale.py` – TimescaleDB-Reader (live, history, events)
+- [ ] Endpunkte: `GET /api/live` (RAM via MQTT), `GET /api/history` (TimescaleDB)
+- [ ] Tests: MQTT-Connection (ext + int), Ringbuffer, TimescaleDB-Read
 
 ---
 
@@ -56,7 +55,7 @@
 - [ ] uPlot integrieren (npm-Paket)
 - [ ] `TrendChart.vue` – 3 Panels (Temp/pH/Cl), gemeinsame X-Achse
 - [ ] Touch-Interaktion: Pan (1-Finger), Zoom (Pinch), Reset (Double-Tap)
-- [ ] Datenquelle: `GET /api/history` (Pool-Monitoring SQLite)
+- [ ] Datenquelle: `GET /api/history` (TimescaleDB via mqtt2db-Bridge)
 - [ ] Leerzustand: "Noch keine Daten"
 - [ ] Cross-Chart-Sync (Zoom/Pan über alle 3 Panels)
 - [ ] Tests: Chart-Instanzen, Touch-Gesten, Datenbindung
@@ -93,17 +92,17 @@
 - [ ] Slot-Toggle: Klick schaltet ON/OFF um
 - [ ] Speichern (`POST /api/schedule`) – Slots → Tasmota Timer-Kommandos
 - [ ] Cancel → Revert zu letztem gespeichertem Stand
-- [ ] Mapping: Max 16 Timer (Tasmota-Limit), ON/OFF-Paare
+- [ ] Mapping: Max 16 Timer (Tasmota-Limit), benachbarte Slots zusammenfassen (max. 8 aktive Zeit-Slots)
 - [ ] Tests: Slot-Rendering, Edit-Mode, Timer-Mapping, Speichern/Laden
 
 ---
 
 ## Phase 9: Alarme (Backend)
 
-- [ ] `alarms.py` – Alarm-Evaluierung bei jedem neuen Sensor-Sample
+- [ ] `alarms.py` – Alarm-Evaluierung bei jedem neuen MQTT-Sample (separate Diagramme für Range- und Power-Alarme)
 - [ ] Range-Alarme: pH/Cl gegen Thresholds prüfen (ideal/acceptable/critical)
 - [ ] Trend-Alarm: Cl-Verlauf über 24h (negativer Trend → "Chlor sinkt")
-- [ ] Power-Alarm: Tasmota-Strom > konfigurierter Threshold
+- [ ] Power-Alarm: Tasmota-Strom > konfigurierter Threshold (separater MQTT-Callback)
 - [ ] Duplikat-Unterdrückung (gleicher Alarm-Typ max. alle 60 Min.)
 - [ ] `GET /api/alarms` – Aktive + vergangene Alarme
 - [ ] `POST /api/alarms/:id/ack` – Alarm quittieren
