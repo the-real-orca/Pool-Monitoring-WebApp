@@ -240,11 +240,19 @@ const navigationEntries = [
 - **Background:** #F8FAFC | **Surface:** #FFFFFF | **Text:** #0F172A / #64748B
 - **Font:** System stack (Inter, -apple-system, Segoe UI, Roboto)
 - **Touch targets:** Minimum 44×44 px, large clear buttons
-- **Layout:** Optimized for 1024×800 tablet in landscape orientation
+- **Layout:** Optimized for 1280×800 px (7" Tablet, landscape)
 - **Spacing:** 4px base (4, 8, 12, 16, 24, 32, 48, 64)
 
-**TODO**
-> **Layout detail:**  to be selected from `Dashboard/docs/dashboard-examples/` (11 variants available: original, dark, central, columns, glass, kiosk, integrated, bento, compass, timeline, scan, morning)
+**Layoutdetails (Original – "Klassisch hell"):**
+- 12-Spalten-Raster, 2 Reihen, optimiert für 1280×800 px
+- **Kopfzeile (64 px):** Logo/Pool-Name, LIVE-Indikator (animierter Ping-Dot), Datum/Uhrzeit, Wetterinfo, Einstellungen-Button
+- **Obere Reihe (~65 % Höhe):**
+  - **Temperatur (5/12):** Große blaue Gradient-Card, 7rem Ziffer, °C, Trend-Pfeil, Komfortbereich-Balken (Min/Ideal/Max), Wellen-Hintergrund-SVG
+  - **pH + Chlor (3/12):** Zwei weiße Cards gestapelt – je Wert 5xl, Farbstatus (OK/NIEDRIG), Verlaufsbalken mit Farbgradient
+  - **Alarme + Pumpen (4/12):** Alarmliste oben (2 Einträge, Warngruppe + Info), Pumpen-Cards unten (Filterpumpe 2/2 + Solarpumpe 2/2 nebeneinander)
+- **Untere Reihe (~280 px):**
+  - **Trend-Chart (8/12):** uPlot-Ersatz-SVG mit 3 Linien (Temp blau, pH grün, Cl gelb), 24h/7d/30d-Umschalter, Wochentage X-Achse
+  - **Pumpenlaufzeiten (4/12):** Gantt-ähnliches Balkendiagramm für Haupt- und Solarpumpe (24h), darunter Energie-Summary (kWh, Solarertrag)
 
 ### 3.3 Dashboard (Main View)
 
@@ -254,12 +262,14 @@ Landing page showing an overview of all relevant data at a glance:
 
 | Card | Source | Display | Update |
 |------|--------|---------|--------|
-| **Temperatur** | Latest raw sample from RAM | Large number, °C, "letzte Messung HH:MM" label | Every 10 s |
-| **pH** | Mean of last 5 raw samples | Number with "ø 5 M." subtitle, color-coded (green/yellow/red) | Every 10 s |
-| **Chlor** | Mean of last 5 raw samples | Number with "ø 5 M." subtitle, color-coded, mg/l | Every 10 s |
-| **Filterpumpe** | Backend state machine + Tasmota status | Icon, mode label (AUTOMATIK / DAUERLAUF / AUS), state (LÄUFT / AUS), running time | Every 10 s |
-| **Solarpumpe** | Derived from Tasmota power consumption | Icon, state (LÄUFT / AUS), "läuft seit HH:MM" | Every 10 s |
-| **Trend chart** | Per-hour aggregates from TimescaleDB | uPlot, 3 panels (temp/pH/cl), zoom/pan, 7-day window | On mount, manual refresh |
+| **Temperatur** | Latest raw sample from RAM | Large number (7rem), °C, Trend-Pfeil (+0,4 °C/24h), Komfortbereich-Balken (Min–Ideal–Max) | Every 60 s |
+| **pH** | Mean of last 5 raw samples | Number (5xl), Status-Badge (OK/NIEDRIG), Farbgradient-Balken (rot–grün–violett), Sollbereich-Markierung | Every 60 s |
+| **Chlor** | Mean of last 5 raw samples | Number (5xl) + mg/l, Status-Badge (OK/NIEDRIG), Farbgradient-Balken, Sollbereich-Markierung | Every 60 s |
+| **Filterpumpe** | Backend state machine + Tasmota status | Icon, Mode (AUTOMATIK / DAUERLAUF / AUS), State (LÄUFT / AUS), running time, Energie (kW) | Every 10 s |
+| **Solarpumpe** | Derived from Tasmota power consumption | Icon, State (LÄUFT / AUS), letzter Lauf (Uhrzeit), Grund (z.B. Δ T zu niedrig) | Every 10 s |
+| **Alarme** | Backend alarm evaluation (RAM) | Liste mit 2 Einträgen: aktiv (gelber Punkt) + info (grauer Punkt), Typ und Zeitstempel, "Alle ansehen"-Link | On new alarm |
+| **Trend chart** | Per-hour aggregates from TimescaleDB | uPlot, 3 Linien (Temp/pH/Cl), Range-Umschalter (24h/7d/30d), Wochentage X-Achse, Zoom/Pan | On mount, manual refresh |
+| **Pumpenlaufzeiten** | TimescaleDB (aggregated) & Tasmota Timers | Gantt-Balken (24h), Filterpumpe + Solarpumpe getrennt | On mount, Every 60 s |
 
 #### 3.3.2 Color Coding
 
