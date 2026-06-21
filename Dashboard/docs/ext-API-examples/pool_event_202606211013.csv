@@ -1,0 +1,8 @@
+"time","poolid","name","eventtype","amount","unit","note","mqtttopic","raw"
+2026-06-21 10:10:00.000 +0200,Pool H32,Pool H32,chlorine,,,,home/H32/pool/event,"""{\""time\"": 1782029400, \""name\"": \""Pool H32\"", \""eventType\"": \""chlorine\""}"""
+2026-06-20 16:16:00.000 +0200,Pool H32,Pool H32,chlorine,2.0,tabs,,home/H32/pool/event,"""{\""time\"": 1781964960, \""name\"": \""Pool H32\"", \""eventType\"": \""chlorine\"", \""amount\"": 2.0, \""unit\"": \""tabs\""}"""
+2026-06-20 15:11:00.000 +0200,Pool H32,Pool H32,backwash,,,,home/H32/pool/event,"""{\""time\"": 1781961060, \""name\"": \""Pool H32\"", \""eventType\"": \""backwash\""}"""
+2026-06-20 13:13:00.000 +0200,Pool H32,Pool H32,refill,50.0,min,,home/H32/pool/event,"""{\""time\"": 1781953980, \""name\"": \""Pool H32\"", \""eventType\"": \""refill\"", \""amount\"": 50.0, \""unit\"": \""min\""}"""
+2026-06-19 14:10:00.000 +0200,Pool H32,Pool H32,refill,40.0,min,,home/H32/pool/event,"""{\""time\"": 1781871000, \""name\"": \""Pool H32\"", \""eventType\"": \""refill\"", \""amount\"": 40.0, \""unit\"": \""min\""}"""
+2026-06-19 10:14:00.000 +0200,Pool H32,Pool H32,ph,30.0,g,,home/H32/pool/event,"""{\""time\"": 1781856840, \""name\"": \""Pool H32\"", \""eventType\"": \""ph\"", \""amount\"": 30.0, \""unit\"": \""g\""}"""
+2026-06-14 10:09:00.000 +0200,Pool H32,Pool H32,chlorine,,,chlor,home/H32/pool/event,"""{\""time\"": 1781424540, \""name\"": \""Pool H32\"", \""eventType\"": \""chlorine\"", \""note\"": \""chlor\""}"""

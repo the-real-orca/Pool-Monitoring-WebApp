@@ -1,0 +1,6 @@
+"time","poolid","name","status","addr","sensortype","type","ph","ec","salt","tds","orp","cl","temp","bat","blerssi","wifissid","wifirssi","wifiip","mqttserver","mqttconnected","mqtttopic"
+2025-08-18 23:13:23.000 +0200,Pool H32,Pool H32,data read successfully,c0:00:00:05:51:2a,BLE-YC01,15,7.3,510,280.5,255,717,1.1,27.7,2453,-60,pool,-21,"10.32.1.62",mqtt.io10.org,true,home/H32/pool/ble-yc01
+2025-08-18 22:43:21.000 +0200,Pool H32,Pool H32,data read successfully,c0:00:00:05:51:2a,BLE-YC01,15,7.3,511,281.05,255,741,1.4,27.8,2452,-66,pool,-19,"10.32.1.62",mqtt.io10.org,true,home/H32/pool/ble-yc01
+2025-08-18 21:58:18.000 +0200,Pool H32,Pool H32,data read successfully,c0:00:00:05:51:2a,BLE-YC01,15,7.3,510,280.5,255,759,1.6,28.0,2450,-65,pool,-20,"10.32.1.62",mqtt.io10.org,false,home/H32/pool/ble-yc01
+2025-08-18 21:27:39.000 +0200,Pool H32,Pool H32,failed to read data,c0:00:00:05:51:2a,unknown,0,,,,,,,,,,pool,-23,"10.32.1.62",mqtt.io10.org,false,home/H32/pool/ble-yc01
+2025-08-18 21:12:38.000 +0200,Pool H32,Pool H32,data read successfully,c0:00:00:05:51:2a,BLE-YC01,15,7.3,510,280.5,255,697,0.9,28.3,2453,-63,pool,-21,"10.32.1.62",mqtt.io10.org,true,home/H32/pool/ble-yc01

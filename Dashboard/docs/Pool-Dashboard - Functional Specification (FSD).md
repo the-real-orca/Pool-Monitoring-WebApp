@@ -252,7 +252,7 @@ const navigationEntries = [
   - **Alarme + Pumpen (4/12):** Alarmliste oben (2 Einträge, Warngruppe + Info), Pumpen-Cards unten (Filterpumpe 2/2 + Solarpumpe 2/2 nebeneinander)
 - **Untere Reihe (~280 px):**
   - **Trend-Chart (8/12):** uPlot-Ersatz-SVG mit 3 Linien (Temp blau, pH grün, Cl gelb), 24h/7d/30d-Umschalter, Wochentage X-Achse
-  - **Pumpenlaufzeiten (4/12):** Gantt-ähnliches Balkendiagramm für Haupt- und Solarpumpe (24h), darunter Energie-Summary (kWh, Solarertrag)
+  - **Pumpenlaufzeiten (4/12):** Gantt-ähnliches Balkendiagramm (24h) – Filterpumpe: geplant (hellblau) / tatsächlich gelaufen (sattes blau); Solarpumpe: tatsächlich gelaufen (gelb-orange); darunter Energie-Summary (kWh, Solarertrag)
 
 ### 3.3 Dashboard (Main View)
 
@@ -265,18 +265,18 @@ Landing page showing an overview of all relevant data at a glance:
 | **Temperatur** | Latest raw sample from RAM | Large number (7rem), °C, Trend-Pfeil (+0,4 °C/24h), Komfortbereich-Balken (Min–Ideal–Max) | Every 60 s |
 | **pH** | Mean of last 5 raw samples | Number (5xl), Status-Badge (OK/NIEDRIG), Farbgradient-Balken (rot–grün–violett), Sollbereich-Markierung | Every 60 s |
 | **Chlor** | Mean of last 5 raw samples | Number (5xl) + mg/l, Status-Badge (OK/NIEDRIG), Farbgradient-Balken, Sollbereich-Markierung | Every 60 s |
-| **Filterpumpe** | Backend state machine + Tasmota status | Icon, Mode (AUTOMATIK / DAUERLAUF / AUS), State (LÄUFT / AUS), running time, Energie (kW) | Every 10 s |
-| **Solarpumpe** | Derived from Tasmota power consumption | Icon, State (LÄUFT / AUS), letzter Lauf (Uhrzeit), Grund (z.B. Δ T zu niedrig) | Every 10 s |
+| **Filterpumpe** | Backend state machine + Tasmota status | Icon, Mode (AUTOMATIK / DAUERLAUF / AUS), State (LÄUFT / AUS), running time, Energie (kW) | Every 5 s |
+| **Solarpumpe** | Derived from Tasmota power consumption | Icon, State (LÄUFT / AUS), letzter Lauf (Uhrzeit), Grund (z.B. Δ T zu niedrig) | Every 5 s |
 | **Alarme** | Backend alarm evaluation (RAM) | Liste mit 2 Einträgen: aktiv (gelber Punkt) + info (grauer Punkt), Typ und Zeitstempel, "Alle ansehen"-Link | On new alarm |
 | **Trend chart** | Per-hour aggregates from TimescaleDB | uPlot, 3 Linien (Temp/pH/Cl), Range-Umschalter (24h/7d/30d), Wochentage X-Achse, Zoom/Pan | On mount, manual refresh |
-| **Pumpenlaufzeiten** | TimescaleDB (aggregated) & Tasmota Timers | Gantt-Balken (24h), Filterpumpe + Solarpumpe getrennt | On mount, Every 60 s |
+| **Pumpenlaufzeiten** | TimescaleDB (aggregated) & Tasmota Timers | Gantt-Balken (24h) – Filterpumpe: geplant (hellblau) / tatsächlich (sattes blau); Solarpumpe: tatsächlich (gelb-orange) | On mount, Every 60 s |
 
 #### 3.3.2 Color Coding
 
 | Parameter | Green (Ideal) | Yellow (Acceptable) | Red (Critical) |
 |-----------|---------------|--------------------|----------------|
 | pH | 7.0 – 7.4 | 6.8 – 7.6 | < 6.8 or > 7.6 |
-| Chlorine | 0.6 – 1.0 mg/l | 0.3 – 1.5 mg/l | < 0.3 or > 1.5 mg/l |
+| Chlorine | 0.5 – 1.0 mg/l | 0.3 – 2 mg/l | < 0.3 or > 2 mg/l |
 | Temperature | – | – | Informational only |
 
 #### 3.3.3 Action Buttons (Filter Pump)
@@ -706,7 +706,20 @@ The `mqtt2db` bridge requires no persistent storage.
 - Dark mode toggle
 - Export schedule as backup
 
-## 9. Glossary
+## 9. Appendix: API Examples & DB Schema
+
+Referenz-Dateien im Verzeichnis `Dashboard/docs/ext-API-examples/`:
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `Sensor MQTT.txt` | MQTT-Payloads des BLE-YC01-Sensors (`home/+/pool/ble-yc01`), Events (`home/+/pool/event`) und manuelle Eingaben (`home/+/pool/manual`) |
+| `Tasmota MQTT.txt` | MQTT-Payloads des Tasmota-Geräts (Solarpumpe): Discovery, Telemetrie (STATE, SENSOR mit ENERGY-Daten) |
+| `Weather MQTT.txt` | MQTT-Payloads der Wetterstation auf `weather/WH4000SE` |
+| `pool_data_20260621*.csv` | TimescaleDB-Tabelle der Sensor-Rohdaten (Spalten: `time`, `poolid`, `name`, `status`, `addr`, `sensortype`, `type`, `ph`, `ec`, `salt`, `tds`, `orp`, `cl`, `temp`, `bat`, `blerssi`, `wifissid`, `wifirssi`, `wifiip`, `mqttserver`, `mqttconnected`, `mqtttopic`, optional `raw`) |
+| `pool_solar_202606210815.csv` | TimescaleDB-Tabelle der Solarpumpen-Energiedaten (Spalten: `time`, `poolid`, `voltage`, `current`, `power`, `mqtttopic`, `raw`) |
+| `pool_event_202606211013.csv` | TimescaleDB-Tabelle der Ereignisse (Spalten: `time`, `poolid`, `name`, `eventtype`, `amount`, `unit`, `note`, `mqtttopic`, `raw`) |
+
+## 10. Glossary
 
 | Term | Definition |
 |------|-----------|

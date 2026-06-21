@@ -1,0 +1,111 @@
+
+External MQTT (Mosquitto)
+=========================
+
+ - BLE sensor (ble-yc01)
+ - Events (event)
+
+
+home/H32/pool/ble-yc01
+{
+  "time": 1782019958,
+  "name": "Pool H32",
+  "status": "no matching device found",
+  "addr": "",
+  "sensorType": "unknown",
+  "type": 0,
+  "wifiSSID": "pool",
+  "wifiRSSI": -16,
+  "wifiIP": "10.32.1.62",
+  "mqttServer": "mqtt.io10.org",
+  "mqttConnected": false
+}
+
+home/H32/pool/ble-yc01
+{
+  "time": 1782019969,
+  "name": "Pool H32",
+  "status": "failed to read data",
+  "bleRSSI": 0,
+  "sensorType": "unknown",
+  "addr": "",
+  "type": 0,
+  "wifiSSID": "pool",
+  "wifiRSSI": -20,
+  "wifiIP": "10.32.1.62",
+  "mqttServer": "mqtt.io10.org",
+  "mqttConnected": true
+}
+
+home/H32/pool/ble-yc01
+{
+  "time": 1782020080,
+  "name": "Pool H32",
+  "status": "no matching device found",
+  "addr": "",
+  "sensorType": "unknown",
+  "type": 0,
+  "wifiSSID": "pool",
+  "wifiRSSI": -17,
+  "wifiIP": "10.32.1.62",
+  "mqttServer": "mqtt.io10.org",
+  "mqttConnected": false
+}
+
+
+home/H32/pool/ble-yc01
+{
+  "time": 1782020672,
+  "name": "Pool H32",
+  "status": "data read successfully",
+  "addr": "c0:00:00:05:51:2a",
+  "sensorType": "BLE-YC01",
+  "type": 15,
+  "pH": 7.4,
+  "ec": 525,
+  "salt": 288.75,
+  "tds": 262,
+  "orp": 314,
+  "cl": 0,
+  "temp": 28.6,
+  "bat": 2823,
+  "bleRSSI": -75,
+  "wifiSSID": "pool",
+  "wifiRSSI": -19,
+  "wifiIP": "10.32.1.62",
+  "mqttServer": "mqtt.io10.org",
+  "mqttConnected": false
+}
+
+
+home/H32/pool/event
+{
+  "time": 1781971200,
+  "name": "Pool H32",
+  "eventType": "backwash",
+  "amount": 5,
+  "unit": "min"
+}
+
+
+
+home/H32/pool/event
+{
+  "time": 1781971200,
+  "name": "Pool H32",
+  "eventType": "refill",
+  "amount": 40,
+  "unit": "min"
+}
+
+
+home/H32/pool/manual
+{
+  "time": 1782020580,
+  "name": "Pool H32",
+  "sensorType": "manual",
+  "temp": 20,
+  "pH": 0,
+  "cl": 0
+}
+

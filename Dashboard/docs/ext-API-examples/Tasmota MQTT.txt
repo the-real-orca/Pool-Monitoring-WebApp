@@ -1,0 +1,266 @@
+
+Internal MQTT (Mosquitto)
+=========================
+
+ - Tasmota-connected
+ - Filter pump (cmnd, stat)
+ - Solar pump (power/status)
+
+
+tasmota/discovery/68C63A95709B/config (retained)
+{
+  "ip": "10.32.1.63",
+  "dn": "Solar Pumpe",
+  "fn": [
+    "solarpumpe",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "hn": "solarpump",
+  "mac": "68C63A95709B",
+  "md": "Sonoff Pow",
+  "ty": 0,
+  "if": 0,
+  "ofln": "Offline",
+  "onln": "Online",
+  "state": [
+    "OFF",
+    "ON",
+    "TOGGLE",
+    "HOLD"
+  ],
+  "sw": "11.1.0",
+  "t": "tasmota_95709B",
+  "ft": "home/H32/pool/solarpump/tasmota/%prefix%/",
+  "tp": [
+    "cmnd",
+    "stat",
+    "tele"
+  ],
+  "rl": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "swc": [
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1
+  ],
+  "swn": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "btn": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "so": {
+    "4": 0,
+    "11": 0,
+    "13": 1,
+    "17": 0,
+    "20": 0,
+    "30": 0,
+    "68": 0,
+    "73": 0,
+    "82": 0,
+    "114": 0,
+    "117": 0
+  },
+  "lk": 0,
+  "lt_st": 0,
+  "sho": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "ver": 1
+}
+
+
+tasmota/discovery/68C63A95709B/sensors (retained)
+{
+  "sn": {
+    "Time": "2026-06-21T06:16:18",
+    "Epoch": 1782015378,
+    "ENERGY": {
+      "TotalStartTime": "2025-08-05T13:51:51",
+      "Total": 168.902,
+      "Yesterday": 3.28,
+      "Today": 0.015,
+      "Power": 2,
+      "ApparentPower": 13,
+      "ReactivePower": 12,
+      "Factor": 0.17,
+      "Voltage": 238,
+      "Current": 0.053
+    }
+  },
+  "ver": 1
+}
+
+
+home/H32/pool/solarpump/tasmota/tele/STATE
+{
+  "Time": "2026-06-21T07:39:42",
+  "Epoch": 1782020382,
+  "Uptime": "3T14:14:32",
+  "UptimeSec": 310472,
+  "Heap": 27,
+  "SleepMode": "Dynamic",
+  "Sleep": 50,
+  "LoadAvg": 19,
+  "MqttCount": 55,
+  "POWER": "ON",
+  "Wifi": {
+    "AP": 2,
+    "SSId": "pool",
+    "BSSId": "00:5F:67:31:5D:6C",
+    "Channel": 4,
+    "Mode": "11n",
+    "RSSI": 64,
+    "Signal": -68,
+    "LinkCount": 9,
+    "Downtime": "0T00:26:37"
+  }
+}
+
+home/H32/pool/solarpump/tasmota/tele/SENSOR
+{
+  "Time": "2026-06-21T07:39:42",
+  "Epoch": 1782020382,
+  "ENERGY": {
+    "TotalStartTime": "2025-08-05T13:51:51",
+    "Total": 168.905,
+    "Yesterday": 3.28,
+    "Today": 0.018,
+    "Period": 0,
+    "Power": 3,
+    "ApparentPower": 12,
+    "ReactivePower": 11,
+    "Factor": 0.22,
+    "Voltage": 234,
+    "Current": 0.05
+  }
+}
+
+home/H32/pool/solarpump/tasmota/tele/STATE
+{
+  "Time": "2026-06-21T07:44:42",
+  "Epoch": 1782020682,
+  "Uptime": "3T14:19:32",
+  "UptimeSec": 310772,
+  "Heap": 27,
+  "SleepMode": "Dynamic",
+  "Sleep": 50,
+  "LoadAvg": 19,
+  "MqttCount": 55,
+  "POWER": "ON",
+  "Wifi": {
+    "AP": 2,
+    "SSId": "pool",
+    "BSSId": "00:5F:67:31:5D:6C",
+    "Channel": 4,
+    "Mode": "11n",
+    "RSSI": 64,
+    "Signal": -68,
+    "LinkCount": 9,
+    "Downtime": "0T00:26:37"
+  }
+}
+
+home/H32/pool/solarpump/tasmota/tele/SENSOR
+{
+  "Time": "2026-06-21T07:44:42",
+  "Epoch": 1782020682,
+  "ENERGY": {
+    "TotalStartTime": "2025-08-05T13:51:51",
+    "Total": 168.906,
+    "Yesterday": 3.28,
+    "Today": 0.018,
+    "Period": 0,
+    "Power": 4,
+    "ApparentPower": 12,
+    "ReactivePower": 12,
+    "Factor": 0.32,
+    "Voltage": 234,
+    "Current": 0.053
+  }
+}
+
+
+home/H32/pool/solarpump/tasmota/tele/STATE
+{
+  "Time": "2026-06-21T09:59:42",
+  "Epoch": 1782028782,
+  "Uptime": "3T16:34:32",
+  "UptimeSec": 318872,
+  "Heap": 27,
+  "SleepMode": "Dynamic",
+  "Sleep": 50,
+  "LoadAvg": 19,
+  "MqttCount": 55,
+  "POWER": "ON",
+  "Wifi": {
+    "AP": 2,
+    "SSId": "pool",
+    "BSSId": "00:5F:67:31:5D:6C",
+    "Channel": 4,
+    "Mode": "11n",
+    "RSSI": 64,
+    "Signal": -68,
+    "LinkCount": 9,
+    "Downtime": "0T00:26:37"
+  }
+}
+
+
+home/H32/pool/solarpump/tasmota/tele/SENSOR
+{
+  "Time": "2026-06-21T09:59:42",
+  "Epoch": 1782028782,
+  "ENERGY": {
+    "TotalStartTime": "2025-08-05T13:51:51",
+    "Total": 169.23,
+    "Yesterday": 3.28,
+    "Today": 0.342,
+    "Period": 37,
+    "Power": 442,
+    "ApparentPower": 587,
+    "ReactivePower": 386,
+    "Factor": 0.75,
+    "Voltage": 236,
+    "Current": 2.485
+  }
+}
+
+
